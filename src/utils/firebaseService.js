@@ -41,20 +41,32 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
   const cleanPhone = String(phone).replace(/\D/g, '');
   if (!cleanPhone) return;
 
-  const dataToSave = {
-    ...profileData,
-    phone: cleanPhone,
-    updatedAt: new Date().toISOString()
-  };
-
   // Local storage save
   try {
     const existing = JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}');
-    existing[cleanPhone] = { ...(existing[cleanPhone] || {}), ...dataToSave };
+    existing[cleanPhone] = { ...(existing[cleanPhone] || {}), ...profileData, phone: cleanPhone };
     localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(existing));
   } catch (e) {
     console.warn('Local storage write warning:', e);
   }
+
+  // Cloud Firestore payload sanitization (truncate giant base64 Data URLs so Firestore document size <= 1MB)
+  const sanitizedDocs = (profileData.documents || []).map(doc => {
+    if (doc.data && doc.data.length > 50000 && doc.data.startsWith('data:')) {
+      return {
+        ...doc,
+        data: doc.url && !doc.url.startsWith('data:') ? doc.url : `LOCAL_DATA_URL_${doc.id || Date.now()}`
+      };
+    }
+    return doc;
+  });
+
+  const dataToSave = {
+    ...profileData,
+    documents: sanitizedDocs,
+    phone: cleanPhone,
+    updatedAt: new Date().toISOString()
+  };
 
   // Cloud Firestore save
   try {

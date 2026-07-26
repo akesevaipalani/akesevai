@@ -548,11 +548,6 @@ function App() {
             
             {/* Mobile Drawer Quick Action Links */}
             <div className="mobile-menu-actions">
-              <span className={`firebase-cloud-badge ${isFirebaseConfigured() ? 'online' : 'offline'}`}>
-                <span className="cloud-pulse"></span>
-                {isFirebaseConfigured() ? 'Cloud Sync Active' : 'Local Sync Active'}
-              </span>
-
               <button 
                 className="nav-btn-customer" 
                 onClick={() => { navigate('customer'); setMenuOpen(false); }}
@@ -570,14 +565,6 @@ function App() {
           </nav>
 
           <div className="header-actions-right">
-            <span 
-              className={`firebase-cloud-badge desktop-only-badge ${isFirebaseConfigured() ? 'online' : 'offline'}`}
-              title={isFirebaseConfigured() ? 'Firebase Cloud Realtime Database Connected' : 'Firebase Offline Local Sync Active'}
-            >
-              <span className="cloud-pulse"></span>
-              {isFirebaseConfigured() ? 'Cloud Sync' : 'Offline Sync'}
-            </span>
-
             <DarkModeToggle isDark={isDark} setIsDark={setIsDark} />
             
             <button
@@ -1354,10 +1341,9 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
           </aside>
           <section className="admin-detail">
             {selected ? (() => {
-              const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
-              const customerRecords = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+              const liveCustomerMap = customerRecords || {};
               const cleanSelectedPhone = (selected.phone || '').replace(/\D/g, '');
-              const profileRecord = customerRecords[cleanSelectedPhone] || customerRecords[selected.phone] || {};
+              const profileRecord = liveCustomerMap[cleanSelectedPhone] || liveCustomerMap[selected.phone] || {};
 
               const combinedDocs = [
                 ...(selected.documents || []),
