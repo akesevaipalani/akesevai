@@ -5239,3 +5239,46 @@ html, body, #root, .app-shell {
   }
 }
 
+/* ==========================================================================
+   POWERFUL INLINE JSX RESPONSIVE OVERRIDE SYSTEM (Targets all inline styles)
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* Force ALL inline grid template columns (1fr 1fr, 1.2fr 1fr, etc.) to 1fr single column on mobile */
+  div[style*="gridTemplateColumns"],
+  form[style*="gridTemplateColumns"],
+  section[style*="gridTemplateColumns"],
+  aside[style*="gridTemplateColumns"],
+  header[style*="gridTemplateColumns"],
+  footer[style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  /* Force ALL inline flex containers to wrap on mobile */
+  div[style*="display: flex"],
+  div[style*="display:flex"],
+  form[style*="display: flex"],
+  form[style*="display:flex"],
+  section[style*="display: flex"] {
+    flex-wrap: wrap !important;
+  }
+
+  /* Override fixed minWidths on mobile */
+  div[style*="minWidth"],
+  span[style*="minWidth"],
+  label[style*="minWidth"] {
+    min-width: 0 !important;
+  }
+
+  /* Ensure all tables scroll horizontally without breaking screen width */
+  .token-bookings-table-wrap,
+  .table-responsive,
+  table {
+    display: block !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+
