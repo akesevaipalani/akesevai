@@ -201,14 +201,14 @@ export default function AdminSponsoredAdsManager({ notify }) {
   };
 
   return (
-    <div className="admin-ad-manager-card" style={{ background: '#ffffff', borderRadius: '20px', padding: '24px', border: '2px solid #022c7a', boxShadow: '0 10px 30px rgba(2,44,122,0.1)', margin: '24px 0' }}>
+    <div className="admin-ad-manager-card" style={{ borderRadius: '20px', padding: '24px', border: '2px solid #022c7a', boxShadow: '0 10px 30px rgba(2,44,122,0.1)', margin: '24px 0' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '18px', paddingBottom: '14px', borderBottom: '2px solid #f1f5f9' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '18px', paddingBottom: '14px', borderBottom: '2px solid var(--line)' }}>
         <div>
           <span style={{ background: '#022c7a', color: '#fbbf24', padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <Megaphone size={14} /> AD MANAGER • விளம்பர கட்டுப்பாட்டு மையம்
           </span>
-          <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', margin: '6px 0 0' }}>
+          <h3 className="ad-manager-title" style={{ fontSize: '20px', fontWeight: 900, margin: '6px 0 0' }}>
             Home Page <span>சிறப்பு விளம்பர எடிட்டர் (Sponsor Ads Edit & Image Manager)</span>
           </h3>
         </div>

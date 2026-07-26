@@ -125,8 +125,7 @@ export default function GovernmentPhotoCropperTool() {
   }, [imageSrc, selectedPreset, candidateName, photoDate, zoom, offsetX, offsetY]);
 
   return (
-    <div style={{
-      background: 'white',
+    <div className="gov-photo-cropper-card" style={{
       border: '2px solid #0052cc',
       borderRadius: '20px',
       padding: '24px',
@@ -134,7 +133,7 @@ export default function GovernmentPhotoCropperTool() {
       boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
     }}>
       {/* HEADER */}
-      <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
+      <div style={{ borderBottom: '1px solid var(--line)', paddingBottom: '16px', marginBottom: '20px' }}>
         <span style={{
           background: '#eff6ff',
           color: '#0052cc',
@@ -149,10 +148,10 @@ export default function GovernmentPhotoCropperTool() {
         }}>
           <Crop size={14} /> GOVERNMENT SPEC PHOTO & SIGNATURE CROPPER
         </span>
-        <h3 style={{ font: '800 22px Manrope', color: '#022c7a', margin: '6px 0 0' }}>
+        <h3 className="cropper-title" style={{ font: '800 22px Manrope', margin: '6px 0 0' }}>
           அரசு விண்ணப்ப பாஸ்போர்ட் போட்டோ <span>& கையொப்ப அளவு மாற்றி</span>
         </h3>
-        <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>
+        <p className="cropper-subtitle" style={{ fontSize: '13px', margin: '4px 0 0' }}>
           TN e-Sevai, TNPSC, ஆதார் மற்றும் பாஸ்போர்ட் அளவுகளுக்கு போட்டோவை சரியான pixel மற்றும் KB அளவில் மாற்றலாம்.
         </p>
       </div>
@@ -161,7 +160,7 @@ export default function GovernmentPhotoCropperTool() {
         {/* LEFT COLUMN: OPTIONS & INPUTS */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+            <label className="cropper-label" style={{ fontSize: '13px', fontWeight: 800, display: 'block', marginBottom: '6px' }}>
               1. அரசு போர்ட்டல் அளவை தேர்வு செய்க (Select Portal Spec):
             </label>
             <div style={{ display: 'grid', gap: '8px' }}>
@@ -169,19 +168,19 @@ export default function GovernmentPhotoCropperTool() {
                 <div
                   key={p.id}
                   onClick={() => setSelectedPreset(p)}
+                  className={`cropper-preset-card ${selectedPreset.id === p.id ? 'preset-active' : ''}`}
                   style={{
                     border: selectedPreset.id === p.id ? '2px solid #0052cc' : '1px solid #cbd5e1',
-                    background: selectedPreset.id === p.id ? '#f0f7ff' : '#f8fafc',
                     borderRadius: '12px',
                     padding: '12px',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  <div style={{ fontWeight: 800, fontSize: '13px', color: selectedPreset.id === p.id ? '#0052cc' : '#334155' }}>
+                  <div className="preset-name" style={{ fontWeight: 800, fontSize: '13px' }}>
                     {p.name}
                   </div>
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                  <div className="preset-desc" style={{ fontSize: '11px', marginTop: '2px' }}>
                     📐 {p.width}x{p.height} px • 💾 Max Limit: {p.maxKb} KB • {p.description}
                   </div>
                 </div>

@@ -1,4 +1,5 @@
-// Central Application Status Store with Real-Time Server Persistence & localStorage sync
+// Central Application Status Store with Real-Time Server Persistence, Firebase & localStorage sync
+import { saveApplicationCloud } from './firebaseService';
 
 const STATUS_RECORDS_KEY = 'akesevai-application-records';
 const TOKEN_BOOKINGS_KEY = 'akesevai-token-bookings';
@@ -189,6 +190,7 @@ export const saveApplicationRecord = (appRecord) => {
 
   records[id] = completeRecord;
   localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(records));
+  saveApplicationCloud(id, completeRecord);
 
   // Push to Central API server for immediate cross-device sync
   try {
@@ -218,6 +220,7 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
     records[appId].timeline = updatedTimeline;
 
     localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(records));
+    saveApplicationCloud(appId, records[appId]);
 
     try {
       fetch('/api/store', {

@@ -14,7 +14,6 @@ import SoftwarePage from './pages/SoftwarePage';
 import HeroDocumentShowcase from './components/HeroDocumentShowcase';
 import HeroBannerSlider from './components/HeroBannerSlider';
 import ServicePhotoSlider from './components/ServicePhotoSlider';
-import ServiceCalculatorWidget from './components/ServiceCalculatorWidget';
 import QuickTokenStatusLookup from './components/QuickTokenStatusLookup';
 import CustomerTestimonials from './components/CustomerTestimonials';
 import FloatingQuickActions from './components/FloatingQuickActions';
@@ -139,6 +138,25 @@ const appointmentSlots = Array.from({ length: 14 }, (_, index) => {
   return `${formatTime(start)} - ${formatTime(start + 30)}`;
 });
 
+import { isFirebaseConfigured } from './config/firebase';
+import { 
+  saveCustomerProfileCloud, 
+  saveTokenBookingCloud, 
+  subscribeApplications, 
+  subscribeTokens, 
+  subscribeCustomerProfiles,
+  recordLoginEventCloud,
+  saveLiveQueueCloud,
+  saveServiceOfDayCloud,
+  syncAllLocalDataToFirebaseCloud,
+  uploadFileToFirebaseStorage,
+  uploadDataUrlToFirebaseStorage,
+  saveExpiryDocumentCloud,
+  fetchAllCloudRecords,
+  deleteCustomerProfileCloud,
+  deleteTokenBookingCloud
+} from './utils/firebaseService';
+
 const readCustomerRecords = () => {
   try { return JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}'); } catch { return {}; }
 };
@@ -147,6 +165,7 @@ const saveCustomerRecord = (record) => {
   const records = readCustomerRecords();
   records[record.phone] = record;
   localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(records));
+  saveCustomerProfileCloud(record.phone, record);
 };
 
 const readTokenBookings = () => {
@@ -158,6 +177,7 @@ const persistTokenBooking = (token) => {
   // Avoid exact duplicates by tokenNo
   const updated = [token, ...tokens.filter(t => t.tokenNo !== token.tokenNo)];
   localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(updated));
+  saveTokenBookingCloud(token);
   return updated;
 };
 
@@ -344,6 +364,7 @@ function App() {
   const [adminLoggedIn, setAdminLoggedIn] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true');
   const [toast, setToast] = useState('');
   const [tokenBookings, setTokenBookings] = useState(() => readTokenBookings());
+  const [customerRecords, setCustomerRecords] = useState(() => readCustomerRecords());
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showFirstLoginModal, setShowFirstLoginModal] = useState(false);
   const [isFirstTimeLogin, setIsFirstTimeLogin] = useState(true);
@@ -357,6 +378,38 @@ function App() {
     }
     window.scrollTo(0, 0);
   }, [page]);
+
+  useEffect(() => {
+    syncAllLocalDataToFirebaseCloud();
+
+    fetchAllCloudRecords().then((cloudData) => {
+      if (cloudData) {
+        if (cloudData.customers && Object.keys(cloudData.customers).length) setCustomerRecords(cloudData.customers);
+        if (cloudData.tokens && cloudData.tokens.length) setTokenBookings(cloudData.tokens);
+      }
+    });
+
+    const unsubscribeTokens = subscribeTokens((cloudTokens) => {
+      if (cloudTokens && Array.isArray(cloudTokens)) {
+        setTokenBookings(cloudTokens);
+      }
+    });
+
+    const unsubscribeProfiles = subscribeCustomerProfiles((cloudProfiles) => {
+      if (cloudProfiles && typeof cloudProfiles === 'object') {
+        setCustomerRecords(cloudProfiles);
+        const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
+        if (activePhone && cloudProfiles[activePhone]) {
+          setCustomer(cloudProfiles[activePhone]);
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeTokens();
+      unsubscribeProfiles();
+    };
+  }, []);
 
   const toggleLang = () => {
     const nextLang = lang === 'ta' ? 'en' : 'ta';
@@ -392,7 +445,7 @@ function App() {
   };
 
   const loginCustomer = (phone) => {
-    const records = readCustomerRecords();
+    const records = customerRecords || readCustomerRecords();
     const isNew = !records[phone];
     const record = records[phone] || {
       phone,
@@ -404,6 +457,14 @@ function App() {
     saveCustomerRecord(record);
     sessionStorage.setItem(CUSTOMER_SESSION_KEY, phone);
     setCustomer(record);
+    setCustomerRecords((prev) => ({ ...prev, [phone]: record }));
+
+    recordLoginEventCloud({
+      type: 'customer_login',
+      phone,
+      isNewCustomer: isNew,
+      profileName: record.profile?.name || 'Customer'
+    });
 
     setIsFirstTimeLogin(isNew);
     setShowFirstLoginModal(true);
@@ -414,6 +475,10 @@ function App() {
     setCustomer((current) => {
       const updated = typeof updater === 'function' ? updater(current) : updater;
       saveCustomerRecord(updated);
+      setCustomerRecords((prev) => ({
+        ...prev,
+        [updated.phone]: updated
+      }));
       return updated;
     });
   };
@@ -430,6 +495,10 @@ function App() {
     if (password !== 'admin123') { notify('Incorrect admin password.'); return false; }
     sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
     setAdminLoggedIn(true);
+    recordLoginEventCloud({
+      type: 'admin_login',
+      role: 'Administrator'
+    });
     notify('Admin dashboard opened.');
     return true;
   };
@@ -454,24 +523,63 @@ function App() {
       <FirstTimeLoginModal isOpen={showFirstLoginModal} isFirstTime={isFirstTimeLogin} customerName={customer?.profile?.name} onClose={() => setShowFirstLoginModal(false)} />
       <header className="site-header">
         <div className="header-inner">
-          <button className="brand" onClick={() => navigate('home')} aria-label="AkEsevai home" style={{ gap: '12px' }}>
+          <button className="brand" onClick={() => navigate('home')} aria-label="AkEsevai home">
             <img src="/logo.png" alt="AkEsevai Logo" className="brand-logo-img" />
-            <div className="brand-text-wrap" style={{ textAlign: 'left' }}>
-              <strong className="brand-name" style={{ fontSize: '20px', fontWeight: 800, color: 'var(--ink)' }}>
-                Ak <span style={{ color: 'var(--brand-green)' }}>e-Sevai</span>
+            <div className="brand-text-wrap">
+              <strong className="brand-name">
+                Ak <span className="brand-highlight">e-Sevai</span>
               </strong>
-              <small className="brand-tagline" style={{ display: 'block', fontSize: '9px', fontWeight: 700, color: 'var(--brand-green)', letterSpacing: '0.04em', lineHeight: 1.25 }}>
-                உங்கள் நம்பிக்கைக்குரிய<br />இ-சேவை மையம்
+              <small className="brand-tagline">
+                உங்கள் நம்பிக்கைக்குரிய இ-சேவை மையம்
               </small>
             </div>
           </button>
+
           <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'}>
-            {menuItems.map(([id, label]) => <button key={id} className={page === id ? 'nav-active' : ''} onClick={() => navigate(id)}>{label}</button>)}
-            <button className="mobile-customer" onClick={() => navigate('customer')}><UserRound size={16} /> {t.customerPortal}</button>
+            {menuItems.map(([id, label]) => (
+              <button 
+                key={id} 
+                className={page === id ? 'nav-active' : ''} 
+                onClick={() => { navigate(id); setMenuOpen(false); }}
+              >
+                {label}
+              </button>
+            ))}
+            
+            {/* Mobile Drawer Quick Action Links */}
+            <div className="mobile-menu-actions">
+              <span className={`firebase-cloud-badge ${isFirebaseConfigured() ? 'online' : 'offline'}`}>
+                <span className="cloud-pulse"></span>
+                {isFirebaseConfigured() ? 'Cloud Sync Active' : 'Local Sync Active'}
+              </span>
+
+              <button 
+                className="nav-btn-customer" 
+                onClick={() => { navigate('customer'); setMenuOpen(false); }}
+              >
+                <UserRound size={16} /> {t.customerPortal}
+              </button>
+
+              <button 
+                className="nav-btn-admin" 
+                onClick={() => { navigate('admin'); setMenuOpen(false); }}
+              >
+                <LockKeyhole size={15} /> {t.admin}
+              </button>
+            </div>
           </nav>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: '16px', flexShrink: 0 }}>
+          <div className="header-actions-right">
+            <span 
+              className={`firebase-cloud-badge desktop-only-badge ${isFirebaseConfigured() ? 'online' : 'offline'}`}
+              title={isFirebaseConfigured() ? 'Firebase Cloud Realtime Database Connected' : 'Firebase Offline Local Sync Active'}
+            >
+              <span className="cloud-pulse"></span>
+              {isFirebaseConfigured() ? 'Cloud Sync' : 'Offline Sync'}
+            </span>
+
             <DarkModeToggle isDark={isDark} setIsDark={setIsDark} />
+            
             <button
               className="lang-switcher-btn"
               onClick={toggleLang}
@@ -480,58 +588,30 @@ function App() {
               🌐 <span>{lang === 'ta' ? 'English' : 'தமிழ்'}</span>
             </button>
 
-            {/* Stacked Admin on TOP and Customer Portal BELOW */}
-            <div className="portal-buttons-stack" style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'stretch' }}>
-              <button
-                className="admin-link-stacked"
-                onClick={() => navigate('admin')}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justify: 'center',
-                  gap: '5px',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  color: '#fbbf24',
-                  background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
-                  border: '1px solid #4338ca',
-                  padding: '4px 12px',
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: '0 3px 8px rgba(30, 27, 75, 0.25)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <LockKeyhole size={12} style={{ color: '#fbbf24' }} /> {t.admin}
-              </button>
+            <button
+              className="nav-btn-admin desktop-only-btn"
+              onClick={() => navigate('admin')}
+              title="Admin Login"
+            >
+              <LockKeyhole size={13} style={{ color: '#fbbf24' }} /> {t.admin}
+            </button>
 
-              <button
-                className="customer-link-stacked"
-                onClick={() => navigate('customer')}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justify: 'center',
-                  gap: '6px',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  color: 'var(--teal)',
-                  background: '#ffffff',
-                  border: '1.5px solid #93c5fd',
-                  padding: '5px 12px',
-                  borderRadius: '14px',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: '0 2px 8px rgba(0,82,204,0.08)',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <UserRound size={14} /> {t.customerPortal} <ArrowRight size={13} />
-              </button>
-            </div>
+            <button
+              className="nav-btn-customer desktop-only-btn"
+              onClick={() => navigate('customer')}
+              title="Customer Portal"
+            >
+              <UserRound size={14} /> {t.customerPortal}
+            </button>
 
-            <button className="menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">{menuOpen ? <X /> : <Menu />}</button>
+            <button 
+              className="menu-button" 
+              onClick={() => setMenuOpen(!menuOpen)} 
+              aria-label="Toggle menu"
+              title="Toggle mobile menu"
+            >
+              {menuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
           </div>
         </div>
       </header>
@@ -554,7 +634,7 @@ function App() {
         {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
         {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} />}
         {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} />}
-        {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} notify={notify} />}
+        {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} customerRecords={customerRecords} notify={notify} />}
       </main>
 
       <footer className="site-footer">
@@ -624,13 +704,10 @@ function HomePage({ navigate, notify, lang }) {
         <div className="hero-actions"><button className="button button-primary" onClick={() => navigate('customer')}>{t.startApp} <ArrowRight size={18} /></button><button className="button button-quiet" onClick={() => navigate('services')}>{t.exploreServices} <ChevronRight size={17} /></button></div>
         <div className="hero-note"><ShieldCheck size={16} /> {t.heroNote}</div>
       </div>
-      <div className="hero-visual-showcase-container" style={{ position: 'relative', zIndex: 2, width: '860px', margin: '20px -80px 20px 0', flexShrink: 0 }}>
+      <div className="hero-visual-showcase-container" style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: '860px', margin: '20px 0', flexShrink: 1 }}>
         <AkEsevaiOfficePhotoSlider />
       </div>
     </section>
-    <section className="trust-strip"><div className="page-width trust-inner"><span><ShieldCheck size={18} /> {t.trust1}</span><span><Headphones size={18} /> {t.trust2}</span><span><ClipboardCheck size={18} /> {t.trust3}</span><span><Clock3 size={18} /> {t.trust4}</span></div></section>
-
-
 
     {/* INSTALL PWA MOBILE APP BANNER */}
     <div className="page-width">
@@ -683,11 +760,6 @@ function HomePage({ navigate, notify, lang }) {
 
 
 
-
-    {/* SERVICE PRICE CALCULATOR */}
-    <div className="page-width">
-      <ServiceCalculatorWidget />
-    </div>
 
     {/* SMART AI DOCUMENT VERIFICATION CHECKER WIDGET */}
     <div className="page-width">
@@ -940,6 +1012,7 @@ function AdminLiveQueueControlForm() {
       upiId
     };
     localStorage.setItem('akesevai-live-queue-status', JSON.stringify(data));
+    saveLiveQueueCloud(data);
 
     // Handle Service of the Day override
     const sodCatalog = [
@@ -954,10 +1027,12 @@ function AdminLiveQueueControlForm() {
 
     if (serviceOfDay === 'auto') {
       localStorage.removeItem('akesevai-service-of-day');
+      saveServiceOfDayCloud(null);
     } else {
       const selectedSodObj = sodCatalog.find(s => s.tamil === serviceOfDay);
       if (selectedSodObj) {
         localStorage.setItem('akesevai-service-of-day', JSON.stringify(selectedSodObj));
+        saveServiceOfDayCloud(selectedSodObj);
       }
     }
 
@@ -1128,14 +1203,19 @@ function AdminLiveQueueControlForm() {
   );
 }
 
-function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], notify }) {
+function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], customerRecords = {}, notify }) {
   const [password, setPassword] = useState('');
   const [query, setQuery] = useState('');
   const [tokenSearch, setTokenSearch] = useState('');
   const [activeCustomer, setActiveCustomer] = useState('');
   const [adminTab, setAdminTab] = useState('smartdesk');
+  const [editingCustomer, setEditingCustomer] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+
   if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button><small className="form-help">Demo password: admin123</small></form></section>;
-  const customers = Object.values(readCustomerRecords()).sort((a, b) => (b.profile.createdAt || '').localeCompare(a.profile.createdAt || ''));
+  const activeRecords = (customerRecords && Object.keys(customerRecords).length > 0) ? customerRecords : readCustomerRecords();
+  const customers = Object.values(activeRecords).sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
   const matchingCustomers = customers.filter((customer) => `${customer.profile.name} ${customer.phone} ${customer.applications.map((app) => app.name).join(' ')}`.toLowerCase().includes(query.toLowerCase()));
   const selected = matchingCustomers.find((customer) => customer.phone === activeCustomer) || matchingCustomers[0];
   const totalApplications = customers.reduce((total, customer) => total + customer.applications.length, 0);
@@ -1145,11 +1225,74 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], noti
     if (!q) return true;
     return (tok.tokenNo || '').toLowerCase().includes(q) || (tok.phone || '').toLowerCase().includes(q) || (tok.customerName || '').toLowerCase().includes(q) || (tok.service || '').toLowerCase().includes(q) || (tok.date || '').toLowerCase().includes(q);
   });
+
+  const handleSaveEditCustomer = async () => {
+    if (!editingCustomer) return;
+    const cleanOldPhone = editingCustomer.phone.replace(/\D/g, '');
+    const cleanNewPhone = editPhone.replace(/\D/g, '') || cleanOldPhone;
+
+    const updatedRecord = {
+      ...editingCustomer,
+      phone: cleanNewPhone,
+      profile: {
+        ...(editingCustomer.profile || {}),
+        name: editName
+      },
+      updatedAt: new Date().toISOString()
+    };
+
+    if (cleanOldPhone !== cleanNewPhone) {
+      await deleteCustomerProfileCloud(cleanOldPhone);
+    }
+    await saveCustomerProfileCloud(cleanNewPhone, updatedRecord);
+    setEditingCustomer(null);
+    notify('🎉 Customer profile updated and synced to Firebase Cloud!');
+  };
+
+  const handleDeleteCustomer = async (cust) => {
+    if (!cust) return;
+    const confirmDelete = window.confirm(`Are you sure you want to remove customer "${cust.profile?.name || 'Customer'}" (+91 ${cust.phone}) from Firebase Cloud?`);
+    if (confirmDelete) {
+      await deleteCustomerProfileCloud(cust.phone);
+      notify(`🗑️ Customer ${cust.profile?.name || cust.phone} removed from Firebase database!`);
+    }
+  };
+
+  const handleUpdateTokenStatus = async (tok, newStatus) => {
+    const updated = {
+      ...tok,
+      status: newStatus,
+      updatedAt: new Date().toISOString()
+    };
+    await saveTokenBookingCloud(updated);
+    notify(`✅ Token ${tok.tokenNo} status updated to "${newStatus}"!`);
+  };
+
+  const handleDeleteToken = async (tok) => {
+    if (!tok || !tok.tokenNo) return;
+    const confirmDelete = window.confirm(`Delete Token ${tok.tokenNo} for ${tok.customerName}?`);
+    if (confirmDelete) {
+      await deleteTokenBookingCloud(tok.tokenNo);
+      notify(`🗑️ Token ${tok.tokenNo} removed!`);
+    }
+  };
+
   return (
     <section className="admin-dashboard page-width">
       <div className="dashboard-top">
         <div><span className="section-kicker">ADMIN DASHBOARD</span><h1>Customer <em>requests.</em></h1><p>View submitted services, documents, and token bookings.</p></div>
-        <button className="logout-button" onClick={logout}><LogOut size={14} /> Logout admin</button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button className="logout-button" style={{ background: '#0052cc', color: 'white', borderColor: '#0043a8' }} onClick={async () => {
+            notify('⏳ Fetching latest data from Firebase Cloud...');
+            const cloud = await fetchAllCloudRecords();
+            if (cloud) {
+              notify('✅ Firebase Cloud sync complete!');
+            } else {
+              notify('⚡ Using latest synchronized cloud state');
+            }
+          }}><Sparkles size={14} /> 🔄 Sync Firebase Cloud</button>
+          <button className="logout-button" onClick={logout}><LogOut size={14} /> Logout admin</button>
+        </div>
       </div>
       <div className="admin-tools">
         <button onClick={() => navigate('weblink')}><ExternalLink size={18} /><span><strong>Weblinks</strong><small>Private service links</small></span></button>
@@ -1171,6 +1314,27 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], noti
         <button className={adminTab === 'analytics' ? 'tab-active' : ''} onClick={() => setAdminTab('analytics')} style={{ background: adminTab === 'analytics' ? '#7c3aed' : undefined, color: adminTab === 'analytics' ? 'white' : undefined }}>📊 Revenue Analytics</button>
         <button className={adminTab === 'queue' ? 'tab-active' : ''} onClick={() => setAdminTab('queue')} style={{ background: adminTab === 'queue' ? '#0052cc' : undefined, color: adminTab === 'queue' ? 'white' : undefined }}>⚙️ Live Center Queue Control</button>
       </div>
+
+      {editingCustomer && (
+        <div style={{ background: '#f8fafc', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 20px rgba(0,0,0,0.06)' }}>
+          <h3 style={{ margin: 0, fontSize: '15px', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '6px' }}>✏️ Edit Customer Profile ({editingCustomer.phone})</h3>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+              Customer Name:
+              <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
+            </label>
+            <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+              Mobile Phone Number:
+              <input type="text" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <button onClick={() => setEditingCustomer(null)} style={{ background: '#94a3b8', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
+            <button onClick={handleSaveEditCustomer} style={{ background: '#16a34a', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>💾 Save Changes</button>
+          </div>
+        </div>
+      )}
+
       {adminTab === 'smartdesk' && (
         <div style={{ marginTop: '10px' }}>
           <AdminSevaiSmartDesk notify={notify} />
@@ -1189,13 +1353,85 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], noti
             {matchingCustomers.length ? matchingCustomers.map((customer) => <button className={`admin-customer-row ${selected?.phone === customer.phone ? 'admin-customer-active' : ''}`} onClick={() => setActiveCustomer(customer.phone)} key={customer.phone}><span className="avatar">{customer.profile.name.slice(0, 2).toUpperCase()}</span><span><strong>{customer.profile.name}</strong><small>+91 {customer.phone} · {customer.applications.length} services</small></span><ChevronRight size={16} /></button>) : <p className="empty-customer-state">No matching customer requests.</p>}
           </aside>
           <section className="admin-detail">
-            {selected ? <>
-              <div className="panel-heading"><div><span className="section-kicker">CUSTOMER DETAILS</span><h2>{selected.profile.name}</h2><p>+91 {selected.phone}</p></div></div>
-              <h3 className="admin-section-title">Selected services</h3>
-              {selected.applications.length ? selected.applications.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
-              <h3 className="admin-section-title">Uploaded documents</h3>
-              {selected.documents.length ? selected.documents.map((document) => <div className="admin-service-row" key={document.id}><span className="doc-symbol"><FileCheck2 size={17} /></span><span><strong>{document.requirement}</strong><small>{document.name} · {document.uploadedAt}</small></span><a className="document-open" href={document.data} target="_blank" rel="noreferrer"><Eye size={15} /> View</a></div>) : <p className="empty-customer-state">This customer has not uploaded documents yet.</p>}
-            </> : <div className="empty-customer-state">Customer uploads will appear here after customers select a service and upload documents.</div>}
+            {selected ? (() => {
+              const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
+              const customerRecords = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+              const cleanSelectedPhone = (selected.phone || '').replace(/\D/g, '');
+              const profileRecord = customerRecords[cleanSelectedPhone] || customerRecords[selected.phone] || {};
+
+              const combinedDocs = [
+                ...(selected.documents || []),
+                ...(profileRecord.documents || []),
+                ...globalExpiryDocs.filter((d) => {
+                  const docPhone = (d.customerPhone || '').replace(/\D/g, '');
+                  return cleanSelectedPhone && docPhone && (docPhone === cleanSelectedPhone || docPhone.includes(cleanSelectedPhone) || cleanSelectedPhone.includes(docPhone));
+                }).map(d => ({
+                  id: d.id || d.url,
+                  requirement: d.requirement || d.title || d.name,
+                  name: d.name || 'Uploaded Document',
+                  uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
+                  data: d.url || d.data
+                }))
+              ];
+
+              const selectedDocs = combinedDocs.reduce((acc, current) => {
+                const url = current.data || current.url;
+                const name = current.name || current.requirement;
+                const exists = acc.find(item => (url && (item.data === url || item.url === url)) || (item.name === name && item.name));
+                if (!exists) return acc.concat([{ ...current, data: url || current.data }]);
+                return acc;
+              }, []);
+
+              return (
+                <>
+                  <div className="panel-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <span className="section-kicker">CUSTOMER DETAILS</span>
+                      <h2>{selected.profile.name}</h2>
+                      <p>+91 {selected.phone}</p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => { setEditingCustomer(selected); setEditName(selected.profile.name || ''); setEditPhone(selected.phone || ''); }}
+                        style={{ background: '#0052cc', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        ✏️ Edit Profile
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCustomer(selected)}
+                        style={{ background: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        🗑️ Delete Customer
+                      </button>
+                    </div>
+                  </div>
+                  <h3 className="admin-section-title">Selected services</h3>
+                  {selected.applications.length ? selected.applications.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
+                  <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
+                  {selectedDocs.length ? selectedDocs.map((document, idx) => (
+                    <div className="admin-service-row" key={document.id || idx} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span className="doc-symbol" style={{ background: '#dcfce7', color: '#16a34a', padding: '8px', borderRadius: '8px' }}>
+                          <FileCheck2 size={20} />
+                        </span>
+                        <div>
+                          <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{document.requirement || document.name}</strong>
+                          <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>📄 {document.name} · Uploaded {document.uploadedAt}</small>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                        <a className="document-open" href={document.data} target="_blank" rel="noreferrer" title="View Document" style={{ background: '#0052cc', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none' }}>
+                          <Eye size={15} /> View (காண்க)
+                        </a>
+                        <a className="document-open" href={document.data} download={document.name || 'document.pdf'} style={{ background: '#16a34a', color: 'white', borderColor: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none' }} title="Download Document">
+                          <Download size={14} /> Download (பதிவிறக்கு)
+                        </a>
+                      </div>
+                    </div>
+                  )) : <p className="empty-customer-state">This customer has not uploaded documents yet.</p>}
+                </>
+              );
+            })() : <div className="empty-customer-state">Customer uploads will appear here after customers select a service and upload documents.</div>}
           </section>
         </div>
       )}
@@ -1206,7 +1442,7 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], noti
             <div className="service-search" style={{ flex: 1, margin: 0 }}><Search size={18} /><input type="text" value={tokenSearch} onChange={(e) => setTokenSearch(e.target.value)} placeholder="🔍 Search by Token No (e.g. TOK-123) or Mobile Number (e.g. 9342318844)..." />{tokenSearch && <button type="button" onClick={() => setTokenSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--muted)' }}>Clear</button>}</div>
             <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{filteredTokens.length} {filteredTokens.length === 1 ? 'Token' : 'Tokens'} found</span>
           </div>
-          {tokenBookings.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><CalendarDays size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token bookings yet. Customers who generate a token from the Token Slip page will appear here.</p></div> : filteredTokens.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><Search size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token found matching <strong>"{tokenSearch}"</strong>.</p><small style={{ color: 'var(--muted)' }}>Try searching with Token Number (e.g., TOK-101) or Mobile Number.</small></div> : <div className="token-bookings-table-wrap"><table className="admin-token-table"><thead><tr><th>Token No</th><th>Applicant Name</th><th>Mobile</th><th>Service</th><th>Visit Date</th><th>Time Slot</th><th>WhatsApp Alert</th><th>Status</th></tr></thead><tbody>{filteredTokens.map((tok) => {
+          {tokenBookings.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><CalendarDays size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token bookings yet. Customers who generate a token from the Token Slip page will appear here.</p></div> : filteredTokens.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><Search size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token found matching <strong>"{tokenSearch}"</strong>.</p><small style={{ color: 'var(--muted)' }}>Try searching with Token Number (e.g., TOK-101) or Mobile Number.</small></div> : <div className="token-bookings-table-wrap"><table className="admin-token-table"><thead><tr><th>Token No</th><th>Applicant Name</th><th>Mobile</th><th>Service</th><th>Visit Date</th><th>Time Slot</th><th>WhatsApp Alert</th><th>Technical Status</th><th>Action</th></tr></thead><tbody>{filteredTokens.map((tok) => {
             const waText = encodeURIComponent(`🙏 *வணக்கம் ${tok.customerName}*,\n\nஉங்கள் AkEsevai டோக்கன் *${tok.tokenNo}* உறுதி செய்யப்பட்டது.\nசேவை: ${tok.service}\nதேதி & நேரம்: ${tok.date} (${tok.slot})\n\nAkEsevai மையம், பழனியில் சேவையைப் பெறலாம்.`);
             return (
               <tr key={tok.tokenNo}>
@@ -1226,7 +1462,36 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], noti
                     <MessageCircle size={13} /> WA Alert
                   </a>
                 </td>
-                <td><span className="tok-status-active">{tok.status}</span></td>
+                <td>
+                  <select
+                    value={tok.status || 'CHECKED-IN / VERIFIED'}
+                    onChange={(e) => handleUpdateTokenStatus(tok, e.target.value)}
+                    style={{
+                      background: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#f0fdf4' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#fffbebf' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#fef2f2' : '#eff6ff',
+                      color: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#16a34a' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#d97706' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#dc2626' : '#2563eb',
+                      border: '1.5px solid currentColor',
+                      padding: '5px 8px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="CHECKED-IN / VERIFIED">🟢 VERIFIED / CHECKED-IN (பெறப்பட்டது)</option>
+                    <option value="AWAITING VISIT">🟡 AWAITING VISIT (காத்திருப்பில்)</option>
+                    <option value="COMPLETED / SERVED">🔵 COMPLETED / SERVED (நிறைவடைந்தது)</option>
+                    <option value="NO-SHOW / CANCELLED">🔴 NO-SHOW / CANCELLED (வரவில்லை / ரத்து)</option>
+                  </select>
+                </td>
+                <td>
+                  <button
+                    onClick={() => handleDeleteToken(tok)}
+                    title="Delete Token"
+                    style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '5px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </td>
               </tr>
             );
           })}</tbody></table></div>}
@@ -1320,9 +1585,142 @@ function ApplicationRow({ application }) { return <div className="application-ro
 function DocumentsTab({ customer, updateCustomer, notify }) {
   const [applicationId, setApplicationId] = useState(customer.applications[0]?.id || '');
   const application = customer.applications.find((item) => item.id === applicationId);
-  const uploadDocument = (event, requirement) => { const file = event.target.files?.[0]; if (!file || !application) return; if (file.size > 2 * 1024 * 1024) { notify('Please upload a document smaller than 2 MB.'); return; } const reader = new FileReader(); reader.onload = () => { const document = { id: `${application.id}-${requirement}`, applicationId: application.id, requirement, name: file.name, type: file.type || 'File', uploadedAt: new Date().toLocaleDateString('en-IN'), data: reader.result }; updateCustomer((current) => ({ ...current, documents: [...current.documents.filter((item) => item.id !== document.id), document] })); notify(`${requirement} saved securely for this service.`); }; reader.readAsDataURL(file); };
+
+  const uploadDocument = async (event, requirement) => { 
+    const file = event.target.files?.[0]; 
+    if (!file || !application) return; 
+    if (file.size > 10 * 1024 * 1024) { 
+      notify('❌ Please upload a document smaller than 10 MB.'); 
+      return; 
+    } 
+
+    notify(`⏳ Uploading ${file.name} to Firebase Storage...`);
+    const docRecord = await uploadFileToFirebaseStorage(file, 'customer_documents', customer.phone || 'guest');
+
+    if (docRecord) {
+      const documentObj = { 
+        id: `${application.id}-${requirement}`, 
+        applicationId: application.id, 
+        requirement, 
+        name: file.name, 
+        type: file.type || 'File', 
+        uploadedAt: new Date().toLocaleDateString('en-IN'), 
+        data: docRecord.url || docRecord.data,
+        storagePath: docRecord.storagePath || ''
+      }; 
+
+      updateCustomer((current) => {
+        const existingDocs = current.documents || [];
+        const filtered = existingDocs.filter((item) => item.requirement !== requirement && item.id !== documentObj.id);
+        return { 
+          ...current, 
+          documents: [...filtered, documentObj] 
+        };
+      }); 
+
+      saveExpiryDocumentCloud({
+        id: documentObj.id,
+        name: file.name,
+        requirement,
+        url: docRecord.url || docRecord.data,
+        customerPhone: customer.phone,
+        uploadedAt: new Date().toISOString()
+      });
+
+      notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`); 
+    }
+  };
+
   if (!customer.applications.length) return <div className="tab-content"><div className="panel-heading"><div><span className="section-kicker">DOCUMENT VAULT</span><h2>My documents</h2><p>Select a service first. Its required document list will appear here.</p></div></div></div>;
-  return <div className="tab-content"><div className="panel-heading"><div><span className="section-kicker">DOCUMENT VAULT</span><h2>Required documents</h2><p>Only documents required for your selected service can be uploaded and viewed.</p></div></div><label className="document-service-select">Service<select value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>{customer.applications.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><div className="document-list">{application.requirements.map((requirement) => { const document = customer.documents.find((item) => item.applicationId === application.id && item.requirement === requirement); return <div key={requirement}><span className="doc-symbol"><FileText /></span><span><strong>{requirement}</strong><small>{document ? `${document.name} · Uploaded ${document.uploadedAt}` : 'Required — not uploaded yet'}</small></span>{document ? <><a className="document-open" href={document.data} target="_blank" rel="noreferrer"><Eye size={15} /> View</a><Check className="doc-check" /></> : <label className="document-upload">Upload<input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} /></label>}</div>; })}</div></div>;
+  
+  return (
+    <div className="tab-content">
+      <div className="panel-heading">
+        <div>
+          <span className="section-kicker">DOCUMENT VAULT</span>
+          <h2>Required documents</h2>
+          <p>Only documents required for your selected service can be uploaded and viewed.</p>
+        </div>
+      </div>
+
+      <label className="document-service-select">
+        Service
+        <select value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
+          {customer.applications.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+        </select>
+      </label>
+
+      <div className="document-list">
+        {application.requirements.map((requirement) => { 
+          const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
+          const cleanPhone = (customer.phone || '').replace(/\D/g, '');
+          const allDocs = [
+            ...(customer.documents || []),
+            ...globalExpiryDocs.filter(d => {
+              const docPhone = (d.customerPhone || '').replace(/\D/g, '');
+              return cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
+            }).map(d => ({
+              id: d.id || d.url,
+              requirement: d.requirement || d.title || d.name,
+              name: d.name || 'Uploaded Document',
+              uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
+              data: d.url
+            }))
+          ];
+
+          const document = allDocs.find(
+            (item) => item.requirement === requirement || item.id === `${application.id}-${requirement}` || (item.requirement && requirement && item.requirement.toLowerCase() === requirement.toLowerCase())
+          ); 
+
+          return (
+            <div key={requirement} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '16px', background: document ? '#f0fdf4' : 'white', border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc' }}>
+                  {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
+                </span>
+                <div>
+                  <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{requirement}</strong>
+                  {document ? (
+                    <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>
+                      📄 {document.name} · Uploaded {document.uploadedAt}
+                    </small>
+                  ) : (
+                    <small style={{ fontSize: '12px', color: '#64748b' }}>Required — not uploaded yet</small>
+                  )}
+                </div>
+              </div>
+
+              {document ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+                  <span style={{ background: '#16a34a', color: 'white', padding: '4px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Check size={13} /> UPLOAD SUCCESS
+                  </span>
+
+                  <a className="document-open" href={document.data} target="_blank" rel="noreferrer" title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Eye size={14} /> View (காண்க)
+                  </a>
+
+                  <a className="document-open" href={document.data} download={document.name || 'document.pdf'} style={{ background: '#16a34a', color: 'white', borderColor: '#15803d', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="Download Document">
+                    <Download size={14} /> Download (பதிவிறக்கு)
+                  </a>
+
+                  <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
+                    Change
+                    <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                  </label>
+                </div>
+              ) : (
+                <label className="document-upload" style={{ marginLeft: 'auto' }}>
+                  Upload PDF / JPG
+                  <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} />
+                </label>
+              )}
+            </div>
+          ); 
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default App;

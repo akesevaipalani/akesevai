@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, FileText, CheckCircle2, Printer, MessageCircle, ArrowRight, UploadCloud, RefreshCw, Sparkles, ShieldCheck, Download, PlusCircle, Volume2 } from 'lucide-react';
+import { Cpu, FileText, CheckCircle2, Printer, MessageCircle, ArrowRight, UploadCloud, RefreshCw, Sparkles, ShieldCheck, Download, PlusCircle, Volume2, Eye, Search, FileCheck2 } from 'lucide-react';
 import { saveApplicationRecord, getStoredApplications, updateApplicationStage } from '../utils/statusStore';
+import { subscribeExpiryDocuments } from '../utils/firebaseService';
 import { printElement } from '../utils/printHelper';
 import AdminCounterVoiceAnnouncer from './AdminCounterVoiceAnnouncer';
 import AdminAutoFillProfileDrawer from './AdminAutoFillProfileDrawer';
@@ -14,6 +15,62 @@ export default function AdminSevaiSmartDesk({ notify }) {
   const [fee, setFee] = useState('60');
   const [status, setStatus] = useState('விண்ணப்பிக்கப்பட்டது (Applied & Processing)');
   const [receipt, setReceipt] = useState(null);
+
+  // Customer Uploaded Documents state
+  const [customerDocs, setCustomerDocs] = useState([]);
+  const [docSearch, setDocSearch] = useState('');
+
+  useEffect(() => {
+    const loadMergedDocs = (cloudDocs = []) => {
+      const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
+      const customerRecords = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+      
+      const docsFromProfiles = [];
+      Object.values(customerRecords).forEach((cust) => {
+        if (cust && Array.isArray(cust.documents)) {
+          cust.documents.forEach((d) => {
+            docsFromProfiles.push({
+              id: d.id || d.data,
+              name: d.name || 'Uploaded Document',
+              requirement: d.requirement || 'Document',
+              url: d.data || d.url,
+              customerPhone: cust.phone || d.customerPhone || 'N/A',
+              uploadedAt: d.uploadedAt || 'Recently'
+            });
+          });
+        }
+      });
+
+      const combined = [...(Array.isArray(cloudDocs) ? cloudDocs : []), ...globalExpiryDocs, ...docsFromProfiles];
+      
+      const uniqueDocs = combined.reduce((acc, current) => {
+        const url = current.url || current.data;
+        const name = current.name;
+        if (!url && !name) return acc;
+        const exists = acc.find(item => (url && (item.url === url || item.data === url)) || (item.name === name && item.customerPhone === current.customerPhone));
+        if (!exists) {
+          acc.push({
+            ...current,
+            url: url || current.data,
+            data: url || current.data
+          });
+        }
+        return acc;
+      }, []);
+
+      setCustomerDocs(uniqueDocs);
+    };
+
+    const unsubscribe = subscribeExpiryDocuments((docs) => {
+      loadMergedDocs(docs);
+    });
+
+    loadMergedDocs([]);
+
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
 
   // Photo Cropper & Compressor tool state
   const [uploadedPhoto, setUploadedPhoto] = useState(null);
@@ -193,12 +250,12 @@ export default function AdminSevaiSmartDesk({ notify }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px', marginTop: '20px' }}>
         {/* LEFT FORM: CREATE APPLICATION RECEIPT */}
-        <form onSubmit={handleCreateApplicationReceipt} style={{ background: 'white', border: '1px solid #cbd5e1', borderRadius: '14px', padding: '20px', display: 'grid', gap: '14px' }}>
-          <h4 style={{ font: '800 16px Manrope', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <form onSubmit={handleCreateApplicationReceipt} className="smartdesk-card smartdesk-receipt-form" style={{ border: '1px solid var(--line)', borderRadius: '14px', padding: '20px', display: 'grid', gap: '14px' }}>
+          <h4 className="smartdesk-form-title" style={{ font: '800 16px Manrope', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
             <PlusCircle size={18} color="#16a34a" /> 1. விண்ணப்ப ஒப்புதல் சீட்டு உருவாக்க:
           </h4>
 
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+          <label style={{ fontSize: '12px', fontWeight: 700 }}>
             விண்ணப்பதாரர் பெயர் (Applicant Name) *
             <input
               type="text"
@@ -211,7 +268,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
           </label>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+            <label style={{ fontSize: '12px', fontWeight: 700 }}>
               மொபைல் எண் *
               <input
                 type="tel"
@@ -223,7 +280,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
               />
             </label>
 
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+            <label style={{ fontSize: '12px', fontWeight: 700 }}>
               ஆதார் எண்
               <input
                 type="text"
@@ -236,12 +293,12 @@ export default function AdminSevaiSmartDesk({ notify }) {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+            <label style={{ fontSize: '12px', fontWeight: 700 }}>
               சேவை (Service)
               <select
                 value={service}
                 onChange={(e) => setService(e.target.value)}
-                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none', background: 'white' }}
+                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
               >
                 <option>வருமானச் சான்றிதழ் (Income Certificate)</option>
                 <option>ஜாதிச் சான்றிதழ் (Community Certificate)</option>
@@ -253,7 +310,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
               </select>
             </label>
 
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+            <label style={{ fontSize: '12px', fontWeight: 700 }}>
               கட்டணம் (Fee ₹)
               <input
                 type="number"
@@ -264,12 +321,12 @@ export default function AdminSevaiSmartDesk({ notify }) {
             </label>
           </div>
 
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+          <label style={{ fontSize: '12px', fontWeight: 700 }}>
             நிலை (Status)
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none', background: 'white' }}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
             >
               <option>விண்ணப்பிக்கப்பட்டது (Applied & Processing)</option>
               <option>VAO & RI சரிபார்ப்பில் உள்ளது</option>
@@ -291,8 +348,8 @@ export default function AdminSevaiSmartDesk({ notify }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* GENERATED RECEIPT DISPLAY */}
           {receipt ? (
-            <div id="admin-receipt-print-area" style={{ background: '#ffffff', border: '2px solid #16a34a', borderRadius: '14px', padding: '20px', boxShadow: '0 8px 20px rgba(22,163,74,0.1)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', marginBottom: '12px' }}>
+            <div id="admin-receipt-print-area" className="smartdesk-card smartdesk-receipt-display" style={{ border: '2px solid #16a34a', borderRadius: '14px', padding: '20px', boxShadow: '0 8px 20px rgba(22,163,74,0.1)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '8px', marginBottom: '12px' }}>
                 <div>
                   <strong style={{ fontSize: '14px', color: '#022c7a', display: 'block' }}>AkEsevai Centre, Palani</strong>
                   <small style={{ fontSize: '9px', color: '#16a34a', fontWeight: 800 }}>ACKNOWLEDGEMENT RECEIPT</small>
@@ -314,12 +371,12 @@ export default function AdminSevaiSmartDesk({ notify }) {
               </div>
 
               {/* Action buttons - hidden when printing */}
-              <div data-no-print="true" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div data-no-print="true" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => announceReceiptOverSpeaker(receipt.applicantName, receipt.ackNo)}
-                  style={{ background: '#fbbf24', color: '#022c7a', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  style={{ background: '#7c3aed', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                 >
-                  <Volume2 size={15} /> 📢 குரலில் அழை (Speaker Call)
+                  <Volume2 size={15} /> ஸ்பீக்கர் அழைப்பு (Speaker)
                 </button>
                 <button
                   onClick={handleSendWhatsAppAck}
@@ -336,21 +393,21 @@ export default function AdminSevaiSmartDesk({ notify }) {
               </div>
             </div>
           ) : (
-            <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
+            <div className="smartdesk-card smartdesk-empty-preview" style={{ border: '1px dashed #cbd5e1', borderRadius: '14px', padding: '20px', textAlign: 'center' }}>
               <FileText size={36} color="#94a3b8" />
-              <h5 style={{ font: '800 14px Manrope', color: '#475569', margin: '8px 0 2px' }}>ஒப்புதல் சீட்டு உருவாக்கப்படவில்லை</h5>
-              <p style={{ fontSize: '11px', color: '#94a3b8', margin: 0 }}>இடதுபுற படிவத்தில் விவரங்களை நிரப்பி "ஒப்புதல் சீட்டு உருவாக்கு" பொத்தானைக் அழுத்தவும்.</p>
+              <h5 className="smartdesk-empty-title" style={{ font: '800 14px Manrope', margin: '8px 0 2px' }}>ஒப்புதல் சீட்டு உருவாக்கப்படவில்லை</h5>
+              <p className="smartdesk-empty-sub" style={{ fontSize: '11px', margin: 0 }}>இடதுபுற படிவத்தில் விவரங்களை நிரப்பி "ஒப்புதல் சீட்டு உருவாக்கு" பொத்தானைக் அழுத்தவும்.</p>
             </div>
           )}
 
           {/* SMART PHOTO CROPPER & COMPRESSOR FOR TNEGA/TNPSC */}
-          <div style={{ background: '#ffffff', border: '1.5px solid #0052cc', borderRadius: '14px', padding: '16px' }}>
-            <h5 style={{ font: '800 13px Manrope', color: '#022c7a', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="smartdesk-card smartdesk-compressor-card" style={{ border: '1.5px solid #0052cc', borderRadius: '14px', padding: '16px' }}>
+            <h5 className="smartdesk-compressor-title" style={{ font: '800 13px Manrope', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               📸 ஸ்மார்ட் போட்டோ & ஆவண அமுக்கி (Target Size Compressor):
             </h5>
             
             <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#334155', alignSelf: 'center' }}>அளவு:</span>
+              <span style={{ fontSize: '11px', fontWeight: 800, alignSelf: 'center' }}>அளவு:</span>
               <button
                 type="button"
                 onClick={() => handleTargetKbChange(50)}
@@ -382,7 +439,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
             />
 
             {compressedPhoto && (
-              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '14px', background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '14px', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)' }}>
                 <img src={compressedPhoto} alt="Compressed" style={{ width: '60px', height: '60px', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
                 <div>
                   <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 800 }}>
@@ -402,6 +459,140 @@ export default function AdminSevaiSmartDesk({ notify }) {
             )}
           </div>
         </div>
+      </div>
+
+      {/* CUSTOMER UPLOADED DOCUMENTS VAULT (FIREBASE STORAGE & FIRESTORE) */}
+      <div style={{ background: 'white', border: '2px solid #16a34a', borderRadius: '16px', padding: '22px', marginTop: '25px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1.5px solid #e2e8f0', paddingBottom: '12px' }}>
+          <div>
+            <span style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', padding: '4px 10px', borderRadius: '16px', fontSize: '11px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <FileCheck2 size={14} /> FIREBASE CLOUD STORAGE VAULT
+            </span>
+            <h4 style={{ font: '800 18px Manrope', color: '#0f172a', margin: '4px 0 0' }}>
+              📁 வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள் (Customer Uploaded PDF & JPG Files)
+            </h4>
+          </div>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#16a34a', background: '#e6f4ea', padding: '6px 14px', borderRadius: '20px' }}>
+            {customerDocs.length} ஆவணங்கள் (Files)
+          </span>
+        </div>
+
+        {/* Search Bar */}
+        <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <div className="service-search" style={{ flex: 1, margin: 0 }}>
+            <Search size={17} />
+            <input
+              type="text"
+              value={docSearch}
+              onChange={(e) => setDocSearch(e.target.value)}
+              placeholder="🔍 தேடவும்: மொபைல் எண் அல்லது ஆவணத்தின் பெயர் (Search Phone or File Name)..."
+            />
+          </div>
+          {docSearch && (
+            <button onClick={() => setDocSearch('')} style={{ fontSize: '12px', color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }}>
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Documents Grid / Table */}
+        {customerDocs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px', background: '#f8fafc', borderRadius: '12px', color: '#64748b', fontSize: '13px' }}>
+            <UploadCloud size={32} style={{ opacity: 0.4, marginBottom: '8px' }} />
+            <p style={{ margin: 0, fontWeight: 700 }}>வாடிக்கையாளர்கள் இன்னும் ஆவணங்கள் பதிவேற்றவில்லை.</p>
+            <small>No customer document uploads recorded yet. When a customer uploads a PDF/JPG, it will appear here instantly.</small>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {customerDocs
+              .filter((d) => {
+                if (!docSearch.trim()) return true;
+                const query = docSearch.toLowerCase();
+                return (
+                  d.name?.toLowerCase().includes(query) ||
+                  d.requirement?.toLowerCase().includes(query) ||
+                  d.title?.toLowerCase().includes(query) ||
+                  d.customerPhone?.toLowerCase().includes(query) ||
+                  d.id?.toLowerCase().includes(query)
+                );
+              })
+              .map((doc) => (
+                <div
+                  key={doc.id || doc.url}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'space-between',
+                    gap: '14px',
+                    background: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '14px 18px',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '220px' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#eff6ff', color: '#0052cc', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      <FileText size={20} />
+                    </div>
+                    <div>
+                      <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
+                        {doc.requirement || doc.title || doc.name || 'Uploaded Document'}
+                      </strong>
+                      <small style={{ fontSize: '11px', color: '#64748b' }}>
+                        📄 {doc.name || 'document.pdf'} • 📱 Customer: <strong>+91 {doc.customerPhone || 'N/A'}</strong> • {doc.uploadedAt || 'Recently'}
+                      </small>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <a
+                      href={doc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        background: '#0052cc',
+                        color: 'white',
+                        padding: '7px 14px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        textDecoration: 'none',
+                        boxShadow: '0 2px 6px rgba(0,82,204,0.2)'
+                      }}
+                      title="View PDF or JPG Document"
+                    >
+                      <Eye size={14} /> காண்க (View Document)
+                    </a>
+
+                    <a
+                      href={doc.url}
+                      download={doc.name || 'customer_document.pdf'}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        background: '#16a34a',
+                        color: 'white',
+                        padding: '7px 14px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        textDecoration: 'none',
+                        boxShadow: '0 2px 6px rgba(22,163,74,0.2)'
+                      }}
+                      title="Download PDF or JPG File"
+                    >
+                      <Download size={14} /> பதிவிறக்கு (Download)
+                    </a>
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
       </div>
 
       {/* AUTO-FILL CUSTOMER PROFILE DRAWER FOR TNEGA */}

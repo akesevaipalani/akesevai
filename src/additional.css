@@ -4304,3 +4304,716 @@ button, input, select, textarea, a {
   contain: content;
 }
 
+/* ================= GLOBAL DARK MODE OVERRIDES FOR ALL PAGES & COMPONENTS ================= */
+[data-theme="dark"] {
+  --ink: #f8fafc;
+  --muted: #94a3b8;
+  --line: #243252;
+  --teal: #38bdf8;
+  --teal-dark: #0f172a;
+  --brand-green: #4ade80;
+  --gold: #fbbf24;
+}
+
+[data-theme="dark"] body,
+[data-theme="dark"] .app-shell {
+  background: #0b1329 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .site-header {
+  background: rgba(11, 19, 41, 0.96) !important;
+  border-bottom: 1px solid #1e293b !important;
+}
+
+[data-theme="dark"] .brand-name,
+[data-theme="dark"] h1,
+[data-theme="dark"] h2,
+[data-theme="dark"] h3,
+[data-theme="dark"] h4,
+[data-theme="dark"] h5,
+[data-theme="dark"] h6,
+[data-theme="dark"] strong {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] p,
+[data-theme="dark"] small,
+[data-theme="dark"] span:not(.brand-highlight):not(.cloud-pulse) {
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] table,
+[data-theme="dark"] tr,
+[data-theme="dark"] th,
+[data-theme="dark"] td {
+  background: #141f36 !important;
+  color: #f8fafc !important;
+  border-color: #243252 !important;
+}
+
+[data-theme="dark"] .token-pass-card,
+[data-theme="dark"] .status-tracker-box,
+[data-theme="dark"] .easy-guide-box,
+[data-theme="dark"] .slider-box,
+[data-theme="dark"] .widget-card,
+[data-theme="dark"] .quick-action-card,
+[data-theme="dark"] .announcer-panel,
+[data-theme="dark"] .smart-desk-panel,
+[data-theme="dark"] .revenue-panel,
+[data-theme="dark"] .photo-tool-card,
+[data-theme="dark"] .merger-tool-card,
+[data-theme="dark"] .expiry-card,
+[data-theme="dark"] .readiness-card,
+[data-theme="dark"] .referral-card,
+[data-theme="dark"] .testimonial-card,
+[data-theme="dark"] .modal-content,
+[data-theme="dark"] .drawer-content {
+  background: #141f36 !important;
+  border-color: #243252 !important;
+  color: #f8fafc !important;
+}
+
+/* Token Generator Form Card Dark Mode Overrides */
+[data-theme="dark"] .token-form-card {
+  background: #141f36 !important;
+  border: 1.5px solid #243252 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .token-form-card h3 {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .token-form-card p {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .token-form-card label {
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .token-form-card input,
+[data-theme="dark"] .token-form-card select {
+  background: #0b1324 !important;
+  color: #ffffff !important;
+  border: 1.5px solid #334155 !important;
+}
+
+/* Official Token Pass Slip Dark Mode Overrides */
+[data-theme="dark"] .official-pass-card {
+  background: #141f36 !important;
+  border: 2.5px solid #3b82f6 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-lbl {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-val-name,
+[data-theme="dark"] .official-pass-card .token-val-phone {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-service-val {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-datetime-val {
+  color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-status-box {
+  background: rgba(34, 197, 94, 0.15) !important;
+  border: 1.5px solid #22c55e !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-status-val {
+  color: #4ade80 !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-qr-box {
+  background: #0b1324 !important;
+  border: 1px dashed #334155 !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-qr-subtext {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .official-pass-card .token-actions-footer {
+  background: #0b1324 !important;
+}
+
+/* Responsive Header Navbar Action Controls (Eliminate Duplicate Buttons on Desktop) */
+@media (min-width: 901px) {
+  .mobile-menu-actions {
+    display: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .desktop-only-btn,
+  .desktop-only-badge {
+    display: none !important;
+  }
+  
+  .mobile-menu-actions {
+    display: flex !important;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    width: 100%;
+  }
+
+  .mobile-menu-actions .nav-btn-customer,
+  .mobile-menu-actions .nav-btn-admin {
+    width: 100%;
+    justify-content: center;
+    padding: 11px;
+    font-size: 13px;
+  }
+}
+
+/* ==========================================================================
+   MASTER DARK MODE THEME OVERRIDES (High Contrast & Vibrant Pill Text)
+   ========================================================================== */
+
+[data-theme="dark"] body {
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .page-width,
+[data-theme="dark"] .inner-page,
+[data-theme="dark"] .app-shell {
+  background-color: #090d16 !important;
+  color: #f8fafc !important;
+}
+
+/* Notification Tables & Job/Exam Schedule Dark Mode */
+[data-theme="dark"] .tdcsc-table-card {
+  background: #0f172a !important;
+  border: 1.5px solid #1e293b !important;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .tdcsc-data-table {
+  background: #0f172a !important;
+}
+
+[data-theme="dark"] .tdcsc-data-table th {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border-bottom: 2px solid #334155 !important;
+}
+
+[data-theme="dark"] .tdcsc-data-table td {
+  background: #0f172a !important;
+  color: #cbd5e1 !important;
+  border-bottom: 1px solid #1e293b !important;
+}
+
+[data-theme="dark"] .tdcsc-data-table tr:hover td {
+  background: #1e293b !important;
+}
+
+[data-theme="dark"] .table-service-title {
+  color: #38bdf8 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .qual-badge {
+  background: #064e3b !important;
+  color: #a7f3d0 !important;
+  border: 1px solid #10b981 !important;
+  font-weight: 700 !important;
+}
+
+[data-theme="dark"] .post-count-chip {
+  background: #451a03 !important;
+  color: #fed7aa !important;
+  border: 1px solid #f97316 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .closing-date-tag {
+  background: #4c0519 !important;
+  color: #fecdd3 !important;
+  border: 1px solid #f43f5e !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .closing-date-tag-expired {
+  background: #450a0a !important;
+  color: #fca5a5 !important;
+  border: 1px solid #ef4444 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-open {
+  background: #064e3b !important;
+  color: #a7f3d0 !important;
+  border: 1px solid #10b981 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-upcoming {
+  background: #451a03 !important;
+  color: #fde68a !important;
+  border: 1px solid #f59e0b !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-closed {
+  background: #450a0a !important;
+  color: #fca5a5 !important;
+  border: 1px solid #ef4444 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .btn-details-green {
+  background: #047857 !important;
+  color: #ffffff !important;
+  border: 1px solid #10b981 !important;
+}
+
+[data-theme="dark"] .btn-details-green:hover {
+  background: #059669 !important;
+}
+
+[data-theme="dark"] .btn-apply-orange {
+  background: #ea580c !important;
+  color: #ffffff !important;
+  border: 1px solid #f97316 !important;
+}
+
+[data-theme="dark"] .btn-apply-orange:hover {
+  background: #c2410c !important;
+}
+
+[data-theme="dark"] .btn-closed {
+  background: #334155 !important;
+  color: #94a3b8 !important;
+  border: 1px solid #475569 !important;
+}
+
+/* Service Cards & Catalog Cards Dark Mode */
+[data-theme="dark"] .catalog-card,
+[data-theme="dark"] .service-card,
+[data-theme="dark"] .external-link-card,
+[data-theme="dark"] .notification-card,
+[data-theme="dark"] .software-card,
+[data-theme="dark"] .contact-panel,
+[data-theme="dark"] .contact-form,
+[data-theme="dark"] .form-row,
+[data-theme="dark"] .about-copy,
+[data-theme="dark"] .application-panel,
+[data-theme="dark"] .quick-panel,
+[data-theme="dark"] .tab-content {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .catalog-card h3,
+[data-theme="dark"] .service-card h3,
+[data-theme="dark"] .external-link-card strong,
+[data-theme="dark"] .notification-card h3,
+[data-theme="dark"] .software-card h3,
+[data-theme="dark"] .form-row strong,
+[data-theme="dark"] .about-copy h2 {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .catalog-card p,
+[data-theme="dark"] .service-card p,
+[data-theme="dark"] .external-link-card small,
+[data-theme="dark"] .notification-card small,
+[data-theme="dark"] .software-card p,
+[data-theme="dark"] .form-row small,
+[data-theme="dark"] .about-copy p {
+  color: #94a3b8 !important;
+}
+
+/* Form Inputs & Selects Dark Mode */
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="tel"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] input[type="date"],
+[data-theme="dark"] input[type="password"],
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: #0b1324 !important;
+  color: #ffffff !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Service Modal Details View Dark Mode Overrides */
+[data-theme="dark"] .service-modal-backdrop {
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(6px) !important;
+}
+
+[data-theme="dark"] .service-modal {
+  background: #0f172a !important;
+  border: 2px solid #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 25px 90px rgba(0, 0, 0, 0.7) !important;
+  border-radius: 16px !important;
+}
+
+[data-theme="dark"] .service-modal h2 {
+  color: #38bdf8 !important;
+}
+
+[data-theme="dark"] .service-modal .modal-english {
+  color: #60a5fa !important;
+}
+
+[data-theme="dark"] .service-modal .catalog-group {
+  color: #fbbf24 !important;
+}
+
+[data-theme="dark"] .service-modal .docs-heading {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .service-modal .document-checklist span {
+  color: #f8fafc !important;
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+}
+
+[data-theme="dark"] .service-modal .document-checklist svg {
+  color: #4ade80 !important;
+  background: rgba(34, 197, 94, 0.2) !important;
+}
+
+[data-theme="dark"] .service-modal .docs-note {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .service-modal .modal-close {
+  color: #94a3b8 !important;
+  background: #1e293b !important;
+  border-radius: 50% !important;
+}
+
+/* Service of the Day Banner Dark Mode Overrides */
+[data-theme="dark"] .sod-banner-card {
+  background: #0f172a !important;
+  border: 1.5px solid #1e293b !important;
+}
+
+[data-theme="dark"] .sod-title {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .sod-desc {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .sod-date {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .sod-stat-box {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .sod-stat-val,
+[data-theme="dark"] .sod-stat-days {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .sod-stat-lbl {
+  color: #94a3b8 !important;
+}
+
+/* Admin Dashboard & Customer Details Dark Mode Overrides */
+[data-theme="dark"] .admin-dashboard,
+[data-theme="dark"] .admin-grid,
+[data-theme="dark"] .admin-customers,
+[data-theme="dark"] .admin-detail,
+[data-theme="dark"] .admin-token-bookings,
+[data-theme="dark"] .admin-customer-row,
+[data-theme="dark"] .admin-service-row {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .admin-customers h2,
+[data-theme="dark"] .admin-detail h2,
+[data-theme="dark"] .admin-section-title,
+[data-theme="dark"] .admin-customer-row strong,
+[data-theme="dark"] .admin-service-row strong {
+  color: #38bdf8 !important;
+}
+
+[data-theme="dark"] .admin-customer-row small,
+[data-theme="dark"] .admin-service-row small,
+[data-theme="dark"] .admin-detail p {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .admin-customer-active {
+  background: #1e293b !important;
+  border-left: 4px solid #38bdf8 !important;
+}
+
+[data-theme="dark"] .admin-token-table th {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border-bottom: 2px solid #334155 !important;
+}
+
+[data-theme="dark"] .admin-token-table td {
+  background: #0f172a !important;
+  color: #cbd5e1 !important;
+  border-bottom: 1px solid #1e293b !important;
+}
+
+/* Header Navbar Compact Spacing for Tamil Mode */
+.site-header {
+  padding: 6px 16px !important;
+}
+
+.site-header .page-width {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  width: 100% !important;
+  max-width: 1320px !important;
+}
+
+.site-nav {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 1 !important;
+  justify-content: flex-end !important;
+}
+
+.nav-links {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.nav-links button,
+.nav-links a {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  padding: 5px 8px !important;
+  white-space: nowrap !important;
+}
+
+/* Universal Dark Mode Card & Box Overrides for Status Track Page & All Pages */
+[data-theme="dark"] .tracker-search-card,
+[data-theme="dark"] .status-summary-card,
+[data-theme="dark"] .status-result-wrapper,
+[data-theme="dark"] .status-timeline-card,
+[data-theme="dark"] .status-tracker-container,
+[data-theme="dark"] .quick-status-card,
+[data-theme="dark"] .ai-checker-card,
+[data-theme="dark"] .photo-cropper-card {
+  background: #0f172a !important;
+  border: 1.5px solid #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="dark"] .tracker-search-card h2,
+[data-theme="dark"] .status-summary-card h3,
+[data-theme="dark"] .status-timeline-card h3,
+[data-theme="dark"] .quick-status-card h2,
+[data-theme="dark"] .ai-checker-card h2 {
+  color: #38bdf8 !important;
+}
+
+[data-theme="dark"] .tracker-search-card p,
+[data-theme="dark"] .status-summary-card p,
+[data-theme="dark"] .applicant-meta,
+[data-theme="dark"] .demo-chips span,
+[data-theme="dark"] .date-meta {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .tracker-badge {
+  background: #1e293b !important;
+  color: #38bdf8 !important;
+  border: 1px solid #0284c7 !important;
+}
+
+[data-theme="dark"] .tracker-input-box {
+  background: #0b1324 !important;
+  border-color: #334155 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .tracker-input-box input {
+  background: transparent !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .tracker-input-box input::placeholder {
+  color: #64748b !important;
+}
+
+[data-theme="dark"] .tracker-input-box svg {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .chip-btn {
+  background: #1e293b !important;
+  color: #cbd5e1 !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .chip-btn:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+}
+
+/* Ensure all headings, text, and containers across the app adapt seamlessly in Dark Mode */
+[data-theme="dark"] .app-shell,
+[data-theme="dark"] .page-width,
+[data-theme="dark"] .inner-page {
+  color: #f8fafc;
+}
+
+/* Master Dark Mode Overrides for Photo Cropper, Quick Radar, Social Media, Reviews & Admin Tabs */
+
+[data-theme="dark"] .gov-photo-cropper-card,
+[data-theme="dark"] .quick-lookup-wrapper-card,
+[data-theme="dark"] .social-media-follow-card,
+[data-theme="dark"] .testimonials-section-card {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="dark"] .cropper-title,
+[data-theme="dark"] .lookup-title,
+[data-theme="dark"] .social-card-title,
+[data-theme="dark"] .testimonials-title {
+  color: #38bdf8 !important;
+}
+
+[data-theme="dark"] .cropper-subtitle,
+[data-theme="dark"] .cropper-label,
+[data-theme="dark"] .lookup-desc,
+[data-theme="dark"] .social-card-sub,
+[data-theme="dark"] .testimonials-sub {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .cropper-preset-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .cropper-preset-card.preset-active {
+  background: #0284c7 !important;
+  border-color: #38bdf8 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .preset-name {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .preset-desc {
+  color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .cropper-preset-card.preset-active .preset-name,
+[data-theme="dark"] .cropper-preset-card.preset-active .preset-desc {
+  color: #ffffff !important;
+}
+
+/* Admin Dashboard Tabs Dark Mode Contrast */
+[data-theme="dark"] .dashboard-tabs button {
+  background: #1e293b !important;
+  color: #cbd5e1 !important;
+  border: 1px solid #334155 !important;
+}
+
+[data-theme="dark"] .dashboard-tabs button.tab-active {
+  background: #0052cc !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+}
+
+[data-theme="dark"] .dashboard-tabs button:hover:not(.tab-active) {
+  background: #334155 !important;
+  color: #ffffff !important;
+}
+
+/* Smart Desk & Ad Manager Dark Mode Overrides */
+[data-theme="dark"] .admin-ad-manager-card,
+[data-theme="dark"] .smartdesk-card,
+[data-theme="dark"] .smartdesk-receipt-form,
+[data-theme="dark"] .smartdesk-empty-preview,
+[data-theme="dark"] .smartdesk-compressor-card,
+[data-theme="dark"] .smartdesk-vault-card {
+  background: #0f172a !important;
+  border-color: #1e293b !important;
+  color: #f8fafc !important;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .ad-manager-title,
+[data-theme="dark"] .smartdesk-form-title,
+[data-theme="dark"] .smartdesk-empty-title,
+[data-theme="dark"] .smartdesk-compressor-title,
+[data-theme="dark"] .smartdesk-vault-title {
+  color: #38bdf8 !important;
+}
+
+[data-theme="dark"] .smartdesk-empty-sub {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .smartdesk-card input,
+[data-theme="dark"] .smartdesk-card select,
+[data-theme="dark"] .smartdesk-card textarea {
+  background: #0b1324 !important;
+  color: #ffffff !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .smartdesk-card select option {
+  background: #0f172a !important;
+  color: #ffffff !important;
+}
+

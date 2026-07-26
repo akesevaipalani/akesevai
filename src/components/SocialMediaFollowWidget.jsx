@@ -47,9 +47,8 @@ export default function SocialMediaFollowWidget() {
   ];
 
   return (
-    <div style={{
-      background: 'white',
-      border: '1.5px solid #e2e8f0',
+    <div className="social-media-follow-card" style={{
+      border: '1.5px solid var(--line)',
       borderRadius: '18px',
       padding: '24px 28px',
       marginTop: '28px',
@@ -62,11 +61,11 @@ export default function SocialMediaFollowWidget() {
           <span style={{ background: '#eff6ff', color: '#0052cc', fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
             <Sparkles size={12} /> CONNECT WITH US • சமூக வலைத்தளங்கள்
           </span>
-          <h3 style={{ font: '800 20px Manrope', color: '#0f172a', margin: '4px 0 0' }}>
+          <h3 className="social-card-title" style={{ font: '800 20px Manrope', margin: '4px 0 0' }}>
             எங்களின் சமூக வலைத்தளங்களில் இணையுங்கள்! 📲
           </h3>
         </div>
-        <div style={{ fontSize: '12px', color: '#64748b' }}>
+        <div className="social-card-sub" style={{ fontSize: '12px' }}>
           புதிய அரசு திட்டங்கள் & அறிவிப்புகளை உடனுக்குடன் பெற தொடருங்கள்
         </div>
       </div>

@@ -91,12 +91,12 @@ export const translations = {
     // Navigation
     home: 'முகப்பு',
     services: 'சேவைகள்',
-    statusTrack: 'விண்ணப்ப நிலை',
-    tokenSlip: 'டோக்கன் பெறுக',
-    notifications: 'வேலைவாய்ப்பு அறிவிப்புகள்',
-    about: 'எங்களைப் பற்றி',
-    contact: 'தொடர்புகொள்ள',
-    customerPortal: 'வாடிக்கையாளர் தளம்',
+    statusTrack: 'நிலை அறிதல்',
+    tokenSlip: 'டோக்கன்',
+    notifications: 'அறிவிப்புகள்',
+    about: 'பற்றி',
+    contact: 'தொடர்பு',
+    customerPortal: 'வாடிக்கையாளர்',
     admin: 'நிர்வாகம்',
 
     // Hero Section

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, CheckCircle2, Clock, FileCheck2, Send, AlertCircle, Printer, ArrowRight, ShieldCheck, MapPin, Phone, MessageCircle, QrCode } from 'lucide-react';
 import { getStoredApplications } from '../utils/statusStore';
 import { printElement } from '../utils/printHelper';
+import { subscribeApplications } from '../utils/firebaseService';
 
 const mockApplications = {};
 
@@ -11,13 +12,22 @@ export default function StatusTracker({ initialQuery = '' }) {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
+    const unsubscribe = subscribeApplications(() => {
+      if (query.trim()) {
+        handleSearch(query);
+      }
+    });
+
     const handleStorage = () => {
       if (query.trim()) {
         handleSearch(query);
       }
     };
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [query]);
 
   const handleSearch = (searchKey) => {

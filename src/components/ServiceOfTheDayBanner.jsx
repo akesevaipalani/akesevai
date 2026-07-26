@@ -37,7 +37,7 @@ export default function ServiceOfTheDayBanner({ navigate }) {
   const today = new Date().toLocaleDateString('ta-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return (
-    <div style={{
+    <div className="sod-banner-card" style={{
       background: `linear-gradient(135deg, ${todayService.color}15 0%, ${todayService.color}08 100%)`,
       border: `1.5px solid ${todayService.color}30`,
       borderRadius: '18px',
@@ -47,13 +47,13 @@ export default function ServiceOfTheDayBanner({ navigate }) {
       overflow: 'hidden'
     }}>
       {/* Decorative circle */}
-      <div style={{ position: 'absolute', top: -30, right: -30, width: 130, height: 130, borderRadius: '50%', background: `${todayService.color}10`, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', top: -30, right: -30, width: 130, height: 130, borderRadius: '50%', background: `${todayService.color}15`, pointerEvents: 'none' }} />
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
         {/* Left: label + service info */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           {/* Big emoji */}
-          <div style={{ width: 60, height: 60, background: todayService.bg, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', flexShrink: 0, border: `1.5px solid ${todayService.color}20` }}>
+          <div style={{ width: 60, height: 60, background: todayService.bg, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', flexShrink: 0, border: `1.5px solid ${todayService.color}30` }}>
             {todayService.emoji}
           </div>
           <div>
@@ -61,26 +61,26 @@ export default function ServiceOfTheDayBanner({ navigate }) {
               <span style={{ background: todayService.color, color: 'white', fontSize: '10px', fontWeight: 800, padding: '3px 10px', borderRadius: '20px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                 <Star size={9} fill="white" /> இன்றைய சிறப்பு சேவை
               </span>
-              <span style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 600 }}>{today}</span>
+              <span className="sod-date" style={{ fontSize: '10px', fontWeight: 600 }}>{today}</span>
             </div>
-            <div style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', fontFamily: 'Manrope, sans-serif', lineHeight: 1.1 }}>
+            <div className="sod-title" style={{ fontSize: '20px', fontWeight: 900, fontFamily: 'Manrope, sans-serif', lineHeight: 1.1 }}>
               {todayService.tamil}
             </div>
-            <div style={{ fontSize: '12px', color: todayService.color, fontWeight: 700, marginTop: '1px' }}>{todayService.english}</div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '5px', maxWidth: '380px', lineHeight: 1.5 }}>{todayService.desc}</div>
+            <div className="sod-subtitle" style={{ fontSize: '12px', color: todayService.color, fontWeight: 800, marginTop: '2px' }}>{todayService.english}</div>
+            <div className="sod-desc" style={{ fontSize: '12px', marginTop: '5px', maxWidth: '380px', lineHeight: 1.5 }}>{todayService.desc}</div>
           </div>
         </div>
 
         {/* Right: fee + days + CTA */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px', flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <div style={{ background: 'white', border: `1px solid ${todayService.color}25`, borderRadius: '10px', padding: '8px 14px', textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>கட்டணம்</div>
-              <div style={{ fontSize: '16px', fontWeight: 900, color: todayService.color, fontFamily: 'Manrope' }}>{todayService.fee}</div>
+            <div className="sod-stat-box" style={{ background: 'white', border: `1px solid ${todayService.color}25`, borderRadius: '10px', padding: '8px 14px', textAlign: 'center' }}>
+              <div className="sod-stat-lbl" style={{ fontSize: '11px', fontWeight: 700 }}>கட்டணம்</div>
+              <div className="sod-stat-val" style={{ fontSize: '16px', fontWeight: 900, color: todayService.color, fontFamily: 'Manrope' }}>{todayService.fee}</div>
             </div>
-            <div style={{ background: 'white', border: `1px solid ${todayService.color}25`, borderRadius: '10px', padding: '8px 14px', textAlign: 'center' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>காலம்</div>
-              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', fontFamily: 'Manrope' }}>{todayService.days}</div>
+            <div className="sod-stat-box" style={{ background: 'white', border: `1px solid ${todayService.color}25`, borderRadius: '10px', padding: '8px 14px', textAlign: 'center' }}>
+              <div className="sod-stat-lbl" style={{ fontSize: '11px', fontWeight: 700 }}>காலம்</div>
+              <div className="sod-stat-days" style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'Manrope' }}>{todayService.days}</div>
             </div>
           </div>
           <button

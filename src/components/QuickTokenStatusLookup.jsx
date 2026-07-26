@@ -162,17 +162,17 @@ export default function QuickTokenStatusLookup({ navigate }) {
   const remainingInQueue = Math.max(0, totalInQueue - completedCount);
 
   return (
-    <div className="quick-lookup-wrapper-card" style={{ background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)', border: '2px solid #e2e8f0', borderRadius: '20px', padding: '24px' }}>
+    <div className="quick-lookup-wrapper-card" style={{ border: '2px solid var(--line)', borderRadius: '20px', padding: '24px' }}>
       <div className="lookup-inner">
         {/* Header */}
         <div className="lookup-header-text">
           <span className="lookup-badge" style={{ background: '#022c7a', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <Ticket size={15} /> நேரடி டோக்கன் & வரிசை நிலை / LIVE QUEUE RADAR & STATUS TRACKER
           </span>
-          <h3 className="lookup-title" style={{ fontSize: '24px', fontWeight: 900, color: '#0f172a', marginTop: '12px', marginBottom: '6px' }}>
+          <h3 className="lookup-title" style={{ fontSize: '24px', fontWeight: 900, marginTop: '12px', marginBottom: '6px' }}>
             உங்கள் <span>டோக்கன் எண் அல்லது மொபைல் எண்ணை உள்ளிடுக</span>
           </h3>
-          <p className="lookup-desc" style={{ color: '#64748b', fontSize: '13px', margin: 0 }}>
+          <p className="lookup-desc" style={{ fontSize: '13px', margin: 0 }}>
             உங்களின் 10 இலக்க மொபைல் எண் அல்லது டோக்கன் எண் (எ.கா: <strong>TOK-105</strong> அல்லது <strong>9342318844</strong>) கொடுத்து தற்போதைய நிலையைக் கண்டறியவும்.
           </p>
         </div>
