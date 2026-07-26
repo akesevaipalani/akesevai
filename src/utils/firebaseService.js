@@ -27,12 +27,13 @@ const TOKEN_BOOKINGS_KEY = 'akesevai-token-bookings';
 const EXPIRY_DOCS_KEY = 'akesevai-expiry-documents';
 const SPONSORED_ADS_KEY = 'akesevai-sponsored-ads';
 
-const handleFirebaseError = (context, err) => {
-  if (err?.code === 'permission-denied' || err?.message?.includes('PERMISSION_DENIED')) {
-    console.error(`🚨 Firebase Firestore [${context}] PERMISSION DENIED! Go to Firebase Console -> Cloud Firestore -> Rules tab and set 'allow read, write: if true;' then click Publish.`);
-  } else {
-    console.warn(`Firebase [${context}] notice:`, err?.message || err);
+const logFirebaseNotice = (tag, err) => {
+  const msg = err?.message || String(err || '');
+  if (msg.includes('permissions') || err?.code === 'permission-denied') {
+    // Quietly fallback to local storage mode without spewing console warnings
+    return;
   }
+  console.info(`[AkEsevai Sync] ${tag}:`, msg);
 };
 
 // --- CUSTOMER PROFILES ---
@@ -47,7 +48,7 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
     existing[cleanPhone] = { ...(existing[cleanPhone] || {}), ...profileData, phone: cleanPhone };
     localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(existing));
   } catch (e) {
-    console.warn('Local storage write warning:', e);
+    logFirebaseNotice('Local storage write', e);
   }
 
   // Cloud Firestore payload sanitization (truncate giant base64 Data URLs so Firestore document size <= 1MB)
@@ -73,7 +74,7 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
     const docRef = doc(db, CUSTOMERS_COLLECTION, cleanPhone);
     await setDoc(docRef, { ...dataToSave, lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (err) {
-    console.warn('Firebase customer save fallback to local:', err?.message || err);
+    logFirebaseNotice('Customer cloud save', err);
   }
 };
 
@@ -87,14 +88,14 @@ export const deleteCustomerProfileCloud = async (phone) => {
     delete existing[phone];
     localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(existing));
   } catch (e) {
-    console.warn('Local storage delete warning:', e);
+    logFirebaseNotice('Local storage delete', e);
   }
 
   try {
     const docRef = doc(db, CUSTOMERS_COLLECTION, cleanPhone);
     await deleteDoc(docRef);
   } catch (err) {
-    console.warn('Firebase customer delete warning:', err);
+    logFirebaseNotice('Customer cloud delete', err);
   }
 };
 
@@ -106,14 +107,14 @@ export const deleteTokenBookingCloud = async (tokenNo) => {
     const filtered = existingTokens.filter(t => t.tokenNo !== tokenNo);
     localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(filtered));
   } catch (e) {
-    console.warn('Local token delete warning:', e);
+    logFirebaseNotice('Local token delete', e);
   }
 
   try {
     const docRef = doc(db, TOKENS_COLLECTION, String(tokenNo));
     await deleteDoc(docRef);
   } catch (err) {
-    console.warn('Firebase token delete warning:', err);
+    logFirebaseNotice('Token cloud delete', err);
   }
 };
 
@@ -128,7 +129,7 @@ export const subscribeCustomerProfiles = (callback) => {
       localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(records));
       callback(records);
     }, (error) => {
-      console.warn('Firebase customer listener offline notice:', error);
+      logFirebaseNotice('Customer listener', error);
       const local = JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}');
       callback(local);
     });
@@ -157,7 +158,7 @@ export const saveApplicationCloud = async (appId, appData) => {
     localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(existing));
     window.dispatchEvent(new Event('storage'));
   } catch (e) {
-    console.warn('Local application save warning:', e);
+    logFirebaseNotice('Local application save', e);
   }
 
   // Cloud Firestore sync
@@ -165,7 +166,7 @@ export const saveApplicationCloud = async (appId, appData) => {
     const docRef = doc(db, APPLICATIONS_COLLECTION, appId);
     await setDoc(docRef, { ...dataToSave, lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (err) {
-    console.warn('Firebase application save fallback to local:', err?.message || err);
+    logFirebaseNotice('Application cloud save', err);
   }
 };
 
@@ -185,7 +186,7 @@ export const subscribeApplications = (callback) => {
         callback(local);
       }
     }, (error) => {
-      console.warn('Firebase applications listener offline:', error);
+      logFirebaseNotice('Applications listener', error);
       const local = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
       callback(local);
     });
@@ -214,7 +215,7 @@ export const saveTokenBookingCloud = async (tokenData) => {
     localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(updated));
     window.dispatchEvent(new Event('storage'));
   } catch (e) {
-    console.warn('Local token save warning:', e);
+    logFirebaseNotice('Local token save', e);
   }
 
   // Cloud Firestore sync
@@ -222,7 +223,7 @@ export const saveTokenBookingCloud = async (tokenData) => {
     const docRef = doc(db, TOKENS_COLLECTION, String(tokenData.tokenNo));
     await setDoc(docRef, { ...dataToSave, lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (err) {
-    console.warn('Firebase token save fallback to local:', err?.message || err);
+    logFirebaseNotice('Token cloud save', err);
   }
 };
 
@@ -237,7 +238,7 @@ export const subscribeTokens = (callback) => {
       localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(tokens));
       callback(tokens);
     }, (error) => {
-      console.warn('Firebase tokens listener offline notice:', error);
+      logFirebaseNotice('Tokens listener', error);
       const local = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
       callback(local);
     });
@@ -263,7 +264,7 @@ export const saveExpiryDocumentCloud = async (docData) => {
     const updated = [fullDocData, ...filtered];
     localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(updated));
   } catch (e) {
-    console.warn('Local storage document write warning:', e);
+    logFirebaseNotice('Local document save', e);
   }
 
   // 2. Save to Firebase Firestore documents collection
@@ -271,7 +272,7 @@ export const saveExpiryDocumentCloud = async (docData) => {
     const docRef = doc(db, DOCUMENTS_COLLECTION, String(docId));
     await setDoc(docRef, { ...fullDocData, lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (e) {
-    console.warn('Firebase document save fallback:', e);
+    logFirebaseNotice('Document cloud save', e);
   }
 };
 

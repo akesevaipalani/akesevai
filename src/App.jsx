@@ -1202,11 +1202,20 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
 
   if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button><small className="form-help">Demo password: admin123</small></form></section>;
   const activeRecords = (customerRecords && Object.keys(customerRecords).length > 0) ? customerRecords : readCustomerRecords();
-  const customers = Object.values(activeRecords).sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
-  const matchingCustomers = customers.filter((customer) => `${customer.profile.name} ${customer.phone} ${customer.applications.map((app) => app.name).join(' ')}`.toLowerCase().includes(query.toLowerCase()));
+  const customers = Object.values(activeRecords)
+    .filter(c => c && (c.phone || c.profile?.name))
+    .sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
+  
+  const matchingCustomers = customers.filter((customer) => {
+    const name = customer.profile?.name || 'Customer';
+    const phone = customer.phone || '';
+    const apps = Array.isArray(customer.applications) ? customer.applications.map((app) => app?.name || '').join(' ') : '';
+    return `${name} ${phone} ${apps}`.toLowerCase().includes(query.toLowerCase());
+  });
+
   const selected = matchingCustomers.find((customer) => customer.phone === activeCustomer) || matchingCustomers[0];
-  const totalApplications = customers.reduce((total, customer) => total + customer.applications.length, 0);
-  const totalDocuments = customers.reduce((total, customer) => total + customer.documents.length, 0);
+  const totalApplications = customers.reduce((total, customer) => total + (Array.isArray(customer.applications) ? customer.applications.length : 0), 0);
+  const totalDocuments = customers.reduce((total, customer) => total + (Array.isArray(customer.documents) ? customer.documents.length : 0), 0);
   const filteredTokens = tokenBookings.filter((tok) => {
     const q = tokenSearch.trim().toLowerCase();
     if (!q) return true;
@@ -1344,6 +1353,7 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
               const liveCustomerMap = customerRecords || {};
               const cleanSelectedPhone = (selected.phone || '').replace(/\D/g, '');
               const profileRecord = liveCustomerMap[cleanSelectedPhone] || liveCustomerMap[selected.phone] || {};
+              const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
 
               const combinedDocs = [
                 ...(selected.documents || []),
