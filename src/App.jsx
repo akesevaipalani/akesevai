@@ -588,6 +588,13 @@ function App() {
             
             {/* Mobile Drawer Quick Action Links */}
             <div className="mobile-menu-actions">
+              <button
+                className="lang-switcher-btn drawer-lang-switcher"
+                onClick={() => { toggleLang(); setMenuOpen(false); }}
+              >
+                🌐 <span>{lang === 'ta' ? 'Switch to English' : 'தமிழ் மொழிக்கு மாற்றுக'}</span>
+              </button>
+
               <button 
                 className="nav-btn-customer" 
                 onClick={() => { navigate('customer'); setMenuOpen(false); }}
@@ -612,7 +619,7 @@ function App() {
               onClick={toggleLang}
               title={lang === 'ta' ? 'Switch language to English' : 'தமிழ் மொழிக்கு மாற்றுக'}
             >
-              🌐 <span>{lang === 'ta' ? 'English' : 'தமிழ்'}</span>
+              🌐 <span className="lang-switcher-text">{lang === 'ta' ? 'EN' : 'தமிழ்'}</span>
             </button>
 
             <button

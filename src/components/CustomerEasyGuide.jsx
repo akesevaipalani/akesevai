@@ -519,22 +519,16 @@ export default function CustomerEasyGuide({ navigate }) {
       {/* Floating Help Button */}
       <button
         id="customer-help-guide-btn"
+        className="customer-help-float-btn"
         onClick={() => setIsOpen(true)}
         title="உதவி தேவையா? Customer Help Guide"
         style={{
-          position: 'fixed',
-          bottom: '90px',
-          left: '16px',
-          zIndex: 9998,
           background: pulse
             ? 'linear-gradient(135deg, #16a34a 0%, #022c7a 100%)'
             : 'linear-gradient(135deg, #0052cc 0%, #022c7a 100%)',
           color: 'white',
           border: 'none',
           borderRadius: '50px',
-          padding: '10px 16px',
-          fontSize: '12px',
-          fontWeight: 800,
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',

@@ -525,3 +525,145 @@ html, body {
   .button { min-height: 44px; width: 100%; }
 }
 
+/* ===================== UNIVERSAL MOBILE FIT & ERGONOMICS ===================== */
+
+/* Floating Help Button Responsiveness */
+.customer-help-float-btn {
+  position: fixed !important;
+  bottom: 24px !important;
+  left: 24px !important;
+  z-index: 998 !important;
+  padding: 10px 16px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+}
+
+@media (max-width: 650px) {
+  .customer-help-float-btn {
+    bottom: 16px !important;
+    left: 16px !important;
+    padding: 8px 13px !important;
+    font-size: 11px !important;
+    box-shadow: 0 4px 14px rgba(0, 82, 204, 0.3) !important;
+  }
+}
+
+/* Header Navbar Fits All Mobile Devices (OnePlus 13, iPhone, Galaxy, Pixel, Xiaomi, etc.) */
+.site-header {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 100 !important;
+  width: 100% !important;
+}
+
+.header-inner {
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.brand {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  flex-shrink: 1 !important;
+  overflow: hidden !important;
+}
+
+.brand-text-wrap {
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+}
+
+.header-actions-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-shrink: 0 !important;
+}
+
+.menu-button {
+  flex-shrink: 0 !important;
+}
+
+@media (max-width: 768px) {
+  .header-inner {
+    height: 66px !important;
+    width: 100% !important;
+    padding: 0 14px !important;
+  }
+
+  .brand-tagline {
+    display: none !important;
+  }
+
+  .brand-name {
+    font-size: 17px !important;
+    white-space: nowrap !important;
+  }
+
+  .brand-logo-img {
+    height: 34px !important;
+    width: auto !important;
+  }
+
+  .header-actions-right {
+    gap: 6px !important;
+  }
+
+  .lang-switcher-btn {
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+    border-radius: 16px !important;
+  }
+
+  .menu-button {
+    display: flex !important;
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 10px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .header-inner {
+    padding: 0 10px !important;
+  }
+
+  .brand-name {
+    font-size: 15px !important;
+  }
+
+  .brand-logo-img {
+    height: 30px !important;
+  }
+
+  .header-actions-right {
+    gap: 5px !important;
+  }
+
+  .lang-switcher-btn {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+}
+
+.drawer-lang-switcher {
+  width: 100% !important;
+  justify-content: center !important;
+  padding: 10px !important;
+  margin-bottom: 4px !important;
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  border-radius: 10px !important;
+}
+
+[data-theme="dark"] .drawer-lang-switcher {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+

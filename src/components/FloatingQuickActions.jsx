@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MessageCircle, Phone, Ticket, X, Sparkles } from 'lucide-react';
 
 export default function FloatingQuickActions({ navigate }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleWhatsApp = () => {
     const text = encodeURIComponent('🙏 *வணக்கம் AkEsevai*, சேவை விவரங்கள் மற்றும் டோக்கன் முன்பதிவு குறித்து அறிய தொடர்பு கொள்கிறேன்.');
