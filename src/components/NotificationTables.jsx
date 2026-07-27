@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BriefcaseBusiness, CalendarDays, GraduationCap, ExternalLink, FileText, Search, Download, Trash2, Plus, X, Check, ShieldAlert } from 'lucide-react';
-import { saveLiveQueueCloud } from '../utils/firebaseService';
+import { saveLiveQueueCloud, deleteNotificationCloud } from '../utils/firebaseService';
 
 export function parseDateString(dateStr) {
   if (!dateStr) return null;
@@ -349,7 +349,7 @@ export default function NotificationTables({ forceAdmin }) {
     return { nextJobs, nextExams, nextEdu };
   };
 
-  const handleDeleteJob = (id) => {
+  const handleDeleteJob = async (id) => {
     if (window.confirm('இந்த வேலைவாய்ப்பு அறிவிப்பை நீக்க வேண்டுமா? (Delete this notification?)')) {
       const filtered = jobs.filter(item => item.id !== id);
       const { nextJobs, nextExams, nextEdu } = autoReplenishIfEmpty(filtered, exams, education);
@@ -357,10 +357,11 @@ export default function NotificationTables({ forceAdmin }) {
       setExams(nextExams);
       setEducation(nextEdu);
       saveLists(nextJobs, nextExams, nextEdu);
+      await deleteNotificationCloud(id);
     }
   };
 
-  const handleDeleteExam = (id) => {
+  const handleDeleteExam = async (id) => {
     if (window.confirm('இந்த தேர்வு அறிவிப்பை நீக்க வேண்டுமா? (Delete this exam schedule?)')) {
       const filtered = exams.filter(item => item.id !== id);
       const { nextJobs, nextExams, nextEdu } = autoReplenishIfEmpty(jobs, filtered, education);
@@ -368,10 +369,11 @@ export default function NotificationTables({ forceAdmin }) {
       setExams(nextExams);
       setEducation(nextEdu);
       saveLists(nextJobs, nextExams, nextEdu);
+      await deleteNotificationCloud(id);
     }
   };
 
-  const handleDeleteEdu = (id) => {
+  const handleDeleteEdu = async (id) => {
     if (window.confirm('இந்த கல்வி அறிவிப்பை நீக்க வேண்டுமா? (Delete this education application?)')) {
       const filtered = education.filter(item => item.id !== id);
       const { nextJobs, nextExams, nextEdu } = autoReplenishIfEmpty(jobs, exams, filtered);
@@ -379,6 +381,7 @@ export default function NotificationTables({ forceAdmin }) {
       setExams(nextExams);
       setEducation(nextEdu);
       saveLists(nextJobs, nextExams, nextEdu);
+      await deleteNotificationCloud(id);
     }
   };
 

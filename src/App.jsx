@@ -154,7 +154,9 @@ import {
   saveExpiryDocumentCloud,
   fetchAllCloudRecords,
   deleteCustomerProfileCloud,
-  deleteTokenBookingCloud
+  deleteTokenBookingCloud,
+  deleteApplicationCloud,
+  deleteExpiryDocumentCloud
 } from './utils/firebaseService';
 
 const defaultSampleCustomerRecords = {
@@ -202,10 +204,32 @@ const readCustomerRecords = () => {
 };
 
 const saveCustomerRecord = (record) => {
-  const records = readCustomerRecords();
-  records[record.phone] = record;
-  localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(records));
-  saveCustomerProfileCloud(record.phone, record);
+  try {
+    const records = readCustomerRecords();
+    records[record.phone] = record;
+    try {
+      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(records));
+    } catch (quotaErr) {
+      console.warn('localStorage quota reached. Pruning heavy document strings...', quotaErr);
+      const sanitizedRecords = { ...records };
+      Object.keys(sanitizedRecords).forEach(p => {
+        if (sanitizedRecords[p]?.documents) {
+          sanitizedRecords[p].documents = sanitizedRecords[p].documents.map(doc => ({
+            ...doc,
+            data: doc.data && doc.data.length > 100000 ? '' : doc.data
+          }));
+        }
+      });
+      try {
+        localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(sanitizedRecords));
+      } catch (e) {
+        console.error('Failed to write to localStorage:', e);
+      }
+    }
+    saveCustomerProfileCloud(record.phone, record);
+  } catch (err) {
+    console.error('Error saving customer record:', err);
+  }
 };
 
 const readTokenBookings = () => {
@@ -216,7 +240,11 @@ const persistTokenBooking = (token) => {
   const tokens = readTokenBookings();
   // Avoid exact duplicates by tokenNo
   const updated = [token, ...tokens.filter(t => t.tokenNo !== token.tokenNo)];
-  localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(updated));
+  try {
+    localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('localStorage token booking write error:', e);
+  }
   saveTokenBookingCloud(token);
   return updated;
 };

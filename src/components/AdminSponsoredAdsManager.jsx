@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Megaphone, Plus, Trash2, Edit3, CheckCircle2, Phone, MessageCircle, Sparkles, RefreshCw, ImagePlus, SlidersHorizontal, X, UploadCloud } from 'lucide-react';
+import { deleteSponsoredAdCloud } from '../utils/firebaseService';
 
 const DEFAULT_ADS = [
   {
@@ -188,11 +189,12 @@ export default function AdminSponsoredAdsManager({ notify }) {
     setEditingAdId(null);
   };
 
-  const handleDeleteAd = (id) => {
+  const handleDeleteAd = async (id) => {
     if (!window.confirm('⚠️ இந்த விளம்பரத்தை நீக்க நிச்சயமாக விரும்புகிறீர்களா?')) return;
     const updated = ads.filter((a) => a.id !== id);
     saveAdsToStorage(updated);
-    if (notify) notify('🗑️ விளம்பரம் நீக்கப்பட்டது.');
+    await deleteSponsoredAdCloud(id);
+    if (notify) notify('🗑️ விளம்பரம் Firebase பின்தளத்திலிருந்து நீக்கப்பட்டது.');
   };
 
   const handleResetDefaults = () => {

@@ -87,6 +87,7 @@ export const deleteCustomerProfileCloud = async (phone) => {
     delete existing[cleanPhone];
     delete existing[phone];
     localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(existing));
+    window.dispatchEvent(new Event('storage'));
   } catch (e) {
     logFirebaseNotice('Local storage delete', e);
   }
@@ -94,6 +95,9 @@ export const deleteCustomerProfileCloud = async (phone) => {
   try {
     const docRef = doc(db, CUSTOMERS_COLLECTION, cleanPhone);
     await deleteDoc(docRef);
+    if (phone && phone !== cleanPhone) {
+      try { await deleteDoc(doc(db, CUSTOMERS_COLLECTION, String(phone))); } catch {}
+    }
   } catch (err) {
     logFirebaseNotice('Customer cloud delete', err);
   }
@@ -104,8 +108,9 @@ export const deleteTokenBookingCloud = async (tokenNo) => {
 
   try {
     const existingTokens = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-    const filtered = existingTokens.filter(t => t.tokenNo !== tokenNo);
+    const filtered = existingTokens.filter(t => String(t.tokenNo) !== String(tokenNo) && String(t.id) !== String(tokenNo));
     localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(filtered));
+    window.dispatchEvent(new Event('storage'));
   } catch (e) {
     logFirebaseNotice('Local token delete', e);
   }
@@ -115,6 +120,77 @@ export const deleteTokenBookingCloud = async (tokenNo) => {
     await deleteDoc(docRef);
   } catch (err) {
     logFirebaseNotice('Token cloud delete', err);
+  }
+};
+
+export const deleteApplicationCloud = async (appId) => {
+  if (!appId) return;
+
+  try {
+    const existing = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
+    delete existing[appId];
+    localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(existing));
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {
+    logFirebaseNotice('Local application delete', e);
+  }
+
+  try {
+    const docRef = doc(db, APPLICATIONS_COLLECTION, String(appId));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Application cloud delete', err);
+  }
+};
+
+export const deleteExpiryDocumentCloud = async (docId) => {
+  if (!docId) return;
+
+  try {
+    const existing = JSON.parse(localStorage.getItem(EXPIRY_DOCS_KEY) || '[]');
+    const filtered = existing.filter(d => String(d.id) !== String(docId) && String(d.url) !== String(docId));
+    localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(filtered));
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {
+    logFirebaseNotice('Local document delete', e);
+  }
+
+  try {
+    const docRef = doc(db, DOCUMENTS_COLLECTION, String(docId));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Document cloud delete', err);
+  }
+};
+
+export const deleteSponsoredAdCloud = async (adId) => {
+  if (!adId) return;
+
+  try {
+    const existing = JSON.parse(localStorage.getItem(SPONSORED_ADS_KEY) || '[]');
+    const filtered = existing.filter(a => String(a.id) !== String(adId));
+    localStorage.setItem(SPONSORED_ADS_KEY, JSON.stringify(filtered));
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {
+    logFirebaseNotice('Local ad delete', e);
+  }
+
+  try {
+    const docRef = doc(db, ADS_COLLECTION, String(adId));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Sponsored ad cloud delete', err);
+  }
+};
+
+export const deleteNotificationCloud = async (notifId) => {
+  if (!notifId) return;
+
+  try {
+    const docRef = doc(db, 'notifications', String(notifId));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Notification cloud delete', err);
   }
 };
 
@@ -251,6 +327,60 @@ export const subscribeTokens = (callback) => {
 
 // --- EXPIRY DOCUMENTS ---
 
+export const compressImageForUpload = (file) => {
+  return new Promise((resolve) => {
+    if (!file || !file.type || !file.type.startsWith('image/')) {
+      resolve(file);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDimension = 1200;
+
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], (file.name || 'doc.jpg').replace(/\.[^/.]+$/, ".jpg"), {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              resolve(compressedFile);
+            } else {
+              resolve(file);
+            }
+          },
+          'image/jpeg',
+          0.65
+        );
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+};
+
 export const saveExpiryDocumentCloud = async (docData) => {
   if (!docData || (!docData.id && !docData.url)) return;
 
@@ -262,7 +392,16 @@ export const saveExpiryDocumentCloud = async (docData) => {
     const existing = JSON.parse(localStorage.getItem(EXPIRY_DOCS_KEY) || '[]');
     const filtered = existing.filter(d => d.id !== docId && d.url !== fullDocData.url);
     const updated = [fullDocData, ...filtered];
-    localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(updated));
+    try {
+      localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(updated));
+    } catch (quotaErr) {
+      console.warn('localStorage quota reached for expiry docs. Cleaning heavy data strings...', quotaErr);
+      const cleaned = updated.map(d => ({
+        ...d,
+        url: d.url && d.url.length > 200000 && d.url.startsWith('data:') ? '' : d.url
+      }));
+      localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(cleaned));
+    }
   } catch (e) {
     logFirebaseNotice('Local document save', e);
   }
@@ -278,8 +417,11 @@ export const saveExpiryDocumentCloud = async (docData) => {
 
 // --- FIREBASE CLOUD STORAGE UPLOAD (PDF & JPG FILES) ---
 
-export const uploadFileToFirebaseStorage = async (file, pathFolder = 'customer_documents', customerPhone = '') => {
-  if (!file) return null;
+export const uploadFileToFirebaseStorage = async (fileInput, pathFolder = 'customer_documents', customerPhone = '') => {
+  if (!fileInput) return null;
+
+  // Compress image if camera/photo upload
+  const file = await compressImageForUpload(fileInput);
 
   const timestamp = Date.now();
   const sanitizeName = file.name ? file.name.replace(/[^a-zA-Z0-9.-]/g, '_') : `doc_${timestamp}`;
@@ -289,12 +431,22 @@ export const uploadFileToFirebaseStorage = async (file, pathFolder = 'customer_d
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
+        let resultUrl = e.target.result;
+        // Safety check: if data URL is huge (> 1.5MB), use Object URL to prevent quota crash
+        if (resultUrl && resultUrl.length > 1500000) {
+          try {
+            resultUrl = URL.createObjectURL(file);
+          } catch (objErr) {
+            console.warn('Object URL creation fallback', objErr);
+          }
+        }
+
         const localRecord = {
           id: `DOC-LOCAL-${timestamp}`,
           name: file.name || sanitizeName,
           type: file.type || 'application/pdf',
           size: file.size || 0,
-          url: e.target.result,
+          url: resultUrl,
           customerPhone,
           uploadedAt: new Date().toISOString()
         };

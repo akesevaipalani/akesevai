@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Calendar, PlusCircle, Trash2, CheckCircle2, Clock, MessageCircle, AlertTriangle, Sparkles } from 'lucide-react';
+import { deleteExpiryDocumentCloud } from '../utils/firebaseService';
 
 const LOCAL_STORAGE_KEY = 'akesevai_user_doc_expiries';
 
@@ -74,9 +75,10 @@ export default function DocumentExpiryTracker({ onBookTokenForRenewal }) {
     setExpiryDate('');
   };
 
-  const handleDeleteDocument = (id) => {
+  const handleDeleteDocument = async (id) => {
     const updated = documents.filter((d) => d.id !== id);
     saveDocs(updated);
+    await deleteExpiryDocumentCloud(id);
   };
 
   const getExpiryStatus = (expDateStr) => {
