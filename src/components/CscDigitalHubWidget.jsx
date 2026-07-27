@@ -7,8 +7,8 @@ export default function CscDigitalHubWidget({ navigate }) {
   const [copied, setCopied] = useState(false);
 
   const [queueStatus, setQueueStatus] = useState({
-    queueCount: '3 நபர்கள் (In Queue)',
-    waitTime: '~ 5 நிமிடங்கள்',
+    queueCount: '0 நபர்கள் (In Queue)',
+    waitTime: '~ 0 நிமிடங்கள்',
     statusText: '🟢 மையம் திறந்துள்ளது (Open Now)',
     upiId: 'alakesh.kumar7@okhdfcbank'
   });

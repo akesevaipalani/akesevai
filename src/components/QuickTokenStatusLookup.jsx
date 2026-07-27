@@ -9,12 +9,12 @@ export default function QuickTokenStatusLookup({ navigate }) {
   const [hasSearched, setHasSearched] = useState(false);
   const [liveQueueState, setLiveQueueState] = useState({
     status: 'open',
-    currentCalledToken: 'TOK-103',
-    currentCustomerName: 'கந்தசாமி K',
+    currentCalledToken: '-',
+    currentCustomerName: '-',
     counterNo: '1',
     avgMinsPerToken: 5,
-    completedCount: 14,
-    totalInQueue: 18
+    completedCount: 0,
+    totalInQueue: 0
   });
 
   useEffect(() => {

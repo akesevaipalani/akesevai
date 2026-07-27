@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Mic, Bell, Sparkles, CheckCircle2, Play, User, RefreshCw, Volume1, SkipForward, SkipBack, ListOrdered, PlusCircle, Smartphone } from 'lucide-react';
 import { getStoredApplications, syncWithCentralServer } from '../utils/statusStore';
-import { saveLiveQueueCloud, saveTokenBookingCloud, subscribeTokens } from '../utils/firebaseService';
+import { saveLiveQueueCloud, saveTokenBookingCloud, subscribeTokens, fetchAllCloudRecords } from '../utils/firebaseService';
 
 const ENGLISH_TO_TAMIL_NAME_MAP = {
   'kandasamy': 'கந்தசாமி',
@@ -62,23 +62,12 @@ const convertNameToTamilScript = (name) => {
   return converted.join(' ');
 };
 
-const DEFAULT_QUEUE = [
-  { tokenNo: 'TOK-101', name: 'கந்தசாமி K' },
-  { tokenNo: 'TOK-102', name: 'முருகன் M' },
-  { tokenNo: 'TOK-103', name: 'செல்வி R' },
-  { tokenNo: 'TOK-104', name: 'இராமன் S' },
-  { tokenNo: 'TOK-105', name: 'கார்த்திக் P' },
-  { tokenNo: 'TOK-106', name: 'விஜயலட்சுமி T' },
-  { tokenNo: 'TOK-107', name: 'சரவணன் A' },
-  { tokenNo: 'TOK-108', name: 'அனிதா G' }
-];
-
 export default function AdminCounterVoiceAnnouncer() {
-  const [tokenQueue, setTokenQueue] = useState(DEFAULT_QUEUE);
+  const [tokenQueue, setTokenQueue] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const [customerName, setCustomerName] = useState(DEFAULT_QUEUE[0].name);
-  const [tokenNo, setTokenNo] = useState(DEFAULT_QUEUE[0].tokenNo);
+  const [customerName, setCustomerName] = useState('');
+  const [tokenNo, setTokenNo] = useState('');
   const [counterNo, setCounterNo] = useState('1');
   const [speechSpeed, setSpeechSpeed] = useState(0.85);
   const [repeatCount, setRepeatCount] = useState(1);
@@ -94,11 +83,11 @@ export default function AdminCounterVoiceAnnouncer() {
 
   // Queue Analytics Controls for Admin
   const [avgMinsPerToken, setAvgMinsPerToken] = useState(5);
-  const [completedCount, setCompletedCount] = useState(14);
+  const [completedCount, setCompletedCount] = useState(0);
 
   const saveLiveQueueStatus = (overrideToken, overrideName, overrideMins, overrideCompleted) => {
-    const activeTok = overrideToken || tokenNo || 'TOK-103';
-    const activeName = overrideName !== undefined ? overrideName : (customerName || 'கந்தசாமி K');
+    const activeTok = overrideToken || tokenNo || '-';
+    const activeName = overrideName !== undefined ? overrideName : (customerName || '-');
     const activeMins = overrideMins !== undefined ? overrideMins : avgMinsPerToken;
     const activeCompleted = overrideCompleted !== undefined ? overrideCompleted : completedCount;
 
@@ -109,7 +98,7 @@ export default function AdminCounterVoiceAnnouncer() {
       counterNo: counterNo || '1',
       avgMinsPerToken: activeMins,
       completedCount: activeCompleted,
-      totalInQueue: tokenQueue.length || 18,
+      totalInQueue: tokenQueue.length,
       lastUpdated: new Date().toISOString()
     };
 
@@ -123,63 +112,38 @@ export default function AdminCounterVoiceAnnouncer() {
     } catch (e) {}
   };
 
-  // Sync token queue with central server API & Firebase Cloud
+  // Sync token queue with Firebase Cloud
+  useEffect(() => {
+    const unsubscribe = subscribeTokens((cloudTokens) => {
+      if (Array.isArray(cloudTokens)) {
+        const formatted = cloudTokens.map(t => ({
+          tokenNo: t.tokenNo || t.id,
+          name: t.customerName || t.applicantName || t.name || 'வாடிக்கையாளர்'
+        }));
+        setTokenQueue(formatted);
+        if (formatted.length > 0 && !tokenNo) {
+          setTokenNo(formatted[0].tokenNo);
+          setCustomerName(formatted[0].name);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   const syncQueueFromStorage = async () => {
     try {
-      const storedApps = getStoredApplications();
-      let combinedQueue = [];
-
-      const appsList = Array.isArray(storedApps) ? storedApps : Object.values(storedApps || {});
-      appsList.forEach((sa) => {
-        if (sa && sa.tokenId && sa.applicantName) {
-          combinedQueue.push({ tokenNo: sa.tokenId, name: sa.applicantName });
-        }
-      });
-
-      const uniqueMap = new Map();
-      [...combinedQueue, ...DEFAULT_QUEUE].forEach(item => {
-        if (!uniqueMap.has(item.tokenNo)) {
-          uniqueMap.set(item.tokenNo, item);
-        }
-      });
-      const merged = Array.from(uniqueMap.values());
-      setTokenQueue(merged);
-    } catch (e) {
-      console.error(e);
-    }
+      const records = await fetchAllCloudRecords();
+      if (records && records.tokens) {
+        const formatted = records.tokens.map(t => ({
+          tokenNo: t.tokenNo || t.id,
+          name: t.customerName || t.applicantName || t.name || 'வாடிக்கையாளர்'
+        }));
+        setTokenQueue(formatted);
+      }
+    } catch (e) {}
   };
 
-  useEffect(() => {
-    syncQueueFromStorage();
 
-    const interval = setInterval(() => {
-      syncQueueFromStorage();
-    }, 2500);
-
-    let channel = null;
-    if ('BroadcastChannel' in window) {
-      channel = new BroadcastChannel('akesevai_token_sync_channel');
-      channel.onmessage = (event) => {
-        if (event.data && event.data.type === 'NEW_TOKEN') {
-          syncQueueFromStorage();
-        }
-      };
-    }
-
-    const handleStorageEvent = (e) => {
-      if (e.key === 'akesevai-token-bookings' || e.key === 'akesevai-application-records') {
-        syncQueueFromStorage();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageEvent);
-
-    return () => {
-      clearInterval(interval);
-      if (channel) channel.close();
-      window.removeEventListener('storage', handleStorageEvent);
-    };
-  }, []);
 
   // Load and cache browser voices
   useEffect(() => {
