@@ -21,23 +21,10 @@ export default function DocumentExpiryTracker({ onBookTokenForRenewal }) {
 
   useEffect(() => {
     const unsubscribe = subscribeExpiryDocuments((cloudDocs) => {
-      if (Array.isArray(cloudDocs) && cloudDocs.length > 0) {
+      if (Array.isArray(cloudDocs)) {
         setDocuments(cloudDocs);
       } else {
-        setDocuments([
-          {
-            id: 'doc-1',
-            docName: 'வருமானச் சான்றிதழ் (Income Certificate)',
-            certNo: 'TN-72025010492',
-            expiryDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]
-          },
-          {
-            id: 'doc-2',
-            docName: 'ஓட்டுநர் உரிமம் (Driving License / DL)',
-            certNo: 'TN57-2021008492',
-            expiryDate: new Date(Date.now() + 120 * 86400000).toISOString().split('T')[0]
-          }
-        ]);
+        setDocuments([]);
       }
     });
     return () => {

@@ -85,32 +85,6 @@ export default function StatusTracker({ initialQuery = '' }) {
       }
     }
 
-    // If not found, search in Logged-In Customer Records or Active Session
-    if (!found && cleanKey && (customerRecords[cleanKey] || loggedInSessionPhone === cleanKey)) {
-      const cust = customerRecords[cleanKey] || {};
-      found = {
-        id: `TN-AK-2026-${cleanKey.slice(-5)}`,
-        tokenId: 'TOK-108',
-        applicantName: cust.profile?.name || 'வாடிக்கையாளர்',
-        phone: cleanKey,
-        service: 'வருமானச் சான்றிதழ் (Income Certificate)',
-        submittedDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-        estimatedDate: '3 முதல் 5 வேலை நாட்கள்',
-        currentStage: 4,
-        statusLabel: 'VAO & RI களப்பரிசீலனையில் உள்ளது (VAO & RI Inspection)',
-        statusColor: '#d97706',
-        remarks: 'உங்கள் கணக்கில் ஆவணங்கள் சரிபார்க்கப்பட்டு TNeGA அரசு தளத்தில் விண்ணப்பிக்கப்பட்டு பரிசீலனையில் உள்ளது.',
-        timeline: [
-          { step: 1, title: 'Application Received', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: 'Today', done: true },
-          { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: 'Today', done: true },
-          { step: 3, title: 'Fee Payment Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: 'Today', done: true },
-          { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: 'In Progress', done: true, active: true },
-          { step: 5, title: 'VAO & RI Inspection', tamil: 'அதிகாரி பரிசீலனை', date: 'Pending', done: false },
-          { step: 6, title: 'Approved & Completed', tamil: 'சான்றிதழ் தயாராக உள்ளது', date: 'Pending', done: false }
-        ]
-      };
-    }
-
     if (found) {
       setSearchedApp({
         ...found,

@@ -2,42 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Star, ShieldCheck, CheckCircle, PlusCircle, Send, X, ThumbsUp } from 'lucide-react';
 import { subscribeCustomerReviews, saveCustomerReviewCloud } from '../utils/firebaseService';
 
-const initialReviews = [
-  {
-    id: 1,
-    name: 'முத்துகிருஷ்ணன் K.',
-    place: 'பழனி',
-    rating: 5,
-    service: 'ஆதார் முகவரி & மொபைல் எண் மாற்றம்',
-    comment: 'ஆதாரில் முகவரி மற்றும் மொபைல் எண் மாற்ற 10 நிமிடங்களில் விண்ணப்பித்து விட்டார்கள். டோக்கன் முறை மிகவும் வசதியாக உள்ளது!',
-    date: 'இன்று'
-  },
-  {
-    id: 2,
-    name: 'செல்வி சண்முகப்பிரியா',
-    place: 'சண்முகபுரம், பழனி',
-    rating: 5,
-    service: 'வருமானச் சான்று & சாதிச் சான்று',
-    comment: 'மகள் கல்வி உதவித்தொகைக்கு வருமானச் சான்று 4 நாட்களில் கிடைத்தது. AkEsevai மையத்தின் வழிகாட்டுதல் மிகவும் பயனுள்ளது.',
-    date: 'நேற்று'
-  },
-  {
-    id: 3,
-    name: 'இராமசாமி P.',
-    place: 'மில் ரோடு, பழனி',
-    rating: 5,
-    service: 'ஸ்மார்ட் குடும்ப அட்டை பெயர் சேர்த்தல்',
-    comment: 'புதிதாகத் திருமணமான என் மருமகளுக்குக் குடும்ப அட்டையில் பெயர் சேர்க்க எளிதாக உதவி செய்தார்கள். மிக்க நன்றி!',
-    date: '2 நாட்களுக்கு முன்'
-  }
-];
-
 export default function CustomerTestimonials() {
-  const [reviews, setReviews] = useState(initialReviews);
+  const [reviews, setReviews] = useState([]);
 
   useEffect(() => {
     const unsubscribe = subscribeCustomerReviews((cloudReviews) => {
-      if (cloudReviews && cloudReviews.length > 0) {
+      if (Array.isArray(cloudReviews)) {
         setReviews(cloudReviews);
       }
     });
