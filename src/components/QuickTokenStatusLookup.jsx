@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Ticket, CheckCircle2, Clock, AlertCircle, Sparkles, ArrowRight, UserCheck, Users, Hourglass, Bell, Play } from 'lucide-react';
-
-const QUEUE_STATUS_KEY = 'akesevai-live-queue-status';
-const TOKEN_BOOKINGS_KEY = 'akesevai-token-bookings';
-const APPLICATION_RECORDS_KEY = 'akesevai-application-records';
+import { subscribeLiveQueue } from '../utils/firebaseService';
+import { getStoredApplications } from '../utils/statusStore';
 
 export default function QuickTokenStatusLookup({ navigate }) {
   const [query, setQuery] = useState('');
@@ -19,25 +17,14 @@ export default function QuickTokenStatusLookup({ navigate }) {
     totalInQueue: 18
   });
 
-  // Load live queue status from localStorage and poll for updates
-  const refreshLiveQueue = () => {
-    try {
-      const stored = localStorage.getItem(QUEUE_STATUS_KEY);
-      if (stored) {
-        setLiveQueueState((prev) => ({ ...prev, ...JSON.parse(stored) }));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
   useEffect(() => {
-    refreshLiveQueue();
-    const interval = setInterval(refreshLiveQueue, 3000);
-    window.addEventListener('storage', refreshLiveQueue);
+    const unsubscribe = subscribeLiveQueue((cloudQueue) => {
+      if (cloudQueue && Object.keys(cloudQueue).length > 0) {
+        setLiveQueueState((prev) => ({ ...prev, ...cloudQueue }));
+      }
+    });
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', refreshLiveQueue);
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
 
@@ -46,24 +33,9 @@ export default function QuickTokenStatusLookup({ navigate }) {
     if (!query.trim()) return;
 
     setHasSearched(true);
-    refreshLiveQueue();
 
-    // 1. Search Token Bookings
     let tokenList = [];
-    try {
-      tokenList = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-    } catch (err) {
-      tokenList = [];
-    }
-
-    // 2. Search Admin Application Records
-    let appList = [];
-    try {
-      const rawApps = JSON.parse(localStorage.getItem(APPLICATION_RECORDS_KEY) || '{}');
-      appList = Object.values(rawApps);
-    } catch (err) {
-      appList = [];
-    }
+    let appList = Object.values(getStoredApplications() || {});
 
     const cleanQ = query.trim().toLowerCase();
     const cleanDigits = cleanQ.replace(/\D/g, '');

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Mic, Bell, Sparkles, CheckCircle2, Play, User, RefreshCw, Volume1, SkipForward, SkipBack, ListOrdered, PlusCircle, Smartphone } from 'lucide-react';
 import { getStoredApplications, syncWithCentralServer } from '../utils/statusStore';
+import { saveLiveQueueCloud, saveTokenBookingCloud, subscribeTokens } from '../utils/firebaseService';
 
 const ENGLISH_TO_TAMIL_NAME_MAP = {
   'kandasamy': 'கந்தசாமி',
@@ -112,7 +113,7 @@ export default function AdminCounterVoiceAnnouncer() {
       lastUpdated: new Date().toISOString()
     };
 
-    localStorage.setItem('akesevai-live-queue-status', JSON.stringify(queueState));
+    saveLiveQueueCloud(queueState);
     try {
       fetch('/api/store', {
         method: 'POST',
@@ -122,34 +123,11 @@ export default function AdminCounterVoiceAnnouncer() {
     } catch (e) {}
   };
 
-  // Sync token queue with central server API & local storage
+  // Sync token queue with central server API & Firebase Cloud
   const syncQueueFromStorage = async () => {
     try {
-      const res = await fetch('/api/store');
-      if (res.ok) {
-        const central = await res.json();
-        if (central.tokens && Array.isArray(central.tokens)) {
-          localStorage.setItem('akesevai-token-bookings', JSON.stringify(central.tokens));
-        }
-        if (central.applications && Object.keys(central.applications).length > 0) {
-          localStorage.setItem('akesevai-application-records', JSON.stringify(central.applications));
-        }
-      }
-    } catch (e) {
-      console.warn('Central server sync offline, using local storage');
-    }
-
-    try {
-      const storedTokens = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
       const storedApps = getStoredApplications();
-
       let combinedQueue = [];
-
-      storedTokens.forEach((st) => {
-        if (st.tokenNo && (st.customerName || st.name)) {
-          combinedQueue.push({ tokenNo: st.tokenNo, name: st.customerName || st.name });
-        }
-      });
 
       const appsList = Array.isArray(storedApps) ? storedApps : Object.values(storedApps || {});
       appsList.forEach((sa) => {
@@ -269,16 +247,14 @@ export default function AdminCounterVoiceAnnouncer() {
       });
     } catch (err) {}
 
-    // Save to local bookings
-    const storedTokens = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
-    storedTokens.unshift({
+    // Save to Firebase Cloud
+    saveTokenBookingCloud({
       tokenNo: newTok.tokenNo,
       customerName: newTok.name,
       phone: '9876543210',
       date: new Date().toISOString().split('T')[0],
       slot: 'Live Queue'
     });
-    localStorage.setItem('akesevai-token-bookings', JSON.stringify(storedTokens));
 
     // Broadcast sync
     if ('BroadcastChannel' in window) {

@@ -1,41 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Landmark, Users, Clock, QrCode, Smartphone, Sparkles, CheckCircle2, ShieldCheck, ArrowRight, Zap, Building2, Eye, X, Copy, Check } from 'lucide-react';
+import { subscribeLiveQueue } from '../utils/firebaseService';
 
 export default function CscDigitalHubWidget({ navigate }) {
   const [showQrModal, setShowQrModal] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Read Live Queue Status from localStorage (Managed dynamically from Admin Panel)
-  const [queueStatus, setQueueStatus] = useState(() => {
-    const saved = localStorage.getItem('akesevai-live-queue-status');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback default
-      }
-    }
-    return {
-      queueCount: '3 நபர்கள் (In Queue)',
-      waitTime: '~ 5 நிமிடங்கள்',
-      statusText: '🟢 மையம் திறந்துள்ளது (Open Now)',
-      upiId: 'alakesh.kumar7@okhdfcbank'
-    };
+  const [queueStatus, setQueueStatus] = useState({
+    queueCount: '3 நபர்கள் (In Queue)',
+    waitTime: '~ 5 நிமிடங்கள்',
+    statusText: '🟢 மையம் திறந்துள்ளது (Open Now)',
+    upiId: 'alakesh.kumar7@okhdfcbank'
   });
 
   useEffect(() => {
-    const checkStatus = () => {
-      const saved = localStorage.getItem('akesevai-live-queue-status');
-      if (saved) {
-        try { setQueueStatus(JSON.parse(saved)); } catch (e) {}
+    const unsubscribe = subscribeLiveQueue((cloudStatus) => {
+      if (cloudStatus && Object.keys(cloudStatus).length > 0) {
+        setQueueStatus(prev => ({ ...prev, ...cloudStatus }));
       }
-    };
-    window.addEventListener('storage', checkStatus);
-    const timer = setInterval(checkStatus, 1500);
-    return () => {
-      window.removeEventListener('storage', checkStatus);
-      clearInterval(timer);
-    };
+    });
+    return () => unsubscribe();
   }, []);
 
   const upiId = queueStatus.upiId || 'alakesh.kumar7@okhdfcbank';

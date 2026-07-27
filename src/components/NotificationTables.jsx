@@ -218,36 +218,10 @@ export default function NotificationTables({ forceAdmin }) {
   const [statusFilter, setStatusFilter] = useState('all');
   const [autoHideExpired, setAutoHideExpired] = useState(true);
 
-  // Dynamic notification lists initialized from LocalStorage or defaults
-  const [jobs, setJobs] = useState(() => {
-    const saved = localStorage.getItem('akesevai_notif_jobs');
-    return saved ? JSON.parse(saved) : initialJobData;
-  });
-
-  const [exams, setExams] = useState(() => {
-    const saved = localStorage.getItem('akesevai_notif_exams');
-    return saved ? JSON.parse(saved) : initialExamData;
-  });
-
-  const [education, setEducation] = useState(() => {
-    const saved = localStorage.getItem('akesevai_notif_edu');
-    return saved ? JSON.parse(saved) : initialEducationData;
-  });
-
-  useEffect(() => {
-    const syncLists = () => {
-      try {
-        const savedJobs = localStorage.getItem('akesevai_notif_jobs');
-        if (savedJobs) setJobs(JSON.parse(savedJobs));
-        const savedExams = localStorage.getItem('akesevai_notif_exams');
-        if (savedExams) setExams(JSON.parse(savedExams));
-        const savedEdu = localStorage.getItem('akesevai_notif_edu');
-        if (savedEdu) setEducation(JSON.parse(savedEdu));
-      } catch (e) { console.error(e); }
-    };
-    window.addEventListener('storage', syncLists);
-    return () => window.removeEventListener('storage', syncLists);
-  }, []);
+  // Dynamic notification lists initialized from default data
+  const [jobs, setJobs] = useState(initialJobData);
+  const [exams, setExams] = useState(initialExamData);
+  const [education, setEducation] = useState(initialEducationData);
 
   // Admin status check (only true when forceAdmin prop is explicitly true)
   const isAdmin = forceAdmin === true;
@@ -323,12 +297,10 @@ export default function NotificationTables({ forceAdmin }) {
   const [newDetailsLink, setNewDetailsLink] = useState('');
   const [newApplyLink, setNewApplyLink] = useState('');
 
-  // Persist state updates and dispatch event
   const saveLists = (updatedJobs, updatedExams, updatedEdu) => {
-    localStorage.setItem('akesevai_notif_jobs', JSON.stringify(updatedJobs));
-    localStorage.setItem('akesevai_notif_exams', JSON.stringify(updatedExams));
-    localStorage.setItem('akesevai_notif_edu', JSON.stringify(updatedEdu));
-    window.dispatchEvent(new Event('storage'));
+    setJobs(updatedJobs);
+    setExams(updatedExams);
+    setEducation(updatedEdu);
   };
 
   const autoReplenishIfEmpty = (updatedJobs, updatedExams, updatedEdu) => {

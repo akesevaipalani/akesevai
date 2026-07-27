@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Calendar, PlusCircle, Trash2, CheckCircle2, Clock, MessageCircle, AlertTriangle, Sparkles } from 'lucide-react';
-import { deleteExpiryDocumentCloud } from '../utils/firebaseService';
-
-const LOCAL_STORAGE_KEY = 'akesevai_user_doc_expiries';
+import { subscribeExpiryDocuments, saveExpiryDocumentCloud, deleteExpiryDocumentCloud } from '../utils/firebaseService';
 
 const DOC_TYPES = [
   'வருமானச் சான்றிதழ் (Income Certificate)',
@@ -22,41 +20,30 @@ export default function DocumentExpiryTracker({ onBookTokenForRenewal }) {
   const [expiryDate, setExpiryDate] = useState('');
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setDocuments(parsed);
-          return;
-        }
+    const unsubscribe = subscribeExpiryDocuments((cloudDocs) => {
+      if (Array.isArray(cloudDocs) && cloudDocs.length > 0) {
+        setDocuments(cloudDocs);
+      } else {
+        setDocuments([
+          {
+            id: 'doc-1',
+            docName: 'வருமானச் சான்றிதழ் (Income Certificate)',
+            certNo: 'TN-72025010492',
+            expiryDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]
+          },
+          {
+            id: 'doc-2',
+            docName: 'ஓட்டுநர் உரிமம் (Driving License / DL)',
+            certNo: 'TN57-2021008492',
+            expiryDate: new Date(Date.now() + 120 * 86400000).toISOString().split('T')[0]
+          }
+        ]);
       }
-      // Initial sample docs for demonstration
-      const sampleDocs = [
-        {
-          id: 'doc-1',
-          docName: 'வருமானச் சான்றிதழ் (Income Certificate)',
-          certNo: 'TN-72025010492',
-          expiryDate: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0] // 15 days left
-        },
-        {
-          id: 'doc-2',
-          docName: 'ஓட்டுநர் உரிமம் (Driving License / DL)',
-          certNo: 'TN57-2021008492',
-          expiryDate: new Date(Date.now() + 120 * 86400000).toISOString().split('T')[0] // 120 days left
-        }
-      ];
-      setDocuments(sampleDocs);
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sampleDocs));
-    } catch (e) {
-      console.error(e);
-    }
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, []);
-
-  const saveDocs = (newDocs) => {
-    setDocuments(newDocs);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newDocs));
-  };
 
   const handleAddDocument = (e) => {
     e.preventDefault();
@@ -69,15 +56,12 @@ export default function DocumentExpiryTracker({ onBookTokenForRenewal }) {
       expiryDate
     };
 
-    const updated = [newDoc, ...documents];
-    saveDocs(updated);
+    saveExpiryDocumentCloud(newDoc);
     setCertNo('');
     setExpiryDate('');
   };
 
   const handleDeleteDocument = async (id) => {
-    const updated = documents.filter((d) => d.id !== id);
-    saveDocs(updated);
     await deleteExpiryDocumentCloud(id);
   };
 

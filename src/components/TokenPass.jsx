@@ -42,36 +42,8 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
 
   // Continuous sequential token numbers (TOK-001, TOK-002, TOK-003...)
   const getNextSequentialTokenNo = () => {
-    let maxId = 0;
-
-    const storedLast = parseInt(localStorage.getItem('akesevai-last-token-id') || '0', 10);
-    if (!isNaN(storedLast) && storedLast > maxId) {
-      maxId = storedLast;
-    }
-
-    try {
-      const bookings = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
-      bookings.forEach((t) => {
-        if (t && t.tokenNo) {
-          const num = parseInt(t.tokenNo.replace(/\D/g, ''), 10);
-          if (!isNaN(num) && num > maxId) maxId = num;
-        }
-      });
-    } catch (e) {}
-
-    try {
-      const apps = Object.values(JSON.parse(localStorage.getItem('akesevai-application-records') || '{}'));
-      apps.forEach((a) => {
-        if (a && a.tokenId) {
-          const num = parseInt(a.tokenId.replace(/\D/g, ''), 10);
-          if (!isNaN(num) && num > maxId) maxId = num;
-        }
-      });
-    } catch (e) {}
-
-    const nextId = maxId + 1;
-    localStorage.setItem('akesevai-last-token-id', nextId.toString());
-    return `TOK-${String(nextId).padStart(3, '0')}`;
+    const num = Math.floor(100 + Math.random() * 900);
+    return `TOK-${num}`;
   };
 
   // Direct Instant Token Booking Handler

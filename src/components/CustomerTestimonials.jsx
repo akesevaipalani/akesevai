@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Star, ShieldCheck, CheckCircle, PlusCircle, Send, X, ThumbsUp } from 'lucide-react';
+import { subscribeCustomerReviews, saveCustomerReviewCloud } from '../utils/firebaseService';
 
 const initialReviews = [
   {
@@ -32,17 +33,16 @@ const initialReviews = [
 ];
 
 export default function CustomerTestimonials() {
-  const [reviews, setReviews] = useState(() => {
-    const saved = localStorage.getItem('akesevai-customer-reviews');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return initialReviews;
+  const [reviews, setReviews] = useState(initialReviews);
+
+  useEffect(() => {
+    const unsubscribe = subscribeCustomerReviews((cloudReviews) => {
+      if (cloudReviews && cloudReviews.length > 0) {
+        setReviews(cloudReviews);
       }
-    }
-    return initialReviews;
-  });
+    });
+    return () => unsubscribe();
+  }, []);
 
   const [showForm, setShowForm] = useState(false);
   const [rating, setRating] = useState(5);
@@ -67,9 +67,7 @@ export default function CustomerTestimonials() {
       date: 'இன்று (Just Now)'
     };
 
-    const updated = [newRev, ...reviews];
-    setReviews(updated);
-    localStorage.setItem('akesevai-customer-reviews', JSON.stringify(updated));
+    saveCustomerReviewCloud(newRev);
 
     // Reset form state
     setName('');

@@ -8,6 +8,7 @@ import {
   deleteDoc, 
   onSnapshot, 
   query, 
+  where,
   orderBy, 
   serverTimestamp 
 } from 'firebase/firestore';
@@ -19,39 +20,41 @@ const APPLICATIONS_COLLECTION = 'applications';
 const TOKENS_COLLECTION = 'tokens';
 const DOCUMENTS_COLLECTION = 'documents';
 const ADS_COLLECTION = 'sponsored_ads';
-
-// Local storage backup key references
-const CUSTOMER_RECORDS_KEY = 'akesevai-customer-records';
-const STATUS_RECORDS_KEY = 'akesevai-application-records';
-const TOKEN_BOOKINGS_KEY = 'akesevai-token-bookings';
-const EXPIRY_DOCS_KEY = 'akesevai-expiry-documents';
-const SPONSORED_ADS_KEY = 'akesevai-sponsored-ads';
+const LOGINS_COLLECTION = 'user_logins';
+const SETTINGS_COLLECTION = 'portal_settings';
+const REVIEWS_COLLECTION = 'customer_reviews';
+const REFERRALS_COLLECTION = 'referrals';
 
 const logFirebaseNotice = (tag, err) => {
   const msg = err?.message || String(err || '');
-  if (msg.includes('permissions') || err?.code === 'permission-denied') {
-    // Quietly fallback to local storage mode without spewing console warnings
-    return;
-  }
-  console.info(`[AkEsevai Sync] ${tag}:`, msg);
+  console.info(`[AkEsevai Cloud Sync] ${tag}:`, msg);
 };
 
-// --- CUSTOMER PROFILES ---
+// Purge all application local storage data to ensure 100% Firebase Cloud usage
+export const clearAllApplicationLocalStorage = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('akesevai') || key.startsWith('AKESEVAI'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+    console.info('🧹 Purged local storage application records. Running 100% on Firebase Cloud.');
+  } catch (e) {
+    console.warn('Error clearing local storage:', e);
+  }
+};
+
+
+// --- CUSTOMER PROFILES (FIREBASE CLOUD FIRESTORE) ---
 
 export const saveCustomerProfileCloud = async (phone, profileData) => {
   const cleanPhone = String(phone).replace(/\D/g, '');
   if (!cleanPhone) return;
 
-  // Local storage save
-  try {
-    const existing = JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}');
-    existing[cleanPhone] = { ...(existing[cleanPhone] || {}), ...profileData, phone: cleanPhone };
-    localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(existing));
-  } catch (e) {
-    logFirebaseNotice('Local storage write', e);
-  }
-
-  // Cloud Firestore payload sanitization (truncate giant base64 Data URLs so Firestore document size <= 1MB)
   const sanitizedDocs = (profileData.documents || []).map(doc => {
     if (doc.data && doc.data.length > 50000 && doc.data.startsWith('data:')) {
       return {
@@ -69,7 +72,6 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
     updatedAt: new Date().toISOString()
   };
 
-  // Cloud Firestore save
   try {
     const docRef = doc(db, CUSTOMERS_COLLECTION, cleanPhone);
     await setDoc(docRef, { ...dataToSave, lastCloudSync: serverTimestamp() }, { merge: true });
@@ -79,118 +81,17 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
 };
 
 export const deleteCustomerProfileCloud = async (phone) => {
-  const cleanPhone = String(phone).replace(/\D/g, '');
-  if (!cleanPhone) return;
+  if (!phone) return;
+  const strPhone = String(phone);
+  const cleanPhone = strPhone.replace(/\D/g, '');
 
-  try {
-    const existing = JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}');
-    delete existing[cleanPhone];
-    delete existing[phone];
-    localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(existing));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    logFirebaseNotice('Local storage delete', e);
-  }
-
-  try {
-    const docRef = doc(db, CUSTOMERS_COLLECTION, cleanPhone);
-    await deleteDoc(docRef);
-    if (phone && phone !== cleanPhone) {
-      try { await deleteDoc(doc(db, CUSTOMERS_COLLECTION, String(phone))); } catch {}
+  const targets = new Set([strPhone, cleanPhone, `+91${cleanPhone}`, `91${cleanPhone}`]);
+  for (const targetId of targets) {
+    if (targetId) {
+      try {
+        await deleteDoc(doc(db, CUSTOMERS_COLLECTION, targetId));
+      } catch (e) {}
     }
-  } catch (err) {
-    logFirebaseNotice('Customer cloud delete', err);
-  }
-};
-
-export const deleteTokenBookingCloud = async (tokenNo) => {
-  if (!tokenNo) return;
-
-  try {
-    const existingTokens = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-    const filtered = existingTokens.filter(t => String(t.tokenNo) !== String(tokenNo) && String(t.id) !== String(tokenNo));
-    localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(filtered));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    logFirebaseNotice('Local token delete', e);
-  }
-
-  try {
-    const docRef = doc(db, TOKENS_COLLECTION, String(tokenNo));
-    await deleteDoc(docRef);
-  } catch (err) {
-    logFirebaseNotice('Token cloud delete', err);
-  }
-};
-
-export const deleteApplicationCloud = async (appId) => {
-  if (!appId) return;
-
-  try {
-    const existing = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
-    delete existing[appId];
-    localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(existing));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    logFirebaseNotice('Local application delete', e);
-  }
-
-  try {
-    const docRef = doc(db, APPLICATIONS_COLLECTION, String(appId));
-    await deleteDoc(docRef);
-  } catch (err) {
-    logFirebaseNotice('Application cloud delete', err);
-  }
-};
-
-export const deleteExpiryDocumentCloud = async (docId) => {
-  if (!docId) return;
-
-  try {
-    const existing = JSON.parse(localStorage.getItem(EXPIRY_DOCS_KEY) || '[]');
-    const filtered = existing.filter(d => String(d.id) !== String(docId) && String(d.url) !== String(docId));
-    localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(filtered));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    logFirebaseNotice('Local document delete', e);
-  }
-
-  try {
-    const docRef = doc(db, DOCUMENTS_COLLECTION, String(docId));
-    await deleteDoc(docRef);
-  } catch (err) {
-    logFirebaseNotice('Document cloud delete', err);
-  }
-};
-
-export const deleteSponsoredAdCloud = async (adId) => {
-  if (!adId) return;
-
-  try {
-    const existing = JSON.parse(localStorage.getItem(SPONSORED_ADS_KEY) || '[]');
-    const filtered = existing.filter(a => String(a.id) !== String(adId));
-    localStorage.setItem(SPONSORED_ADS_KEY, JSON.stringify(filtered));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    logFirebaseNotice('Local ad delete', e);
-  }
-
-  try {
-    const docRef = doc(db, ADS_COLLECTION, String(adId));
-    await deleteDoc(docRef);
-  } catch (err) {
-    logFirebaseNotice('Sponsored ad cloud delete', err);
-  }
-};
-
-export const deleteNotificationCloud = async (notifId) => {
-  if (!notifId) return;
-
-  try {
-    const docRef = doc(db, 'notifications', String(notifId));
-    await deleteDoc(docRef);
-  } catch (err) {
-    logFirebaseNotice('Notification cloud delete', err);
   }
 };
 
@@ -202,21 +103,19 @@ export const subscribeCustomerProfiles = (callback) => {
       snapshot.forEach((docSnap) => {
         records[docSnap.id] = docSnap.data();
       });
-      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(records));
       callback(records);
     }, (error) => {
       logFirebaseNotice('Customer listener', error);
-      const local = JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}');
-      callback(local);
+      callback({});
     });
   } catch (e) {
-    const local = JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}');
-    callback(local);
+    logFirebaseNotice('Customer subscription init', e);
+    callback({});
     return () => {};
   }
 };
 
-// --- APPLICATIONS ---
+// --- APPLICATIONS (FIREBASE CLOUD FIRESTORE) ---
 
 export const saveApplicationCloud = async (appId, appData) => {
   if (!appId) return;
@@ -227,22 +126,22 @@ export const saveApplicationCloud = async (appId, appData) => {
     updatedAt: new Date().toISOString()
   };
 
-  // Local storage sync
-  try {
-    const existing = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
-    existing[appId] = { ...(existing[appId] || {}), ...dataToSave };
-    localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(existing));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    logFirebaseNotice('Local application save', e);
-  }
-
-  // Cloud Firestore sync
   try {
     const docRef = doc(db, APPLICATIONS_COLLECTION, appId);
     await setDoc(docRef, { ...dataToSave, lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (err) {
     logFirebaseNotice('Application cloud save', err);
+  }
+};
+
+export const deleteApplicationCloud = async (appId) => {
+  if (!appId) return;
+
+  try {
+    const docRef = doc(db, APPLICATIONS_COLLECTION, String(appId));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Application cloud delete', err);
   }
 };
 
@@ -254,26 +153,19 @@ export const subscribeApplications = (callback) => {
       snapshot.forEach((docSnap) => {
         apps[docSnap.id] = docSnap.data();
       });
-      if (Object.keys(apps).length > 0) {
-        localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(apps));
-        callback(apps);
-      } else {
-        const local = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
-        callback(local);
-      }
+      callback(apps);
     }, (error) => {
       logFirebaseNotice('Applications listener', error);
-      const local = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
-      callback(local);
+      callback({});
     });
   } catch (e) {
-    const local = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
-    callback(local);
+    logFirebaseNotice('Applications subscription init', e);
+    callback({});
     return () => {};
   }
 };
 
-// --- TOKENS & QUEUE ---
+// --- TOKENS & QUEUE (FIREBASE CLOUD FIRESTORE) ---
 
 export const saveTokenBookingCloud = async (tokenData) => {
   if (!tokenData || !tokenData.tokenNo) return;
@@ -283,23 +175,22 @@ export const saveTokenBookingCloud = async (tokenData) => {
     updatedAt: new Date().toISOString()
   };
 
-  // Local storage sync
-  try {
-    const existingTokens = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-    const filtered = existingTokens.filter(t => t.tokenNo !== tokenData.tokenNo);
-    const updated = [dataToSave, ...filtered];
-    localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event('storage'));
-  } catch (e) {
-    logFirebaseNotice('Local token save', e);
-  }
-
-  // Cloud Firestore sync
   try {
     const docRef = doc(db, TOKENS_COLLECTION, String(tokenData.tokenNo));
     await setDoc(docRef, { ...dataToSave, lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (err) {
     logFirebaseNotice('Token cloud save', err);
+  }
+};
+
+export const deleteTokenBookingCloud = async (tokenNo) => {
+  if (!tokenNo) return;
+
+  try {
+    const docRef = doc(db, TOKENS_COLLECTION, String(tokenNo));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Token cloud delete', err);
   }
 };
 
@@ -311,21 +202,19 @@ export const subscribeTokens = (callback) => {
       snapshot.forEach((docSnap) => {
         tokens.push(docSnap.data());
       });
-      localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(tokens));
       callback(tokens);
     }, (error) => {
       logFirebaseNotice('Tokens listener', error);
-      const local = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-      callback(local);
+      callback([]);
     });
   } catch (e) {
-    const local = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-    callback(local);
+    logFirebaseNotice('Tokens subscription init', e);
+    callback([]);
     return () => {};
   }
 };
 
-// --- EXPIRY DOCUMENTS ---
+// --- EXPIRY DOCUMENTS (FIREBASE CLOUD STORAGE & FIRESTORE) ---
 
 export const compressImageForUpload = (file) => {
   return new Promise((resolve) => {
@@ -387,26 +276,6 @@ export const saveExpiryDocumentCloud = async (docData) => {
   const docId = docData.id || `DOC-${Date.now()}`;
   const fullDocData = { ...docData, id: docId, updatedAt: new Date().toISOString() };
 
-  // 1. Save to Local Storage immediately
-  try {
-    const existing = JSON.parse(localStorage.getItem(EXPIRY_DOCS_KEY) || '[]');
-    const filtered = existing.filter(d => d.id !== docId && d.url !== fullDocData.url);
-    const updated = [fullDocData, ...filtered];
-    try {
-      localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(updated));
-    } catch (quotaErr) {
-      console.warn('localStorage quota reached for expiry docs. Cleaning heavy data strings...', quotaErr);
-      const cleaned = updated.map(d => ({
-        ...d,
-        url: d.url && d.url.length > 200000 && d.url.startsWith('data:') ? '' : d.url
-      }));
-      localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(cleaned));
-    }
-  } catch (e) {
-    logFirebaseNotice('Local document save', e);
-  }
-
-  // 2. Save to Firebase Firestore documents collection
   try {
     const docRef = doc(db, DOCUMENTS_COLLECTION, String(docId));
     await setDoc(docRef, { ...fullDocData, lastCloudSync: serverTimestamp() }, { merge: true });
@@ -415,78 +284,75 @@ export const saveExpiryDocumentCloud = async (docData) => {
   }
 };
 
-// --- FIREBASE CLOUD STORAGE UPLOAD (PDF & JPG FILES) ---
+export const deleteExpiryDocumentCloud = async (docId, customerPhone = '') => {
+  if (!docId) return;
+
+  const strId = String(docId);
+  try {
+    // 1. Delete direct document ID from 'documents' collection
+    try {
+      await deleteDoc(doc(db, DOCUMENTS_COLLECTION, strId));
+    } catch (e) {}
+
+    // 2. Query 'documents' collection by id and delete matching docs
+    try {
+      const q1 = query(collection(db, DOCUMENTS_COLLECTION), where('id', '==', strId));
+      const snap1 = await getDocs(q1);
+      snap1.forEach(async (dSnap) => {
+        try { await deleteDoc(dSnap.ref); } catch (e) {}
+      });
+    } catch (e) {}
+
+    // 3. Clean up customer's documents array in 'customers' collection
+    const cleanPhone = String(customerPhone).replace(/\D/g, '');
+    if (cleanPhone) {
+      try {
+        const custRef = doc(db, CUSTOMERS_COLLECTION, cleanPhone);
+        const custSnap = await getDoc(custRef);
+        if (custSnap.exists()) {
+          const custData = custSnap.data();
+          const existingDocs = Array.isArray(custData.documents) ? custData.documents : [];
+          const updatedDocs = existingDocs.filter(
+            (d) => String(d.id) !== strId && String(d.url || d.data) !== strId && d.requirement !== docId
+          );
+          await setDoc(custRef, { ...custData, documents: updatedDocs, updatedAt: new Date().toISOString() }, { merge: true });
+        }
+      } catch (e) {}
+    }
+  } catch (err) {
+    logFirebaseNotice('Document cloud delete', err);
+  }
+};
 
 export const uploadFileToFirebaseStorage = async (fileInput, pathFolder = 'customer_documents', customerPhone = '') => {
   if (!fileInput) return null;
 
-  // Compress image if camera/photo upload
   const file = await compressImageForUpload(fileInput);
-
   const timestamp = Date.now();
   const sanitizeName = file.name ? file.name.replace(/[^a-zA-Z0-9.-]/g, '_') : `doc_${timestamp}`;
   const filePath = `${pathFolder}/${customerPhone ? customerPhone + '_' : ''}${timestamp}_${sanitizeName}`;
 
-  const createDataUrlRecord = () => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        let resultUrl = e.target.result;
-        // Safety check: if data URL is huge (> 1.5MB), use Object URL to prevent quota crash
-        if (resultUrl && resultUrl.length > 1500000) {
-          try {
-            resultUrl = URL.createObjectURL(file);
-          } catch (objErr) {
-            console.warn('Object URL creation fallback', objErr);
-          }
-        }
-
-        const localRecord = {
-          id: `DOC-LOCAL-${timestamp}`,
-          name: file.name || sanitizeName,
-          type: file.type || 'application/pdf',
-          size: file.size || 0,
-          url: resultUrl,
-          customerPhone,
-          uploadedAt: new Date().toISOString()
-        };
-        saveExpiryDocumentCloud(localRecord);
-        resolve(localRecord);
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
-  };
-
   try {
-    const cloudUploadPromise = (async () => {
-      const storageRef = ref(storage, filePath);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
+    const storageRef = ref(storage, filePath);
+    const snapshot = await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(snapshot.ref);
 
-      const docRecord = {
-        id: `DOC-${timestamp}`,
-        name: file.name || sanitizeName,
-        type: file.type || (file.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
-        size: file.size || 0,
-        url: downloadURL,
-        storagePath: filePath,
-        customerPhone,
-        uploadedAt: new Date().toISOString()
-      };
+    const docRecord = {
+      id: `DOC-${timestamp}`,
+      name: file.name || sanitizeName,
+      type: file.type || (file.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+      size: file.size || 0,
+      url: downloadURL,
+      storagePath: filePath,
+      customerPhone,
+      uploadedAt: new Date().toISOString()
+    };
 
-      await saveExpiryDocumentCloud(docRecord);
-      return docRecord;
-    })();
-
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Storage upload timeout')), 3500)
-    );
-
-    return await Promise.race([cloudUploadPromise, timeoutPromise]);
+    await saveExpiryDocumentCloud(docRecord);
+    return docRecord;
   } catch (err) {
-    console.warn('Firebase Storage upload notice (instant fallback to Data URL):', err?.message || err);
-    return await createDataUrlRecord();
+    logFirebaseNotice('Firebase Storage upload', err);
+    return null;
   }
 };
 
@@ -508,7 +374,7 @@ export const uploadDataUrlToFirebaseStorage = async (dataUrl, filename = 'docume
       uploadedAt: new Date().toISOString()
     };
   } catch (err) {
-    console.warn('Firebase Storage string upload notice:', err?.message || err);
+    logFirebaseNotice('Firebase Storage string upload', err);
     return { url: dataUrl, name: filename, uploadedAt: new Date().toISOString() };
   }
 };
@@ -521,35 +387,79 @@ export const subscribeExpiryDocuments = (callback) => {
       snapshot.forEach((docSnap) => {
         docsList.push(docSnap.data());
       });
-      localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(docsList));
       callback(docsList);
     }, (error) => {
-      console.warn('Firebase documents listener offline notice:', error);
-      const local = JSON.parse(localStorage.getItem(EXPIRY_DOCS_KEY) || '[]');
-      callback(local);
+      logFirebaseNotice('Firebase documents listener', error);
+      callback([]);
     });
   } catch (e) {
-    const local = JSON.parse(localStorage.getItem(EXPIRY_DOCS_KEY) || '[]');
-    callback(local);
+    logFirebaseNotice('Documents subscription init', e);
+    callback([]);
     return () => {};
   }
 };
 
-// --- LIVE QUEUE STATUS ---
+// --- SPONSORED ADS (FIREBASE CLOUD FIRESTORE) ---
 
-const QUEUE_STATUS_KEY = 'akesevai-live-queue-status';
-const SERVICE_OF_DAY_KEY = 'akesevai-service-of-day';
-const LOGINS_COLLECTION = 'user_logins';
-const SETTINGS_COLLECTION = 'portal_settings';
+export const saveSponsoredAdCloud = async (adData) => {
+  if (!adData) return;
+  const adId = adData.id || `AD-${Date.now()}`;
+  try {
+    const docRef = doc(db, ADS_COLLECTION, String(adId));
+    await setDoc(docRef, { ...adData, id: adId, updatedAt: new Date().toISOString(), lastCloudSync: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    logFirebaseNotice('Sponsored ad save', err);
+  }
+};
+
+export const deleteSponsoredAdCloud = async (adId) => {
+  if (!adId) return;
+  try {
+    const docRef = doc(db, ADS_COLLECTION, String(adId));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Sponsored ad cloud delete', err);
+  }
+};
+
+export const subscribeSponsoredAds = (callback) => {
+  try {
+    const q = collection(db, ADS_COLLECTION);
+    return onSnapshot(q, (snapshot) => {
+      const ads = [];
+      snapshot.forEach((docSnap) => ads.push(docSnap.data()));
+      callback(ads);
+    }, (error) => {
+      logFirebaseNotice('Sponsored ads listener', error);
+      callback([]);
+    });
+  } catch (e) {
+    logFirebaseNotice('Sponsored ads subscription init', e);
+    callback([]);
+    return () => {};
+  }
+};
+
+export const deleteNotificationCloud = async (notifId) => {
+  if (!notifId) return;
+
+  try {
+    const docRef = doc(db, 'notifications', String(notifId));
+    await deleteDoc(docRef);
+  } catch (err) {
+    logFirebaseNotice('Notification cloud delete', err);
+  }
+};
+
+// --- LIVE QUEUE STATUS (FIREBASE CLOUD FIRESTORE) ---
 
 export const saveLiveQueueCloud = async (queueState) => {
   if (!queueState) return;
   try {
-    localStorage.setItem(QUEUE_STATUS_KEY, JSON.stringify(queueState));
     const docRef = doc(db, SETTINGS_COLLECTION, 'live_queue');
     await setDoc(docRef, { ...queueState, updatedAt: new Date().toISOString(), lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (e) {
-    console.warn('Live queue cloud save fallback:', e);
+    logFirebaseNotice('Live queue cloud save', e);
   }
 };
 
@@ -558,37 +468,29 @@ export const subscribeLiveQueue = (callback) => {
     const docRef = doc(db, SETTINGS_COLLECTION, 'live_queue');
     return onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data();
-        localStorage.setItem(QUEUE_STATUS_KEY, JSON.stringify(data));
-        callback(data);
+        callback(docSnap.data());
       } else {
-        const local = JSON.parse(localStorage.getItem(QUEUE_STATUS_KEY) || '{}');
-        callback(local);
+        callback({});
       }
-    }, () => {
-      const local = JSON.parse(localStorage.getItem(QUEUE_STATUS_KEY) || '{}');
-      callback(local);
+    }, (err) => {
+      logFirebaseNotice('Live queue listener', err);
+      callback({});
     });
   } catch (e) {
-    const local = JSON.parse(localStorage.getItem(QUEUE_STATUS_KEY) || '{}');
-    callback(local);
+    logFirebaseNotice('Live queue subscription init', e);
+    callback({});
     return () => {};
   }
 };
 
-// --- SERVICE OF THE DAY ---
+// --- SERVICE OF THE DAY (FIREBASE CLOUD FIRESTORE) ---
 
 export const saveServiceOfDayCloud = async (sodData) => {
   try {
-    if (sodData) {
-      localStorage.setItem(SERVICE_OF_DAY_KEY, JSON.stringify(sodData));
-    } else {
-      localStorage.removeItem(SERVICE_OF_DAY_KEY);
-    }
     const docRef = doc(db, SETTINGS_COLLECTION, 'service_of_day');
     await setDoc(docRef, { data: sodData || null, updatedAt: new Date().toISOString(), lastCloudSync: serverTimestamp() }, { merge: true });
   } catch (e) {
-    console.warn('Service of day cloud sync warning:', e);
+    logFirebaseNotice('Service of day cloud save', e);
   }
 };
 
@@ -597,29 +499,22 @@ export const subscribeServiceOfDay = (callback) => {
     const docRef = doc(db, SETTINGS_COLLECTION, 'service_of_day');
     return onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists() && docSnap.data().data !== undefined) {
-        const sod = docSnap.data().data;
-        if (sod) {
-          localStorage.setItem(SERVICE_OF_DAY_KEY, JSON.stringify(sod));
-        } else {
-          localStorage.removeItem(SERVICE_OF_DAY_KEY);
-        }
-        callback(sod);
+        callback(docSnap.data().data);
       } else {
-        const local = JSON.parse(localStorage.getItem(SERVICE_OF_DAY_KEY) || 'null');
-        callback(local);
+        callback(null);
       }
-    }, () => {
-      const local = JSON.parse(localStorage.getItem(SERVICE_OF_DAY_KEY) || 'null');
-      callback(local);
+    }, (err) => {
+      logFirebaseNotice('Service of day listener', err);
+      callback(null);
     });
   } catch (e) {
-    const local = JSON.parse(localStorage.getItem(SERVICE_OF_DAY_KEY) || 'null');
-    callback(local);
+    logFirebaseNotice('Service of day subscription init', e);
+    callback(null);
     return () => {};
   }
 };
 
-// --- LOGIN AUDIT & SESSION RECORDS ---
+// --- LOGIN AUDIT RECORDS (FIREBASE CLOUD FIRESTORE) ---
 
 export const recordLoginEventCloud = async (loginData) => {
   if (!loginData) return;
@@ -632,56 +527,77 @@ export const recordLoginEventCloud = async (loginData) => {
       lastCloudSync: serverTimestamp()
     });
   } catch (e) {
-    console.warn('Login event cloud log notice:', e);
+    logFirebaseNotice('Login event cloud log', e);
   }
 };
 
-// --- INITIAL AUTO SYNC FOR FIREBASE FIRESTORE DATA COLLECTIONS ---
+// --- CUSTOMER REVIEWS (FIREBASE CLOUD FIRESTORE) ---
+
+export const saveCustomerReviewCloud = async (reviewData) => {
+  if (!reviewData) return;
+  const revId = reviewData.id || `REV-${Date.now()}`;
+  try {
+    const docRef = doc(db, REVIEWS_COLLECTION, String(revId));
+    await setDoc(docRef, { ...reviewData, id: revId, createdAt: new Date().toISOString(), lastCloudSync: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    logFirebaseNotice('Customer review cloud save', err);
+  }
+};
+
+export const subscribeCustomerReviews = (callback) => {
+  try {
+    const q = collection(db, REVIEWS_COLLECTION);
+    return onSnapshot(q, (snapshot) => {
+      const list = [];
+      snapshot.forEach((docSnap) => list.push(docSnap.data()));
+      callback(list);
+    }, (error) => {
+      logFirebaseNotice('Customer reviews listener', error);
+      callback([]);
+    });
+  } catch (e) {
+    logFirebaseNotice('Customer reviews subscription init', e);
+    callback([]);
+    return () => {};
+  }
+};
+
+// --- REFERRALS (FIREBASE CLOUD FIRESTORE) ---
+
+export const saveReferralCloud = async (code, referralData) => {
+  if (!code) return;
+  try {
+    const docRef = doc(db, REFERRALS_COLLECTION, String(code));
+    await setDoc(docRef, { ...referralData, code: String(code), lastCloudSync: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    logFirebaseNotice('Referral cloud save', err);
+  }
+};
+
+export const subscribeReferrals = (callback) => {
+  try {
+    const q = collection(db, REFERRALS_COLLECTION);
+    return onSnapshot(q, (snapshot) => {
+      const refs = {};
+      snapshot.forEach((docSnap) => {
+        refs[docSnap.id] = docSnap.data();
+      });
+      callback(refs);
+    }, (error) => {
+      logFirebaseNotice('Referrals listener', error);
+      callback({});
+    });
+  } catch (e) {
+    logFirebaseNotice('Referrals subscription init', e);
+    callback({});
+    return () => {};
+  }
+};
+
+// --- DIRECT CLOUD FETCH (FIREBASE FIRESTORE DATA COLLECTIONS) ---
 
 export const syncAllLocalDataToFirebaseCloud = async () => {
-  if (!isFirebaseConfigured()) return;
-
-  try {
-    // 1. Sync Customers Collection
-    const customers = JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}');
-    for (const [phone, pData] of Object.entries(customers)) {
-      if (phone) {
-        const docRef = doc(db, CUSTOMERS_COLLECTION, phone);
-        await setDoc(docRef, { ...pData, phone, lastCloudSync: serverTimestamp() }, { merge: true });
-      }
-    }
-
-    // 2. Sync Applications Collection
-    const apps = JSON.parse(localStorage.getItem(STATUS_RECORDS_KEY) || '{}');
-    for (const [appId, aData] of Object.entries(apps)) {
-      if (appId) {
-        const docRef = doc(db, APPLICATIONS_COLLECTION, appId);
-        await setDoc(docRef, { ...aData, id: appId, lastCloudSync: serverTimestamp() }, { merge: true });
-      }
-    }
-
-    // 3. Sync Tokens Collection
-    const tokens = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-    for (const tData of tokens) {
-      if (tData?.tokenNo) {
-        const docRef = doc(db, TOKENS_COLLECTION, String(tData.tokenNo));
-        await setDoc(docRef, { ...tData, lastCloudSync: serverTimestamp() }, { merge: true });
-      }
-    }
-
-    // 4. Sync Expiry Documents Collection
-    const docs = JSON.parse(localStorage.getItem(EXPIRY_DOCS_KEY) || '[]');
-    for (const dData of docs) {
-      if (dData?.id) {
-        const docRef = doc(db, DOCUMENTS_COLLECTION, String(dData.id));
-        await setDoc(docRef, { ...dData, lastCloudSync: serverTimestamp() }, { merge: true });
-      }
-    }
-
-    console.log('✅ AkEsevai Firebase Firestore Collections successfully synced!');
-  } catch (err) {
-    console.warn('Firebase initial sync warning:', err);
-  }
+  return;
 };
 
 export const fetchAllCloudRecords = async () => {
@@ -705,21 +621,44 @@ export const fetchAllCloudRecords = async () => {
     const documents = [];
     docsSnap.forEach((d) => documents.push(d.data()));
 
-    if (Object.keys(customers).length > 0) {
-      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(customers));
-    }
-    if (tokens.length > 0) {
-      localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(tokens));
-    }
-    if (documents.length > 0) {
-      localStorage.setItem(EXPIRY_DOCS_KEY, JSON.stringify(documents));
-    }
+    const appsRef = collection(db, APPLICATIONS_COLLECTION);
+    const appsSnap = await getDocs(appsRef);
+    const applications = {};
+    appsSnap.forEach((d) => {
+      applications[d.id] = d.data();
+    });
 
-    return { customers, tokens, documents };
+    return { customers, tokens, documents, applications };
   } catch (err) {
-    console.warn('Firebase direct cloud fetch notice:', err);
+    logFirebaseNotice('Direct cloud fetch', err);
     return null;
   }
 };
 
+export const purgeAllFirebaseCloudData = async () => {
+  if (!isFirebaseConfigured()) return false;
+  const collectionsToClear = [
+    CUSTOMERS_COLLECTION,
+    APPLICATIONS_COLLECTION,
+    TOKENS_COLLECTION,
+    DOCUMENTS_COLLECTION,
+    ADS_COLLECTION,
+    LOGINS_COLLECTION,
+    SETTINGS_COLLECTION,
+    'notifications'
+  ];
+  try {
+    for (const colName of collectionsToClear) {
+      const snap = await getDocs(collection(db, colName));
+      for (const docSnap of snap.docs) {
+        await deleteDoc(docSnap.ref);
+      }
+    }
+    clearAllApplicationLocalStorage();
+    return true;
+  } catch (err) {
+    logFirebaseNotice('Purge all cloud data', err);
+    return false;
+  }
+};
 

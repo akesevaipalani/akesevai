@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Megaphone, Plus, Trash2, Edit3, CheckCircle2, Phone, MessageCircle, Sparkles, RefreshCw, ImagePlus, SlidersHorizontal, X, UploadCloud } from 'lucide-react';
-import { deleteSponsoredAdCloud } from '../utils/firebaseService';
+import { subscribeSponsoredAds, saveSponsoredAdCloud, deleteSponsoredAdCloud } from '../utils/firebaseService';
 
 const DEFAULT_ADS = [
   {
@@ -36,16 +36,20 @@ const DEFAULT_ADS = [
 ];
 
 export default function AdminSponsoredAdsManager({ notify }) {
-  const [ads, setAds] = useState(() => {
-    try {
-      const stored = localStorage.getItem('akesevai-sponsored-ads');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  const [ads, setAds] = useState(DEFAULT_ADS);
+
+  useEffect(() => {
+    const unsubscribe = subscribeSponsoredAds((cloudAds) => {
+      if (Array.isArray(cloudAds) && cloudAds.length > 0) {
+        setAds(cloudAds);
+      } else {
+        setAds(DEFAULT_ADS);
       }
-    } catch (e) {}
-    return DEFAULT_ADS;
-  });
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
 
   const [showForm, setShowForm] = useState(false);
   const [editingAdId, setEditingAdId] = useState(null);
@@ -61,19 +65,10 @@ export default function AdminSponsoredAdsManager({ notify }) {
     bannerSize: 'medium' // 'large' (400px), 'medium' (300px), 'compact' (220px)
   });
 
-  // Save to local storage & central server
+  // Save to central server
   const saveAdsToStorage = (updatedList) => {
     setAds(updatedList);
-    localStorage.setItem('akesevai-sponsored-ads', JSON.stringify(updatedList));
-
-    try {
-      fetch('/api/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'sponsoredAds', data: updatedList })
-      }).catch(() => {});
-    } catch (e) {}
-
+    updatedList.forEach((ad) => saveSponsoredAdCloud(ad));
     window.dispatchEvent(new Event('storage'));
   };
 

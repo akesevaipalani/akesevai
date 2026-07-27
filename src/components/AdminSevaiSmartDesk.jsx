@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, FileText, CheckCircle2, Printer, MessageCircle, ArrowRight, UploadCloud, RefreshCw, Sparkles, ShieldCheck, Download, PlusCircle, Volume2, Eye, Search, FileCheck2 } from 'lucide-react';
+import { Cpu, FileText, CheckCircle2, Printer, MessageCircle, ArrowRight, UploadCloud, RefreshCw, Sparkles, ShieldCheck, Download, PlusCircle, Volume2, Eye, Search, FileCheck2, Trash2 } from 'lucide-react';
 import { saveApplicationRecord, getStoredApplications, updateApplicationStage } from '../utils/statusStore';
-import { subscribeExpiryDocuments } from '../utils/firebaseService';
+import { subscribeExpiryDocuments, deleteExpiryDocumentCloud } from '../utils/firebaseService';
 import { printElement } from '../utils/printHelper';
 import AdminCounterVoiceAnnouncer from './AdminCounterVoiceAnnouncer';
 import AdminAutoFillProfileDrawer from './AdminAutoFillProfileDrawer';
@@ -22,26 +22,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
 
   useEffect(() => {
     const loadMergedDocs = (cloudDocs = []) => {
-      const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
-      const customerRecords = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
-      
-      const docsFromProfiles = [];
-      Object.values(customerRecords).forEach((cust) => {
-        if (cust && Array.isArray(cust.documents)) {
-          cust.documents.forEach((d) => {
-            docsFromProfiles.push({
-              id: d.id || d.data,
-              name: d.name || 'Uploaded Document',
-              requirement: d.requirement || 'Document',
-              url: d.data || d.url,
-              customerPhone: cust.phone || d.customerPhone || 'N/A',
-              uploadedAt: d.uploadedAt || 'Recently'
-            });
-          });
-        }
-      });
-
-      const combined = [...(Array.isArray(cloudDocs) ? cloudDocs : []), ...globalExpiryDocs, ...docsFromProfiles];
+      const combined = Array.isArray(cloudDocs) ? cloudDocs : [];
       
       const uniqueDocs = combined.reduce((acc, current) => {
         const url = current.url || current.data;
@@ -588,6 +569,34 @@ export default function AdminSevaiSmartDesk({ notify }) {
                     >
                       <Download size={14} /> பதிவிறக்கு (Download)
                     </a>
+
+                    <button
+                      onClick={async () => {
+                        const reqName = doc.requirement || doc.name || 'Document';
+                        if (window.confirm(`Are you sure you want to PERMANENTLY delete "${reqName}"?`)) {
+                          const targetId = doc.id || doc.url;
+                          setCustomerDocs((prev) => prev.filter((d) => d.id !== targetId && d.url !== targetId));
+                          await deleteExpiryDocumentCloud(targetId, doc.customerPhone);
+                          if (typeof notify === 'function') notify(`🗑️ Document "${reqName}" deleted from Firebase Cloud!`);
+                        }
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        background: '#fef2f2',
+                        color: '#dc2626',
+                        border: '1px solid #fca5a5',
+                        padding: '7px 14px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                      title="Delete document from cloud"
+                    >
+                      <Trash2 size={14} /> நீக்கு (Delete)
+                    </button>
                   </div>
                 </div>
               ))}

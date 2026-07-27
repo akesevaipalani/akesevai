@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Star, Zap, ArrowRight } from 'lucide-react';
+import { subscribeServiceOfDay } from '../utils/firebaseService';
 
 const SERVICE_OF_DAY = [
   { tamil: 'வருமானச் சான்றிதழ்', english: 'Income Certificate', emoji: '📋', color: '#3b82f6', bg: '#eff6ff', desc: 'கல்வி உதவித்தொகை மற்றும் அரசு திட்டங்களுக்கு அவசியமானது.', fee: '₹60', days: '3-7 நாட்கள்' },
@@ -15,16 +16,12 @@ export default function ServiceOfTheDayBanner({ navigate }) {
   const [customService, setCustomService] = React.useState(null);
 
   React.useEffect(() => {
-    const readCustom = () => {
-      try {
-        const saved = localStorage.getItem('akesevai-service-of-day');
-        if (saved) setCustomService(JSON.parse(saved));
-        else setCustomService(null);
-      } catch (e) {}
+    const unsubscribe = subscribeServiceOfDay((cloudSod) => {
+      setCustomService(cloudSod || null);
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
-    readCustom();
-    window.addEventListener('storage', readCustom);
-    return () => window.removeEventListener('storage', readCustom);
   }, []);
 
   // Pick service based on day of year, or use admin custom override if present

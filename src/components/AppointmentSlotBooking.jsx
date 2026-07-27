@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
+import { subscribeTokens, saveTokenBookingCloud } from '../utils/firebaseService';
 
 const TIME_SLOTS = [
   '10:00 AM - 10:30 AM',
@@ -35,17 +36,17 @@ export default function AppointmentSlotBooking({ notify, onBooked }) {
   const [bookedSlots, setBookedSlots] = useState([]);
   const [bookedSuccess, setBookedSuccess] = useState(null);
 
-  // Load booked slots for selected date
+  // Load booked slots for selected date from Firebase Cloud
   useEffect(() => {
-    try {
-      const allBookings = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
-      const dateBookings = allBookings
-        .filter(b => b.date === selectedDate)
-        .map(b => b.slot);
-      setBookedSlots(dateBookings);
-    } catch {
-      setBookedSlots([]);
-    }
+    const unsubscribe = subscribeTokens((allBookings) => {
+      if (Array.isArray(allBookings)) {
+        const dateBookings = allBookings
+          .filter(b => b.date === selectedDate)
+          .map(b => b.slot);
+        setBookedSlots(dateBookings);
+      }
+    });
+    return () => unsubscribe();
   }, [selectedDate]);
 
   const handleBooking = (e) => {
@@ -67,12 +68,7 @@ export default function AppointmentSlotBooking({ notify, onBooked }) {
       status: 'Confirmed'
     };
 
-    try {
-      const existing = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
-      existing.unshift(newBooking);
-      localStorage.setItem('akesevai-token-bookings', JSON.stringify(existing));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {}
+    saveTokenBookingCloud(newBooking);
 
     // Save record to central store as well
     saveApplicationRecord({

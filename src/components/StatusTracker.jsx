@@ -45,19 +45,9 @@ export default function StatusTracker({ initialQuery = '' }) {
     
     // 2. Check Token Bookings
     let tokenBookings = [];
-    try {
-      tokenBookings = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
-    } catch (e) {
-      tokenBookings = [];
-    }
 
     // 3. Check Customer Accounts & Active Session
     let customerRecords = {};
-    try {
-      customerRecords = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
-    } catch (e) {
-      customerRecords = {};
-    }
     const loggedInSessionPhone = (sessionStorage.getItem('akesevai-customer-session') || '').replace(/\D/g, '');
 
     // Search in Admin Applications first

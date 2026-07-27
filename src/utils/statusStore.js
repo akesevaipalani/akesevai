@@ -1,65 +1,18 @@
-// Central Application Status Store with Real-Time Server Persistence, Firebase & localStorage sync
-import { saveApplicationCloud } from './firebaseService';
+export const syncWithCentralServer = async () => {};
 
-const STATUS_RECORDS_KEY = 'akesevai-application-records';
-const TOKEN_BOOKINGS_KEY = 'akesevai-token-bookings';
+let inMemoryApplications = {};
 
-// Sync with Vite Server Central Store API (/api/store)
-export const syncWithCentralServer = async () => {
-  try {
-    const res = await fetch('/api/store');
-    if (res.ok) {
-      const centralData = await res.json();
-      
-      // Update applications
-      if (centralData.applications && Object.keys(centralData.applications).length > 0) {
-        const localApps = getStoredApplications();
-        const mergedApps = { ...localApps, ...centralData.applications };
-        localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(mergedApps));
-      }
-
-      // Update token bookings
-      if (centralData.tokens && Array.isArray(centralData.tokens) && centralData.tokens.length > 0) {
-        const localTokens = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-        const map = new Map();
-        [...centralData.tokens, ...localTokens].forEach(t => {
-          if (t && t.tokenNo && !map.has(t.tokenNo)) {
-            map.set(t.tokenNo, t);
-          }
-        });
-        const mergedTokens = Array.from(map.values());
-        localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(mergedTokens));
-      }
-
-      window.dispatchEvent(new Event('storage'));
-    }
-  } catch (e) {
-    // Fallback if offline
+export const setInStoreApplications = (apps) => {
+  if (apps && typeof apps === 'object') {
+    inMemoryApplications = { ...apps };
   }
 };
 
-// Automatically poll server every 3 seconds for unified cross-device real-time sync
-if (typeof window !== 'undefined') {
-  setInterval(() => {
-    syncWithCentralServer();
-  }, 3000);
-}
-
 export const getStoredApplications = () => {
-  try {
-    const saved = localStorage.getItem(STATUS_RECORDS_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed;
-      }
-    }
-  } catch (e) {}
-  return {};
+  return inMemoryApplications || {};
 };
 
 export const saveApplicationRecord = (appRecord) => {
-  const records = getStoredApplications();
   const id = appRecord.id || `TN-AK-2026-${Math.floor(10000 + Math.random() * 90000)}`;
   const dateToday = new Date().toISOString().split('T')[0];
 
@@ -88,20 +41,8 @@ export const saveApplicationRecord = (appRecord) => {
     ]
   };
 
-  records[id] = completeRecord;
-  localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(records));
+  inMemoryApplications[id] = completeRecord;
   saveApplicationCloud(id, completeRecord);
-
-  // Push to Central API server for immediate cross-device sync
-  try {
-    fetch('/api/store', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'application', data: completeRecord })
-    }).catch(() => {});
-  } catch (e) {}
-
-  window.dispatchEvent(new Event('storage'));
   return completeRecord;
 };
 
@@ -119,18 +60,8 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
     if (newRemarks) records[appId].remarks = newRemarks;
     records[appId].timeline = updatedTimeline;
 
-    localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(records));
+    inMemoryApplications[appId] = records[appId];
     saveApplicationCloud(appId, records[appId]);
-
-    try {
-      fetch('/api/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'application', data: records[appId] })
-      }).catch(() => {});
-    } catch (e) {}
-
-    window.dispatchEvent(new Event('storage'));
     return records[appId];
   }
   return null;

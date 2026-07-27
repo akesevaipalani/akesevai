@@ -1,32 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { subscribeLiveQueue } from '../utils/firebaseService';
 
-const QUEUE_KEY = 'akesevai-live-queue-status';
-
-function readQueue() {
-  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '{}'); } catch { return {}; }
-}
-
 export default function LiveWaitTimeBanner() {
-  const [queueData, setQueueData] = useState(readQueue());
+  const [queueData, setQueueData] = useState({});
 
   useEffect(() => {
-    const refresh = () => setQueueData(readQueue());
-    window.addEventListener('storage', refresh);
-    window.addEventListener('akesevai_queue_updated', refresh);
-    
     const unsubscribe = subscribeLiveQueue((cloudData) => {
       if (cloudData) {
         setQueueData(cloudData);
       }
     });
 
-    const interval = setInterval(refresh, 5000);
     return () => {
-      window.removeEventListener('storage', refresh);
-      window.removeEventListener('akesevai_queue_updated', refresh);
-      if (unsubscribe) unsubscribe();
-      clearInterval(interval);
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, []);
 

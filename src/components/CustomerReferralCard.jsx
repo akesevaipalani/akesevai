@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Share2, Copy, CheckCircle2, Gift } from 'lucide-react';
+import { saveReferralCloud } from '../utils/firebaseService';
 
 function generateCode(name) {
   const base = name.trim().toUpperCase().replace(/\s+/g, '').slice(0, 4) || 'AKE';
@@ -16,12 +17,7 @@ export default function CustomerReferralCard({ customerName = '' }) {
   const handleGenerate = () => {
     if (!name.trim()) return;
     const c = generateCode(name);
-    // Store in localStorage
-    const existing = JSON.parse(localStorage.getItem('akesevai-referrals') || '{}');
-    if (!existing[c]) {
-      existing[c] = { name: name.trim(), code: c, referrals: 0, createdAt: new Date().toISOString() };
-      localStorage.setItem('akesevai-referrals', JSON.stringify(existing));
-    }
+    saveReferralCloud(c, { name: name.trim(), code: c, referrals: 0, createdAt: new Date().toISOString() });
     setCode(c);
     setGenerated(true);
   };

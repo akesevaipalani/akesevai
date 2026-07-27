@@ -1,32 +1,12 @@
 import React, { useState, useEffect } from 'react';
-
-const QUEUE_KEY = 'akesevai-live-queue-status';
-const CUSTOMER_RECORDS_KEY = 'akesevai-customer-records';
-const TOKEN_BOOKINGS_KEY = 'akesevai-token-bookings';
-const APPLICATION_RECORDS_KEY = 'akesevai-application-records';
-
-function getStats() {
-  try {
-    const customers = Object.keys(JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}'));
-    const tokens = JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]');
-    const apps = Object.keys(JSON.parse(localStorage.getItem(APPLICATION_RECORDS_KEY) || '{}'));
-    const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '{}');
-    return {
-      customers: Math.max(customers.length + 142, 142),
-      tokens: Math.max(tokens.length + 87, 87),
-      apps: Math.max(apps.length + 312, 312),
-      rating: '4.9',
-      queue: q.queueCount || '0'
-    };
-  } catch { return { customers: 142, tokens: 87, apps: 312, rating: '4.9', queue: '0' }; }
-}
+import { getStoredApplications } from '../utils/statusStore';
 
 function AnimatedNumber({ target, duration = 1800 }) {
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
     let start = 0;
-    const step = target / (duration / 16);
+    const step = (target || 0) / (duration / 16);
     const timer = setInterval(() => {
       start += step;
       if (start >= target) { setCurrent(target); clearInterval(timer); }
@@ -39,37 +19,28 @@ function AnimatedNumber({ target, duration = 1800 }) {
 }
 
 export default function AdminRevenueDashboard({ tokenBookings = [] }) {
-  const [stats, setStats] = useState(getStats());
+  const [appsData, setAppsData] = useState(() => Object.values(getStoredApplications() || {}));
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
-    const refresh = () => setStats(getStats());
-    window.addEventListener('storage', refresh);
-    return () => window.removeEventListener('storage', refresh);
+    const refresh = () => setAppsData(Object.values(getStoredApplications() || {}));
+    refresh();
+    const interval = setInterval(refresh, 3000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Revenue from token bookings
   const totalRevenue = tokenBookings.length * 50;
-  const completedApps = (() => {
-    try {
-      const apps = Object.values(JSON.parse(localStorage.getItem(APPLICATION_RECORDS_KEY) || '{}'));
-      return apps.filter(a => a.currentStage === 6).length;
-    } catch { return 0; }
-  })();
-  const pendingApps = (() => {
-    try {
-      const apps = Object.values(JSON.parse(localStorage.getItem(APPLICATION_RECORDS_KEY) || '{}'));
-      return apps.filter(a => a.currentStage < 6).length;
-    } catch { return 0; }
-  })();
+  const completedApps = appsData.filter(a => a && a.currentStage === 6).length;
+  const pendingApps = appsData.filter(a => a && a.currentStage < 6).length;
 
   const serviceFrequency = (() => {
-    try {
-      const apps = Object.values(JSON.parse(localStorage.getItem(APPLICATION_RECORDS_KEY) || '{}'));
-      const freq = {};
-      apps.forEach(a => { freq[a.service] = (freq[a.service] || 0) + 1; });
-      return Object.entries(freq).sort((x, y) => y[1] - x[1]).slice(0, 5);
-    } catch { return []; }
+    const freq = {};
+    appsData.forEach(a => {
+      if (a && a.service) {
+        freq[a.service] = (freq[a.service] || 0) + 1;
+      }
+    });
+    return Object.entries(freq).sort((x, y) => y[1] - x[1]).slice(0, 5);
   })();
 
   const maxFreq = serviceFrequency[0]?.[1] || 1;
@@ -100,7 +71,7 @@ export default function AdminRevenueDashboard({ tokenBookings = [] }) {
             fontSize: '12px', fontWeight: 700,
             color: activeTab === id ? '#022c7a' : '#64748b',
             borderBottom: activeTab === id ? '2px solid #022c7a' : '2px solid transparent',
-            background: 'none', border: 'none', borderBottom: activeTab === id ? '2px solid #022c7a' : '2px solid transparent', cursor: 'pointer'
+            background: 'none', border: 'none', cursor: 'pointer'
           }}>{label}</button>
         ))}
       </div>
@@ -109,7 +80,7 @@ export default function AdminRevenueDashboard({ tokenBookings = [] }) {
         {activeTab === 'overview' && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
             {[
-              { label: 'Total Customers', value: stats.customers, icon: '👥', color: '#eff6ff', textColor: '#1e40af', suffix: '' },
+              { label: 'Total Applications', value: appsData.length, icon: '📋', color: '#eff6ff', textColor: '#1e40af', suffix: '' },
               { label: 'Token Bookings', value: tokenBookings.length, icon: '🎫', color: '#fff7ed', textColor: '#c2410c', suffix: '' },
               { label: 'Token Revenue', value: totalRevenue, icon: '💰', color: '#f0fdf4', textColor: '#15803d', prefix: '₹' },
               { label: 'Completed Apps', value: completedApps, icon: '✅', color: '#f0fdf4', textColor: '#15803d', suffix: '' },

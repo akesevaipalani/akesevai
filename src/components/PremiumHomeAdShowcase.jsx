@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Megaphone, Sparkles, Phone, MessageCircle, ArrowRight, ShieldCheck, MapPin, Star, ExternalLink, Tag } from 'lucide-react';
+import { subscribeSponsoredAds } from '../utils/firebaseService';
 
 const MOCK_SPONSORED_ADS = [
   {
@@ -32,16 +33,7 @@ const MOCK_SPONSORED_ADS = [
 ];
 
 export default function PremiumHomeAdShowcase({ navigate }) {
-  const [adList, setAdList] = useState(() => {
-    try {
-      const stored = localStorage.getItem('akesevai-sponsored-ads');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return MOCK_SPONSORED_ADS;
-  });
+  const [adList, setAdList] = useState(MOCK_SPONSORED_ADS);
 
   const [activeAdIndex, setActiveAdIndex] = useState(0);
   const [showEnquiryModal, setShowEnquiryModal] = useState(false);
@@ -49,25 +41,17 @@ export default function PremiumHomeAdShowcase({ navigate }) {
   const [contactPhone, setContactPhone] = useState('');
   const [adCategory, setAdCategory] = useState('கடைகள் & வர்த்தகம் (Retail & Store)');
 
-  // Refresh ads from storage
-  const refreshAds = () => {
-    try {
-      const stored = localStorage.getItem('akesevai-sponsored-ads');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setAdList(parsed);
-          return;
-        }
-      }
-    } catch (e) {}
-    setAdList(MOCK_SPONSORED_ADS);
-  };
-
   useEffect(() => {
-    refreshAds();
-    window.addEventListener('storage', refreshAds);
-    return () => window.removeEventListener('storage', refreshAds);
+    const unsubscribe = subscribeSponsoredAds((cloudAds) => {
+      if (Array.isArray(cloudAds) && cloudAds.length > 0) {
+        setAdList(cloudAds);
+      } else {
+        setAdList(MOCK_SPONSORED_ADS);
+      }
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
   }, []);
 
   // Auto rotate ad banner every 6 seconds

@@ -140,16 +140,19 @@ const appointmentSlots = Array.from({ length: 14 }, (_, index) => {
 });
 
 import { isFirebaseConfigured } from './config/firebase';
-import { 
-  saveCustomerProfileCloud, 
-  saveTokenBookingCloud, 
-  subscribeApplications, 
-  subscribeTokens, 
+import {
+  clearAllApplicationLocalStorage,
+  saveCustomerProfileCloud,
+  saveTokenBookingCloud,
+  subscribeApplications,
+  subscribeTokens,
   subscribeCustomerProfiles,
+  subscribeLiveQueue,
+  subscribeServiceOfDay,
+  subscribeExpiryDocuments,
   recordLoginEventCloud,
   saveLiveQueueCloud,
   saveServiceOfDayCloud,
-  syncAllLocalDataToFirebaseCloud,
   uploadFileToFirebaseStorage,
   uploadDataUrlToFirebaseStorage,
   saveExpiryDocumentCloud,
@@ -159,62 +162,21 @@ import {
   deleteApplicationCloud,
   deleteExpiryDocumentCloud
 } from './utils/firebaseService';
+import { setInStoreApplications } from './utils/statusStore';
 
-const readCustomerRecords = () => {
-  try {
-    const raw = localStorage.getItem(CUSTOMER_RECORDS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed || {};
-  } catch {
-    return {};
-  }
-};
+const readCustomerRecords = () => ({});
 
 const saveCustomerRecord = (record) => {
-  try {
-    const records = readCustomerRecords();
-    records[record.phone] = record;
-    try {
-      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(records));
-    } catch (quotaErr) {
-      console.warn('localStorage quota reached. Pruning heavy document strings...', quotaErr);
-      const sanitizedRecords = { ...records };
-      Object.keys(sanitizedRecords).forEach(p => {
-        if (sanitizedRecords[p]?.documents) {
-          sanitizedRecords[p].documents = sanitizedRecords[p].documents.map(doc => ({
-            ...doc,
-            data: doc.data && doc.data.length > 100000 ? '' : doc.data
-          }));
-        }
-      });
-      try {
-        localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(sanitizedRecords));
-      } catch (e) {
-        console.error('Failed to write to localStorage:', e);
-      }
-    }
-    saveCustomerProfileCloud(record.phone, record);
-  } catch (err) {
-    console.error('Error saving customer record:', err);
-  }
+  if (!record || !record.phone) return;
+  saveCustomerProfileCloud(record.phone, record);
 };
 
-const readTokenBookings = () => {
-  try { return JSON.parse(localStorage.getItem(TOKEN_BOOKINGS_KEY) || '[]'); } catch { return []; }
-};
+const readTokenBookings = () => ([]);
 
 const persistTokenBooking = (token) => {
-  const tokens = readTokenBookings();
-  // Avoid exact duplicates by tokenNo
-  const updated = [token, ...tokens.filter(t => t.tokenNo !== token.tokenNo)];
-  try {
-    localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(updated));
-  } catch (e) {
-    console.warn('localStorage token booking write error:', e);
-  }
+  if (!token) return [];
   saveTokenBookingCloud(token);
-  return updated;
+  return [token];
 };
 
 const adminOnlyPages = new Set(['weblink', 'forms', 'software', 'photo-maker', 'admin']);
@@ -401,6 +363,8 @@ function App() {
   const [toast, setToast] = useState('');
   const [tokenBookings, setTokenBookings] = useState(() => readTokenBookings());
   const [customerRecords, setCustomerRecords] = useState(() => readCustomerRecords());
+  const [applicationRecords, setApplicationRecords] = useState({});
+  const [cloudExpiryDocs, setCloudExpiryDocs] = useState([]);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showFirstLoginModal, setShowFirstLoginModal] = useState(false);
   const [isFirstTimeLogin, setIsFirstTimeLogin] = useState(true);
@@ -413,15 +377,31 @@ function App() {
       window.history.scrollRestoration = 'manual';
     }
     window.scrollTo(0, 0);
+
+    const pageTitles = {
+      home: 'AkEsevai Palani | Digital Service Centre | Official Website www.akesevai.com',
+      services: 'All eSevai Services in Palani | Aadhaar, Income & Community | www.akesevai.com',
+      'status-track': 'Track Application Status Online | AkEsevai Palani | www.akesevai.com',
+      'token-generator': 'Live Token Booking | AkEsevai Palani Digital Centre | www.akesevai.com',
+      notifications: 'Government Job & Exam Notifications | AkEsevai Palani | www.akesevai.com',
+      about: 'About AkEsevai Palani | Trusted Digital Service Centre | www.akesevai.com',
+      contact: 'Contact Us | AkEsevai Palani Office Location & Phone | www.akesevai.com'
+    };
+
+    document.title = pageTitles[page] || 'AkEsevai Palani | Digital Service Centre | www.akesevai.com';
   }, [page]);
 
   useEffect(() => {
-    syncAllLocalDataToFirebaseCloud();
+    clearAllApplicationLocalStorage();
 
     fetchAllCloudRecords().then((cloudData) => {
       if (cloudData) {
-        if (cloudData.customers && Object.keys(cloudData.customers).length) setCustomerRecords(cloudData.customers);
-        if (cloudData.tokens && cloudData.tokens.length) setTokenBookings(cloudData.tokens);
+        if (cloudData.customers) setCustomerRecords(cloudData.customers);
+        if (cloudData.tokens) setTokenBookings(cloudData.tokens);
+        if (cloudData.applications) {
+          setApplicationRecords(cloudData.applications);
+          setInStoreApplications(cloudData.applications);
+        }
       }
     });
 
@@ -441,1575 +421,1959 @@ function App() {
       }
     });
 
+    const unsubscribeApps = subscribeApplications((cloudApps) => {
+      if (cloudApps && typeof cloudApps === 'object') {
+        setApplicationRecords(cloudApps);
+        setInStoreApplications(cloudApps);
+      }
+    });
+
+    const unsubscribeDocs = subscribeExpiryDocuments((docs) => {
+      if (docs && Array.isArray(docs)) {
+        setCloudExpiryDocs(docs);
+      }
+    });
+
     return () => {
       unsubscribeTokens();
       unsubscribeProfiles();
+      unsubscribeApps();
+      unsubscribeDocs();
     };
   }, []);
-
-  const toggleLang = () => {
-    const nextLang = lang === 'ta' ? 'en' : 'ta';
-    setLang(nextLang);
-    localStorage.setItem('akesevai-lang', nextLang);
-    notify(nextLang === 'ta' ? 'தமிழ் மொழிக்கு மாற்றப்பட்டது' : 'Language switched to English');
-  };
-
-  const menuItems = [
-    ['home', t.home],
-    ['services', t.services],
-    ['status-track', t.statusTrack],
-    ['token-generator', t.tokenSlip],
-    ['notifications', t.notifications],
-    ['about', t.about],
-    ['contact', t.contact],
-  ];
-
-  const saveToken = (token) => {
-    const updated = persistTokenBooking(token);
-    setTokenBookings(updated);
-  };
-
-  const navigate = (nextPage) => {
-    setPage(nextPage);
-    setMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const notify = (message) => {
-    setToast(message);
-    window.setTimeout(() => setToast(''), 3500);
-  };
-
-  const loginCustomer = (phone) => {
-    const records = customerRecords || readCustomerRecords();
-    const isNew = !records[phone];
-    const record = records[phone] || {
-      phone,
-      profile: { name: '', createdAt: new Date().toISOString(), complete: false },
-      applications: [],
-      documents: [],
-      appointment: { date: '', time: '' },
+    const toggleLang = () => {
+      const nextLang = lang === 'ta' ? 'en' : 'ta';
+      setLang(nextLang);
+      localStorage.setItem('akesevai-lang', nextLang);
+      notify(nextLang === 'ta' ? 'தமிழ் மொழிக்கு மாற்றப்பட்டது' : 'Language switched to English');
     };
-    saveCustomerRecord(record);
-    sessionStorage.setItem(CUSTOMER_SESSION_KEY, phone);
-    setCustomer(record);
-    setCustomerRecords((prev) => ({ ...prev, [phone]: record }));
 
-    recordLoginEventCloud({
-      type: 'customer_login',
-      phone,
-      isNewCustomer: isNew,
-      profileName: record.profile?.name || 'Customer'
-    });
-
-    setIsFirstTimeLogin(isNew);
-    setShowFirstLoginModal(true);
-    notify(isNew ? 'Account created. Your details will be saved for your next login.' : 'Welcome back. Your saved details are ready.');
-  };
-
-  const updateCustomer = (updater) => {
-    setCustomer((current) => {
-      const updated = typeof updater === 'function' ? updater(current) : updater;
-      saveCustomerRecord(updated);
-      setCustomerRecords((prev) => ({
-        ...prev,
-        [updated.phone]: updated
-      }));
-      return updated;
-    });
-  };
-
-  const logoutCustomer = () => {
-    sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
-    setCustomer(null);
-    setShowLogoutModal(true);
-    navigate('home');
-    notify('பாதுகாப்பாக வெளியேற்றப்பட்டீர்கள். முகப்புப் பக்கம் மாற்றப்பட்டது.');
-  };
-
-  const loginAdmin = (password) => {
-    if (password !== 'admin123') { notify('Incorrect admin password.'); return false; }
-    sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
-    setAdminLoggedIn(true);
-    recordLoginEventCloud({
-      type: 'admin_login',
-      role: 'Administrator'
-    });
-    notify('Admin dashboard opened.');
-    return true;
-  };
-
-  const logoutAdmin = () => {
-    sessionStorage.removeItem(ADMIN_SESSION_KEY);
-    setAdminLoggedIn(false);
-    navigate('home');
-    notify('Admin logged out safely.');
-  };
-
-  return (
-    <div className="app-shell">
-      <WelcomeSplashIntro />
-      <CustomerLogoutModal
-        isOpen={showLogoutModal}
-        onClose={() => {
-          setShowLogoutModal(false);
-          navigate('home');
-        }}
-      />
-      <FirstTimeLoginModal isOpen={showFirstLoginModal} isFirstTime={isFirstTimeLogin} customerName={customer?.profile?.name} onClose={() => setShowFirstLoginModal(false)} />
-      <header className="site-header">
-        <div className="header-inner">
-          <button className="brand" onClick={() => navigate('home')} aria-label="AkEsevai home">
-            <img src="/logo.png" alt="AkEsevai Logo" className="brand-logo-img" />
-            <div className="brand-text-wrap">
-              <strong className="brand-name">
-                Ak <span className="brand-highlight">e-Sevai</span>
-              </strong>
-              <small className="brand-tagline">
-                உங்கள் நம்பிக்கைக்குரிய இ-சேவை மையம்
-              </small>
-            </div>
-          </button>
-
-          <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'}>
-            {menuItems.map(([id, label]) => (
-              <button 
-                key={id} 
-                className={page === id ? 'nav-active' : ''} 
-                onClick={() => { navigate(id); setMenuOpen(false); }}
-              >
-                {label}
-              </button>
-            ))}
-            
-            {/* Mobile Drawer Quick Action Links */}
-            <div className="mobile-menu-actions">
-              <button
-                className="lang-switcher-btn drawer-lang-switcher"
-                onClick={() => { toggleLang(); setMenuOpen(false); }}
-              >
-                🌐 <span>{lang === 'ta' ? 'Switch to English' : 'தமிழ் மொழிக்கு மாற்றுக'}</span>
-              </button>
-
-              <button 
-                className="nav-btn-customer" 
-                onClick={() => { navigate('customer'); setMenuOpen(false); }}
-              >
-                <UserRound size={16} /> {t.customerPortal}
-              </button>
-
-              <button 
-                className="nav-btn-admin" 
-                onClick={() => { navigate('admin'); setMenuOpen(false); }}
-              >
-                <LockKeyhole size={15} /> {t.admin}
-              </button>
-            </div>
-          </nav>
-
-          <div className="header-actions-right">
-            <DarkModeToggle isDark={isDark} setIsDark={setIsDark} />
-            
-            <button
-              className="lang-switcher-btn"
-              onClick={toggleLang}
-              title={lang === 'ta' ? 'Switch language to English' : 'தமிழ் மொழிக்கு மாற்றுக'}
-            >
-              🌐 <span className="lang-switcher-text">{lang === 'ta' ? 'EN' : 'தமிழ்'}</span>
-            </button>
-
-            <button
-              className="nav-btn-admin desktop-only-btn"
-              onClick={() => navigate('admin')}
-              title="Admin Login"
-            >
-              <LockKeyhole size={13} style={{ color: '#fbbf24' }} /> {t.admin}
-            </button>
-
-            <button
-              className="nav-btn-customer desktop-only-btn"
-              onClick={() => navigate('customer')}
-              title="Customer Portal"
-            >
-              <UserRound size={14} /> {t.customerPortal}
-            </button>
-
-            <button 
-              className="menu-button" 
-              onClick={() => setMenuOpen(!menuOpen)} 
-              aria-label="Toggle menu"
-              title="Toggle mobile menu"
-            >
-              {menuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-          </div>
-        </div>
-      </header>
-      <div className="announcement-bar" aria-label="AkEsevai updates">
-        <div className="announcement-track"><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span><span>APPOINTMENTS OPEN TODAY • 10:00 AM - 5:00 PM</span><span>DOCUMENTS • CERTIFICATES • WELFARE SCHEMES</span><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span></div>
-      </div>
-
-      <main>
-        {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} />}
-        {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
-        {page === 'weblink' && (adminLoggedIn ? <WeblinkPage /> : <PrivatePageGate navigate={navigate} />)}
-        {page === 'photo-maker' && (adminLoggedIn ? <PhotoMakerPage notify={notify} /> : <PrivatePageGate navigate={navigate} />)}
-        {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} /> : <PrivatePageGate navigate={navigate} />)}
-        {page === 'notifications' && <NotificationsPage lang={lang} />}
-        {page === 'software' && (adminLoggedIn ? <SoftwarePage notify={notify} navigate={navigate} /> : <PrivatePageGate navigate={navigate} />)}
-        {page === 'whatsapp-poster' && <WhatsappPosterPage notify={notify} />}
-        {page === 'status-track' && <StatusTrackPage />}
-        {page === 'token-generator' && <TokenGeneratorPage onTokenSaved={saveToken} />}
-        {page === 'about' && <AboutPage navigate={navigate} lang={lang} />}
-        {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
-        {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} />}
-        {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} />}
-        {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} customerRecords={customerRecords} notify={notify} />}
-      </main>
-
-      <footer className="site-footer">
-        <div>
-          <button className="brand footer-brand" onClick={() => navigate('home')} style={{ gap: '12px' }}>
-            <img src="/logo.png" alt="AkEsevai Logo" className="brand-logo-img" style={{ height: '44px', background: 'white', padding: '4px', borderRadius: '8px' }} />
-            <div>
-              <strong className="brand-name" style={{ fontSize: '18px', color: 'white' }}>AkEsevai CENTRE</strong>
-              <small style={{ color: '#86efac', display: 'block', fontSize: '9px', fontWeight: 700, lineHeight: 1.25 }}>{t.tagline}</small>
-            </div>
-          </button>
-          <p>{t.footerDesc}</p>
-          <div className="footer-social-links" style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <a href={siteConfig.youtube} target="_blank" rel="noreferrer" title="YouTube: @AkEsevai" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#FF0000', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(255,0,0,0.3)' }}>
-              <YoutubeIcon size={15} color="white" /> YouTube
-            </a>
-            <a href={siteConfig.instagram} target="_blank" rel="noreferrer" title="Instagram: @akesevai" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(225,48,108,0.3)' }}>
-              <InstagramIcon size={15} color="white" /> Instagram
-            </a>
-            <a href={siteConfig.facebook} target="_blank" rel="noreferrer" title="Facebook Page" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#1877F2', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(24,119,242,0.3)' }}>
-              <FacebookIcon size={15} color="white" /> Facebook
-            </a>
-          </div>
-        </div>
-        <div className="footer-contact"><span><MapPin size={16} /> {siteConfig.address}</span><a href={`tel:${siteConfig.phone}`}><Phone size={16} /> {siteConfig.displayPhone}</a><a href={`mailto:${siteConfig.email}`}><Mail size={16} /> {siteConfig.email}</a></div>
-        <div className="footer-bottom"><span>{t.footerRights}</span><span>{t.footerAssistance}</span></div>
-      </footer>
-      <FloatingQuickActions navigate={navigate} />
-      <CustomerEasyGuide navigate={navigate} />
-      {toast && <div className="toast"><Check size={18} /> {toast}</div>}
-    </div>
-  );
-}
-
-function AdEnquiryCard() {
-  return (
-    <div className="ad-enquiry-card">
-      <div className="ad-enquiry-inner">
-        <span className="ad-speaker-icon">📢</span>
-        <div className="ad-text-block">
-          <strong className="ad-title-label">விளம்பரத்தொடர்புக்கு / For Advertisement Enquiry:</strong>
-          <a href="tel:9342318844" className="ad-phone-number">
-            📞 <span>+91 93423 18844</span>
-          </a>
-        </div>
-        <a
-          href="https://wa.me/919342318844?text=🙏%20*வணக்கம்*,%20விளம்பரம்%20குறித்து%20தொடர்பு%20கொள்கிறேன்.%20AkEsevai%20இணையதளம்%20மூலம்."
-          target="_blank"
-          rel="noreferrer"
-          className="ad-whatsapp-btn"
-        >
-          <MessageCircle size={16} /> 💬 WhatsApp
-        </a>
-      </div>
-    </div>
-  );
-}
-
-function HomePage({ navigate, notify, lang }) {
-  const t = translations[lang] || translations.en;
-  return <>
-    <section className="hero">
-      <div className="hero-content page-width">
-        <div className="eyebrow"><span className="live-dot" /> {t.eyebrow}</div>
-        <h1 className={lang === 'ta' ? 'hero-title-tamil' : ''}>{t.heroTitleLine1}<br /><em>{t.heroTitleLine2}</em></h1>
-        <p className="hero-copy">{t.heroCopy}</p>
-        <div className="hero-actions"><button className="button button-primary" onClick={() => navigate('customer')}>{t.startApp} <ArrowRight size={18} /></button><button className="button button-quiet" onClick={() => navigate('services')}>{t.exploreServices} <ChevronRight size={17} /></button></div>
-        <div className="hero-note"><ShieldCheck size={16} /> {t.heroNote}</div>
-      </div>
-      <div className="hero-visual-showcase-container" style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: '860px', margin: '20px 0', flexShrink: 1 }}>
-        <AkEsevaiOfficePhotoSlider />
-      </div>
-    </section>
-
-    {/* INSTALL PWA MOBILE APP BANNER */}
-    <div className="page-width">
-      <InstallPwaBanner />
-    </div>
-
-    {/* 🔴 LIVE NOW • நேரலை CENTER QUEUE & WAIT TIME BANNER ON HOMEPAGE FRONT */}
-    <div className="page-width">
-      <LiveWaitTimeBanner />
-    </div>
-
-    {/* ⭐ SERVICE OF THE DAY BANNER - "இன்றைய சிறப்பு சேவை" */}
-    <div className="page-width">
-      <ServiceOfTheDayBanner navigate={navigate} />
-    </div>
-
-
-
-    {/* ANIMATED LIVE COUNTER STATS STRIP */}
-    <div className="page-width">
-      <AnimatedLiveStatsStrip />
-    </div>
-
-    {/* GOVERNMENT PASSPORT PHOTO & SIGNATURE CROPPER */}
-    <div className="page-width">
-      <GovernmentPhotoCropperTool />
-    </div>
-
-
-
-    {/* TDCOMMONESEVAI STYLE HERO BANNER SLIDER */}
-    <div className="page-width">
-      <HeroBannerSlider navigate={navigate} />
-    </div>
-
-    {/* AADHAAR MARQUEE BANNER ON HOME PAGE */}
-    <div className="page-width" style={{ marginTop: '28px', marginBottom: '15px' }}>
-      <div className="aadhaar-marquee-box" style={{ margin: '0' }}>
-        <marquee scrollamount="4">
-          {t.aadhaarMarqueeText}
-        </marquee>
-      </div>
-    </div>
-
-    {/* PREMIUM LOCAL SPONSORED ADVERTISEMENTS SHOWCASE */}
-    <div className="page-width">
-      <PremiumHomeAdShowcase navigate={navigate} />
-    </div>
-
-
-
-
-
-    {/* SMART AI DOCUMENT VERIFICATION CHECKER WIDGET */}
-    <div className="page-width">
-      <AiDocumentCheckerWidget navigate={navigate} />
-    </div>
-
-
-
-    {/* QUICK TOKEN & STATUS LOOKUP TRACKER */}
-    <div className="page-width">
-      <QuickTokenStatusLookup navigate={navigate} />
-    </div>
-
-    {/* SOCIAL MEDIA CHANNELS & FOLLOW WIDGET */}
-    <div className="page-width">
-      <SocialMediaFollowWidget />
-    </div>
-
-    <section className="notifications-section page-width"><div className="section-heading"><div><span className="section-kicker">{t.notificationsKicker}</span><h2>{t.notificationsTitle}</h2></div><button className="text-button" onClick={() => navigate('notifications')}>{t.viewAllNotifications} <ArrowRight size={16} /></button></div><div className="notification-grid">{notifications.map((notification) => <NotificationCard key={notification.title} notification={notification} />)}</div><div className="visitor-counter"><Eye /> <span>{t.totalVisitors}</span><strong>18,472</strong></div></section>
-
-
-    {/* CITIZEN REVIEWS & TESTIMONIALS AT THE BOTTOM OF HOMEPAGE */}
-    <div className="page-width">
-      <CustomerTestimonials />
-    </div>
-
-    <section className="cta-section page-width"><div className="cta-box"><div><span className="section-kicker">{t.ctaKicker}</span><h2>{t.ctaTitle}</h2><p>{t.ctaText}</p></div><button className="button button-primary" onClick={() => navigate('contact')}>{t.talkToUs} <MessageCircle size={18} /></button></div></section>
-  </>;
-}
-
-const getServiceVisual = (group, title = '') => {
-  const t = title.toLowerCase();
-  let bgGradient = 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)';
-  let icon = '📄';
-  let bannerImage = 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=400&q=80';
-
-  if (t.includes('aadhaar')) {
-    bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
-    icon = '🪪';
-    bannerImage = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('income') || t.includes('வருமான')) {
-    bgGradient = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
-    icon = '💰';
-    bannerImage = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('community') || t.includes('சாதி') || t.includes('nativity') || t.includes('residence') || t.includes('graduate')) {
-    bgGradient = 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)';
-    icon = '📜';
-    bannerImage = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('passport')) {
-    bgGradient = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
-    icon = '🛂';
-    bannerImage = 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('pan') || t.includes('பான்')) {
-    bgGradient = 'linear-gradient(135deg, #d97706 0%, #b45309 100%)';
-    icon = '💳';
-    bannerImage = 'https://images.unsplash.com/photo-1556742049-0a67daf4005a?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('smart card') || t.includes('குடும்ப அட்டை')) {
-    bgGradient = 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)';
-    icon = '🌾';
-    bannerImage = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('voter') || t.includes('வாக்காளர்')) {
-    bgGradient = 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)';
-    icon = '🗳️';
-    bannerImage = 'https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('employment') || t.includes('வேலைவாய்ப்பு') || t.includes('shram')) {
-    bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0f766e 100%)';
-    icon = '💼';
-    bannerImage = 'https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('pension') || t.includes('ஓய்வூதியம்') || t.includes('welfare') || t.includes('திருமண') || t.includes('sewing')) {
-    bgGradient = 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)';
-    icon = '🤝';
-    bannerImage = 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb0?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('tnpsc') || t.includes('mark sheet') || t.includes('education') || t.includes('loan')) {
-    bgGradient = 'linear-gradient(135deg, #9333ea 0%, #7e22ce 100%)';
-    icon = '🎓';
-    bannerImage = 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80';
-  } else if (t.includes('fssai') || t.includes('msme') || t.includes('business')) {
-    bgGradient = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)';
-    icon = '🏬';
-    bannerImage = 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=400&q=80';
-  }
-
-  return { bgGradient, icon, bannerImage };
-};
-
-function ServicesPage({ navigate, lang }) {
-  const t = translations[lang] || translations.en;
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('All Services');
-  const [selectedService, setSelectedService] = useState(null);
-  const [expandedTitle, setExpandedTitle] = useState(null);
-
-  const categories = ['All Services', ...new Set(serviceCatalog.map((service) => service[2]))];
-  const filteredServices = serviceCatalog.filter((service) => {
-    const matchesQuery = service.join(' ').toLowerCase().includes(query.toLowerCase());
-    const matchesCategory = category === 'All Services' || service[2] === category;
-    return matchesQuery && matchesCategory;
-  });
-
-  return (
-    <PageIntro
-      kicker={t.servicesKicker}
-      title={t.servicesTitle}
-      text={t.servicesText}
-      action={<button className="button button-primary" onClick={() => navigate('customer')}>{t.startApp} <ArrowRight size={18} /></button>}
-    >
-      {/* 1. TOP ANNOUNCEMENT BANNER (RUNNING MARQUEE) */}
-      <div className="top-announcement-banner">
-        <marquee scrollamount="4">
-          {t.topAnnouncementText}
-        </marquee>
-      </div>
-
-      {/* 3. LOGO SHOWCASE BANNER */}
-      <div className="brand-logo-showcase-bar">
-        <img src="/logo.png" alt="AkEsevai Logo" className="showcase-logo-img" />
-        <span className="showcase-logo-text">{t.brandShowcaseText}</span>
-      </div>
-
-      <div className="service-search">
-        <Search size={18} />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />
-        <span>{filteredServices.length} {t.resultsCount}</span>
-      </div>
-
-      <div className="category-tabs">
-        {categories.map((item) => (
-          <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>
-            {item === 'All Services' ? t.allCategories : item}
-          </button>
-        ))}
-      </div>
-
-      <div className="catalog-grid">
-        {filteredServices.map(([tamil, title, group]) => {
-          const visual = getServiceVisual(group, title);
-          const isExpanded = expandedTitle === title;
-          const docs = getRequiredDocuments(title, group);
-
-          return (
-            <article
-              className={`catalog-card ${isExpanded ? 'catalog-card-expanded' : ''}`}
-              key={title}
-              style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-            >
-              <div
-                className="service-card-image-header"
-                style={{
-                  position: 'relative',
-                  height: '120px',
-                  background: visual.bgGradient,
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  padding: '12px',
-                  backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.75)), url(${visual.bannerImage})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center'
-                }}
-              >
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '10px',
-                    left: '10px',
-                    background: 'rgba(255, 255, 255, 0.95)',
-                    color: '#0f172a',
-                    padding: '4px 10px',
-                    borderRadius: '20px',
-                    fontSize: '10px',
-                    fontWeight: 800,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <span>{visual.icon}</span> {group}
-                </span>
-              </div>
-
-              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                <h3 style={{ font: '800 15px Manrope', margin: 0, color: 'var(--ink)', lineHeight: 1.3 }}>
-                  {lang === 'ta' ? tamil : title}
-                </h3>
-                <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0, fontWeight: 500 }}>
-                  {lang === 'ta' ? title : tamil}
-                </p>
-
-                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px', alignItems: 'center' }}>
-                  <button
-                    className="card-link"
-                    style={{
-                      background: isExpanded ? '#f1f5f9' : '#e0f2fe',
-                      color: isExpanded ? '#334155' : '#0052cc',
-                      padding: '7px 12px',
-                      borderRadius: '7px',
-                      fontWeight: 800,
-                      fontSize: '11px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px'
-                    }}
-                    onClick={() => setExpandedTitle(isExpanded ? null : title)}
-                  >
-                    {isExpanded ? '✕ Hide (மறை)' : `📄 ${t.viewDetails}`}
-                  </button>
-
-                  <button
-                    style={{
-                      background: '#16a34a',
-                      color: 'white',
-                      padding: '7px 14px',
-                      borderRadius: '7px',
-                      fontWeight: 800,
-                      fontSize: '11px',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      marginLeft: 'auto'
-                    }}
-                    onClick={() => navigate('customer')}
-                  >
-                    Apply <ArrowRight size={13} />
-                  </button>
-                </div>
-
-                {isExpanded && (
-                  <div
-                    className="inline-service-detail"
-                    style={{
-                      marginTop: '12px',
-                      paddingTop: '12px',
-                      borderTop: '1px dashed #cbd5e1',
-                      animation: 'fadeIn 0.2s ease'
-                    }}
-                  >
-                    <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      📋 தேவைப்படும் ஆவணங்கள் (Required Documents):
-                    </h4>
-                    <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
-                      {docs.map((doc) => (
-                        <span key={doc} style={{ fontSize: '11px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                          <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} /> {doc}
-                        </span>
-                      ))}
-                    </div>
-                    <button
-                      className="button button-primary"
-                      style={{ width: '100%', fontSize: '11px', padding: '8px', justifyContent: 'center' }}
-                      onClick={() => navigate('customer')}
-                    >
-                      Start this application <ArrowRight size={14} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </div>
-      {filteredServices.length === 0 && <div className="empty-search">{t.noServiceFound}</div>}
-      <div className="service-callout">
-        <div className="service-callout-icon"><Phone /></div>
-        <div>
-          <h3>{t.cantFindTitle}</h3>
-          <p>{t.cantFindDesc}</p>
-        </div>
-        <button className="text-button" onClick={() => navigate('contact')}>{t.askTeam} <ArrowRight size={16} /></button>
-      </div>
-    </PageIntro>
-  );
-}
-
-function ServiceDetail({ service, onClose, onApply }) {
-  const docs = getRequiredDocuments(service.title, service.group);
-  return (
-    <div className="service-modal-backdrop" onClick={onClose}>
-      <div className="service-modal" onClick={(event) => event.stopPropagation()}>
-        <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        <span className="catalog-group">{service.group}</span>
-        <h2>{service.tamil}</h2>
-        <p className="modal-english">{service.title}</p>
-        <h3 className="docs-heading">Documents required for this service</h3>
-        <div className="document-checklist">
-          {docs.map((doc) => <span key={doc}><Check size={15} /> {doc}</span>)}
-        </div>
-        <small className="docs-note">AkEsevai will verify the submitted documents before application submission.</small>
-        <button className="button button-primary" onClick={onApply}>Start this application <ArrowRight size={16} /></button>
-      </div>
-    </div>
-  );
-}
-
-function WeblinkPage() { const [query, setQuery] = useState(''); const filteredLinks = webLinks.filter((link) => `${link.title} ${link.text}`.toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="USEFUL WEBLINKS" title="Trusted links, all in one place." text="Open official portals directly from AkEsevai. Search by service name and choose Open to visit the official website."><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Link-ஐ தேடவும்... Search official links" /><span>{filteredLinks.length} links</span></div><div className="link-grid">{filteredLinks.map((link) => { const Icon = link.icon; return <a className="external-link-card" href={link.href} target="_blank" rel="noreferrer" key={link.title}><span className="link-icon"><Icon /></span><span><strong>{link.title}</strong><small>{link.text}</small></span><span className="open-link">Open <ExternalLink size={14} /></span></a>; })}</div><div className="link-note"><ShieldCheck size={18} /><span>Always check that you are on the official government website before entering personal details.</span></div></PageIntro>; }
-
-function PhotoMakerPage({ notify }) {
-  const [photo, setPhoto] = useState('');
-  const [copies, setCopies] = useState(8);
-  const [paper, setPaper] = useState('A4');
-  const [brightness, setBrightness] = useState(100);
-  const [contrast, setContrast] = useState(100);
-  const [zoom, setZoom] = useState(100);
-  const [border, setBorder] = useState(true);
-  const [textEnabled, setTextEnabled] = useState(false);
-  const [photoText, setPhotoText] = useState('');
-  const [margins, setMargins] = useState({ top: 5, bottom: 5, left: 5, right: 5 });
-  const [gaps, setGaps] = useState({ horizontal: 2.5, vertical: 2.5 });
-  const updateMargin = (key, value) => setMargins({ ...margins, [key]: value });
-  const updateGap = (key, value) => setGaps({ ...gaps, [key]: value });
-  const clearPhoto = () => { setPhoto(''); setPhotoText(''); notify('Photo cleared.'); };
-  const photoStyle = { filter: `brightness(${brightness}%) contrast(${contrast}%)`, transform: `scale(${zoom / 100})` };
-  return <PageIntro kicker="PHOTO MAKER SOFTWARE" title="Create your passport photo sheet." text="Upload one photo, adjust the layout, and generate a ready-to-print sheet just like a service centre tool."><div className="photo-tool"><div className="photo-toolbar"><span className="tool-badge"><Camera size={18} /> PHOTO MAKER</span><button className="tool-action" onClick={() => notify('Photo sheet generated.')}>Generate Sheet</button><button className="tool-action" onClick={() => notify('Select the photo area in the preview to crop.')}> <Crop size={15} /> Crop Photo</button><button className="tool-action" onClick={() => notify('Crop applied.')}>Apply Crop</button><button className="tool-action" onClick={() => notify('PDF download is ready for printing.')}> <Download size={15} /> Download PDF</button></div><div className="photo-tool-layout"><aside className="photo-controls"><label className="photo-upload compact-upload"><ImagePlus size={25} /><strong>{photo ? 'Change photo' : 'Upload photo'}</strong><small>JPG or PNG up to 10 MB</small><input type="file" accept="image/png,image/jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { setPhoto(URL.createObjectURL(file)); notify('Photo loaded into the sheet.'); } }} /></label><div className="control-section"><strong><SlidersHorizontal size={15} /> Sheet settings</strong><label>Paper<select value={paper} onChange={(event) => setPaper(event.target.value)}><option>A4</option><option>4 x 6 inch</option><option>A5</option></select></label><label>Copies<input type="number" min="1" max="40" value={copies} onChange={(event) => setCopies(Math.max(1, Math.min(40, Number(event.target.value))))} /></label></div><div className="control-section"><strong><Sun size={15} /> Image adjustment</strong><label>Brightness <output>{brightness}%</output><input type="range" min="50" max="150" value={brightness} onChange={(event) => setBrightness(event.target.value)} /></label><label><Contrast size={14} /> Contrast <output>{contrast}%</output><input type="range" min="50" max="150" value={contrast} onChange={(event) => setContrast(event.target.value)} /></label><label><ZoomIn size={14} /> Zoom <output>{zoom}%</output><input type="range" min="70" max="140" value={zoom} onChange={(event) => setZoom(event.target.value)} /></label></div><div className="control-section"><strong>Margins (mm)</strong><div className="mini-input-grid"><label>Top<input type="number" value={margins.top} onChange={(event) => updateMargin('top', event.target.value)} /></label><label>Bottom<input type="number" value={margins.bottom} onChange={(event) => updateMargin('bottom', event.target.value)} /></label><label>Left<input type="number" value={margins.left} onChange={(event) => updateMargin('left', event.target.value)} /></label><label>Right<input type="number" value={margins.right} onChange={(event) => updateMargin('right', event.target.value)} /></label></div></div><div className="control-section"><strong>Gaps (mm)</strong><div className="mini-input-grid"><label>Horizontal<input type="number" step="0.5" value={gaps.horizontal} onChange={(event) => updateGap('horizontal', event.target.value)} /></label><label>Vertical<input type="number" step="0.5" value={gaps.vertical} onChange={(event) => updateGap('vertical', event.target.value)} /></label></div></div><div className="toggle-list"><label><input type="checkbox" checked={border} onChange={(event) => setBorder(event.target.checked)} /> Photo Border</label><label><input type="checkbox" checked={textEnabled} onChange={(event) => setTextEnabled(event.target.checked)} /> Text on Photo</label>{textEnabled && <input className="text-photo-input" value={photoText} onChange={(event) => setPhotoText(event.target.value)} placeholder="Name or ID number" />}</div><div className="tool-footer-actions"><button className="button button-primary" onClick={() => notify(`${copies} photos ready on ${paper} sheet.`)}><Printer size={16} /> Print Photos</button><button className="text-button" onClick={() => notify('Single photo saved as JPEG.')}><Download size={15} /> Save Single Photo (JPEG)</button><button className="text-button" onClick={() => notify('AI background removal requested.')}><Sparkles size={15} /> AI Remove BG</button><button className="clear-photo" onClick={clearPhoto}><Trash2 size={15} /> Clear Photo</button></div></aside><section className="sheet-workspace"><div className="workspace-head"><span><strong>Preview Sheet</strong><small>{paper} · {copies} copies · {margins.top}/{margins.bottom}/{margins.left}/{margins.right} mm margins</small></span><span className="workspace-status">● Ready</span></div><div className={`print-sheet ${paper === 'A5' ? 'paper-a5' : ''}`} style={{ padding: `${margins.top}px ${margins.right}px ${margins.bottom}px ${margins.left}px`, gap: `${gaps.vertical}px ${gaps.horizontal}px` }}>{Array.from({ length: copies }).map((_, index) => <div className={`sheet-photo ${border ? 'with-border' : ''}`} key={index}>{photo ? <img src={photo} alt={`Photo copy ${index + 1}`} style={photoStyle} /> : <span><Camera size={18} />Upload a photo</span>}{textEnabled && photoText && <small>{photoText}</small>}</div>)}</div><div className="sheet-help"><Crop size={15} /> Photo size: 35 × 45 mm <span>•</span> Adjust controls on the left, then print your sheet</div></section></div></div>
-    <PhotoBackgroundRemover />
-  </PageIntro>;
-}
-
-function FormsPage({ notify }) { const [fileName, setFileName] = useState(''); const [query, setQuery] = useState(''); const [category, setCategory] = useState('All Forms'); const categories = ['All Forms', ...new Set(formsCatalog.map((form) => form[1]))]; const filteredForms = formsCatalog.filter((form) => (category === 'All Forms' || form[1] === category) && form.join(' ').toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="FORMS & DOWNLOADS" title="Official forms, ready to download." text="Search for a form and download the available official PDF from the TD Common e-Sevai forms collection."><div className="form-count"><FormInput size={18} /> <strong>📋 All Forms</strong><span>{filteredForms.length} forms available</span></div><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Form-ஐ தேடவும்... Search forms" /><span>{filteredForms.length} results</span></div><div className="category-tabs">{categories.map((item) => <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="forms-directory">{filteredForms.map(([title, type]) => <FormRow title={title} type={type} notify={notify} key={title} />)}</div><label className="form-dropzone full-dropzone"><UploadCloud size={30} /><strong>{fileName || 'Upload a completed form'}</strong><small>PDF, JPG or PNG up to 10 MB</small><input type="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || '')} />{fileName && <span className="upload-ready"><Check size={14} /> Ready for review</span>}</label></PageIntro>; }
-function FormRow({ title, type, notify }) { const sourceLink = tdcscFormLinks[title]; const downloadForm = () => { if (sourceLink) { window.open(toDownloadLink(sourceLink), '_blank', 'noopener,noreferrer'); notify(`${title} download opened.`); return; } notify(`${title} is not yet linked to an official PDF.`); }; return <div className="form-row"><span className="form-icon"><FormInput size={19} /></span><span><strong>{title}</strong><small>{type} · {sourceLink ? 'Official PDF download' : 'PDF link coming soon'}</small></span><button className="icon-button" aria-label={`Download ${title}`} onClick={downloadForm} disabled={!sourceLink}><Download size={17} /></button></div>; }
-
-function NotificationsPage({ lang }) {
-  const t = translations[lang] || translations.en;
-  return (
-    <PageIntro
-      kicker={t.notifKicker}
-      title={t.notifTitle}
-      text={t.notifText}
-    >
-      <NotificationTables forceAdmin={false} lang={lang} />
-      <div className="notice-list" style={{ marginTop: '35px' }}>
-        <div>
-          <Megaphone size={18} />
-          <span>
-            <strong>{lang === 'ta' ? 'புதிய அறிவிப்புகள் தொடர்ந்து புதுப்பிக்கப்படும்' : 'New updates are added regularly'}</strong>
-            <small>{lang === 'ta' ? 'சந்தேகங்கள் மற்றும் உதவிக்கு எங்களை அழைக்கலாம்: 93423 18844.' : 'For doubts and support, call us: 93423 18844.'}</small>
-          </span>
-        </div>
-        <div>
-          <Clock3 size={18} />
-          <span>
-            <strong>{lang === 'ta' ? 'கடைசி தேதியை எப்போதும் சரிபார்க்கவும்' : 'Always verify the last date'}</strong>
-            <small>{lang === 'ta' ? 'தேதிகள் மாற்றப்படலாம். விண்ணப்பிக்கும் முன் அதிகாரப்பூர்வ தளத்தை சரிபார்க்கவும்.' : 'Dates may change. Please verify with official portal before applying.'}</small>
-          </span>
-        </div>
-      </div>
-    </PageIntro>
-  );
-}
-
-// SoftwarePage loaded from ./pages/SoftwarePage.jsx
-
-function WhatsappPosterPage({ notify }) { const [message, setMessage] = useState('AkEsevai - Digital services made simple'); return <PageIntro kicker="WHATSAPP POSTER" title="Create a shareable service poster." text="Add your message, preview a clean poster and share it with your customers or family groups."><div className="poster-maker"><div className="poster-controls"><label>Poster message<textarea rows="4" value={message} onChange={(event) => setMessage(event.target.value)} /></label><button className="button button-primary" onClick={() => notify('Poster preview is ready to share on WhatsApp.')}><Download size={17} /> Download poster</button></div><div className="poster-preview"><div className="poster-logo"><Sparkles size={17} /> AkEsevai</div><div className="poster-lines"><span>YOUR LOCAL</span><strong>{message}</strong><small>Mill Road, Sanmugapuram, Palani - 624601</small><b>93423 18844</b></div><div className="poster-stamp">OPEN<br /><strong>9 AM - 7 PM</strong></div></div></div></PageIntro>; }
-
-function AboutPage({ navigate, lang }) {
-  return <PageIntro kicker={lang === 'ta' ? 'AKESEVAI பற்றி' : 'ABOUT AKESEVAI'} title={lang === 'ta' ? 'உள்ளூர் அனுபவம். டிஜிட்டல் நிச்சயம்.' : 'Local knowledge. Digital confidence.'} text={lang === 'ta' ? 'பழனி மற்றும் சுற்றியுள்ள குடும்பங்களுக்கு படிவங்கள், இணையதளங்களின் சிரமமின்றி அத்தியாவசிய ஆன்லைன் சேவைகளை பெற உதவுகிறோம்.' : 'We help families in and around Palani navigate essential online services without the stress of forms, portals and follow-ups.'}><div className="about-grid"><div className="about-photo"><div className="photo-overlay"><span>{lang === 'ta' ? 'பழனி மக்களுக்குச் சேவை' : 'Serving Palani'}</span><strong>{lang === 'ta' ? 'முதல் நாளிலிருந்தே கனிவுடன்.' : 'With care since day one.'}</strong></div></div><div className="about-copy"><span className="section-kicker">{lang === 'ta' ? 'எங்கள் உறுதிமொழி' : 'OUR PROMISE'}</span><h2>{lang === 'ta' ? 'ஒவ்வொரு விண்ணப்பத்திற்கும் மனித வழிகாட்டுதல் அவசியம்.' : 'Every application deserves a human guide.'}</h2><p>{lang === 'ta' ? 'அரசு தளங்கள் கடினமாக இருக்கலாம். சிறு தவறுகள் தாமதத்தை உருவாக்கலாம். AkEsevai உங்களை சரியான பாதையில் அழைத்துச் செல்லும்.' : 'Government websites can be hard to navigate and small mistakes can create long delays. AkEsevai combines local understanding with a simple digital process so you always know what is happening next.'}</p><div className="promise-list"><span><Check /> {lang === 'ta' ? 'தொ தொடங்கும் முன் தெளிவான கட்டணம்' : 'Clear pricing before we begin'}</span><span><Check /> {lang === 'ta' ? 'எளிதில் புரியும் உடனுக்குடன் தகவல்கள்' : 'Updates you can understand'}</span><span><Check /> {lang === 'ta' ? 'பாதுகாப்பான ஆவண பராமரிப்பு' : 'Your documents handled with care'}</span></div><button className="button button-primary" onClick={() => navigate('contact')}>{lang === 'ta' ? 'பழனியில் எங்களைச் சந்திக்க' : 'Meet us in Palani'} <MapPin size={17} /></button></div></div></PageIntro>;
-}
-
-function ContactPage({ notify, lang }) {
-  const t = translations[lang] || translations.en;
-  return (
-    <PageIntro kicker={t.contactKicker} title={t.contactTitle} text={t.contactText}>
-      <div className="contact-grid">
-        <div className="contact-panel">
-          <div className="contact-item"><span><MapPin /></span><div><small>{t.visitUs}</small><strong>Mill Road, Sanmugapuram</strong><p>Palani - 624601, Tamil Nadu</p></div></div>
-          <div className="contact-item"><span><Phone /></span><div><small>{t.callUs}</small><a href="tel:9342318844"><strong>93423 18844</strong></a><p>Mon - Sat, 9:00 AM - 7:00 PM</p></div></div>
-          <div className="contact-item"><span><Mail /></span><div><small>EMAIL US</small><a href="mailto:akesevaipalani@gmail.com"><strong>akesevaipalani@gmail.com</strong></a><p>We reply within 24 hours</p></div></div>
-          <div className="contact-item"><span><MessageCircle /></span><div><small>{t.whatsappUs}</small><a href="https://wa.me/919342318844"><strong>Chat with AkEsevai</strong></a><p>Quick questions and document checklist</p></div></div>
-          <div className="contact-item"><span><YoutubeIcon size={20} color="#FF0000" /></span><div><small>YOUTUBE CHANNEL</small><a href={siteConfig.youtube} target="_blank" rel="noreferrer"><strong>@AkEsevai</strong></a><p>Subscribe for video guides & updates</p></div></div>
-          <div className="contact-item"><span><InstagramIcon size={20} color="#E1306C" /></span><div><small>INSTAGRAM PAGE</small><a href={siteConfig.instagram} target="_blank" rel="noreferrer"><strong>@akesevai</strong></a><p>Follow us for daily posts & news</p></div></div>
-          <div className="contact-item"><span><FacebookIcon size={20} color="#1877F2" /></span><div><small>FACEBOOK PAGE</small><a href={siteConfig.facebook} target="_blank" rel="noreferrer"><strong>AkEsevai Facebook</strong></a><p>Connect on our Facebook page</p></div></div>
-        </div>
-        <form className="contact-form" onSubmit={(event) => { event.preventDefault(); notify(lang === 'ta' ? 'செய்தி பெறப்பட்டது. AkEsevai விரைவில் உங்களை அழைக்கும்.' : 'Message received. AkEsevai will call you shortly.'); event.currentTarget.reset(); }}>
-          <label>{t.yourName}<input required placeholder="Enter your name" /></label>
-          <label>{t.phoneNumber}<input required type="tel" placeholder="10-digit mobile number" /></label>
-          <label>{t.howCanWeHelp}<textarea required placeholder="Tell us a little about your service need" rows="4" /></label>
-          <button className="button button-primary" type="submit">{t.sendMessage} <Send size={16} /></button>
-        </form>
-      </div>
-
-      {/* SOCIAL MEDIA FOLLOW WIDGET */}
-      <SocialMediaFollowWidget />
-
-      {/* GOOGLE MAPS EMBED */}
-      <GoogleMapEmbed />
-    </PageIntro>
-  );
-}
-function PageIntro({ kicker, title, text, action, children }) { return <section className="page-width inner-page"><div className="inner-hero"><span className="section-kicker">{kicker}</span><h1>{title}</h1><p>{text}</p>{action}</div>{children}</section>; }
-
-function PrivatePageGate({ navigate }) {
-  return <section className="private-gate page-width"><div><span className="section-kicker">PRIVATE ADMIN AREA</span><h1>This page is not public.</h1><p>Only an AkEsevai administrator can open Weblinks, Forms, Software, and Photo Maker tools.</p><button className="button button-primary" onClick={() => navigate('admin')}><LockKeyhole size={17} /> Admin sign in</button></div></section>;
-}
-
-function AdminLiveQueueControlForm() {
-  const [isCenterOpen, setIsCenterOpen] = useState('open'); // 'open' or 'closed'
-  const [queueCount, setQueueCount] = useState('3 நபர்கள்');
-  const [waitTime, setWaitTime] = useState('5-10 நிமிடங்கள்');
-  const [statusText, setStatusText] = useState('🟢 மையம் திறந்துள்ளது (Open Now)');
-  const [closedNoticeText, setClosedNoticeText] = useState('மையம் தற்போது மூடப்பட்டுள்ளது');
-  const [openTimeText, setOpenTimeText] = useState('Mon–Sat 10:00 AM');
-  const [serviceOfDay, setServiceOfDay] = useState('auto');
-  const [upiId, setUpiId] = useState('alakesh.kumar7@okhdfcbank');
-  const [msg, setMsg] = useState('');
-
-  useEffect(() => {
-    const saved = localStorage.getItem('akesevai-live-queue-status');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.status) setIsCenterOpen(parsed.status);
-        if (parsed.queueCount !== undefined) setQueueCount(parsed.queueCount);
-        if (parsed.waitTime !== undefined) setWaitTime(parsed.waitTime);
-        if (parsed.statusText) setStatusText(parsed.statusText);
-        if (parsed.closedNotice) setClosedNoticeText(parsed.closedNotice);
-        if (parsed.openTime) setOpenTimeText(parsed.openTime);
-        if (parsed.upiId) setUpiId(parsed.upiId);
-
-        const savedSod = localStorage.getItem('akesevai-service-of-day');
-        if (savedSod) {
-          const parsedSod = JSON.parse(savedSod);
-          if (parsedSod.tamil) setServiceOfDay(parsedSod.tamil);
-        }
-      } catch (e) { }
-    }
-  }, []);
-
-  const handleSave = (e) => {
-    e.preventDefault();
-    const data = {
-      status: isCenterOpen,
-      queueCount,
-      waitTime,
-      statusText,
-      closedNotice: closedNoticeText,
-      openTime: openTimeText,
-      upiId
-    };
-    localStorage.setItem('akesevai-live-queue-status', JSON.stringify(data));
-    saveLiveQueueCloud(data);
-
-    // Handle Service of the Day override
-    const sodCatalog = [
-      { tamil: 'வருமானச் சான்றிதழ்', english: 'Income Certificate', emoji: '📋', color: '#3b82f6', bg: '#eff6ff', desc: 'கல்வி உதவித்தொகை மற்றும் அரசு திட்டங்களுக்கு அவசியமானது.', fee: '₹60', days: '3-7 நாட்கள்' },
-      { tamil: 'சாதிச் சான்றிதழ்', english: 'Community Certificate', emoji: '🏛️', color: '#16a34a', bg: '#f0fdf4', desc: 'கல்லூரி சேர்க்கை மற்றும் அரசு வேலைவாய்ப்புகளுக்குத் தேவை.', fee: '₹60', days: '3-5 நாட்கள்' },
-      { tamil: 'ஆதார் மொபைல் மாற்றம்', english: 'Aadhaar Mobile Update', emoji: '📱', color: '#7c3aed', bg: '#faf5ff', desc: 'ஆதார் அட்டையில் மொபைல் எண்ணை விரைவாக இணைக்கலாம்.', fee: '₹50', days: '2-5 நாட்கள்' },
-      { tamil: 'புதிய வாக்காளர் அட்டை', english: 'New Voter Card', emoji: '🗳️', color: '#dc2626', bg: '#fef2f2', desc: 'புதிய வாக்காளர் பதிவு மற்றும் திருத்தங்களுக்கு உதவுகிறோம்.', fee: '₹0 (Free)', days: '7-14 நாட்கள்' },
-      { tamil: 'TNPSC விண்ணப்பம்', english: 'TNPSC Application', emoji: '📝', color: '#d97706', bg: '#fffbeb', desc: 'TNPSC தேர்வு விண்ணப்பம் தவறின்றி பூர்த்தி செய்ய உதவுகிறோம்.', fee: '₹100+', days: '1-2 நாட்கள்' },
-      { tamil: 'e-SHRAM CARD', english: 'e-Shram Card', emoji: '🪪', color: '#0052cc', bg: '#eff6ff', desc: 'அசங்கடித் தொழிலாளர்களுக்கான அரசு அடையாள அட்டை.', fee: '₹50', days: '1 நாள்' },
-      { tamil: 'புதிய குடும்ப அட்டை', english: 'New Smart Card', emoji: '👨‍👩‍👧‍👦', color: '#15803d', bg: '#f0fdf4', desc: 'புதிய ரேஷன் அட்டை மற்றும் திருத்தங்களுக்கு விண்ணப்பிக்கலாம்.', fee: '₹100', days: '5-10 நாட்கள்' },
+    const menuItems = [
+      ['home', t.home],
+      ['services', t.services],
+      ['status-track', t.statusTrack],
+      ['token-generator', t.tokenSlip],
+      ['notifications', t.notifications],
+      ['about', t.about],
+      ['contact', t.contact],
     ];
 
-    if (serviceOfDay === 'auto') {
-      localStorage.removeItem('akesevai-service-of-day');
-      saveServiceOfDayCloud(null);
-    } else {
-      const selectedSodObj = sodCatalog.find(s => s.tamil === serviceOfDay);
-      if (selectedSodObj) {
-        localStorage.setItem('akesevai-service-of-day', JSON.stringify(selectedSodObj));
-        saveServiceOfDayCloud(selectedSodObj);
-      }
+    const saveToken = (token) => {
+      const updated = persistTokenBooking(token);
+      setTokenBookings(updated);
+    };
+
+    const navigate = (nextPage) => {
+      setPage(nextPage);
+      setMenuOpen(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const notify = (message) => {
+      setToast(message);
+      window.setTimeout(() => setToast(''), 3500);
+    };
+
+    const loginCustomer = (phone) => {
+      const records = customerRecords || readCustomerRecords();
+      const isNew = !records[phone];
+      const record = records[phone] || {
+        phone,
+        profile: { name: '', createdAt: new Date().toISOString(), complete: false },
+        applications: [],
+        documents: [],
+        appointment: { date: '', time: '' },
+      };
+      saveCustomerRecord(record);
+      sessionStorage.setItem(CUSTOMER_SESSION_KEY, phone);
+      setCustomer(record);
+      setCustomerRecords((prev) => ({ ...prev, [phone]: record }));
+
+      recordLoginEventCloud({
+        type: 'customer_login',
+        phone,
+        isNewCustomer: isNew,
+        profileName: record.profile?.name || 'Customer'
+      });
+
+      setIsFirstTimeLogin(isNew);
+      setShowFirstLoginModal(true);
+      notify(isNew ? 'Account created. Your details will be saved for your next login.' : 'Welcome back. Your saved details are ready.');
+    };
+
+    const updateCustomer = (updater) => {
+      setCustomer((current) => {
+        const updated = typeof updater === 'function' ? updater(current) : updater;
+        saveCustomerRecord(updated);
+        setCustomerRecords((prev) => ({
+          ...prev,
+          [updated.phone]: updated
+        }));
+        return updated;
+      });
+    };
+
+    const logoutCustomer = () => {
+      sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
+      setCustomer(null);
+      setShowLogoutModal(true);
+      navigate('home');
+      notify('பாதுகாப்பாக வெளியேற்றப்பட்டீர்கள். முகப்புப் பக்கம் மாற்றப்பட்டது.');
+    };
+
+    const loginAdmin = (password) => {
+      if (password !== 'admin123') { notify('Incorrect admin password.'); return false; }
+      sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
+      setAdminLoggedIn(true);
+      recordLoginEventCloud({
+        type: 'admin_login',
+        role: 'Administrator'
+      });
+      notify('Admin dashboard opened.');
+      return true;
+    };
+
+    const logoutAdmin = () => {
+      sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      setAdminLoggedIn(false);
+      navigate('home');
+      notify('Admin logged out safely.');
+    };
+
+    return (
+      <div className="app-shell">
+        <WelcomeSplashIntro />
+        <CustomerLogoutModal
+          isOpen={showLogoutModal}
+          onClose={() => {
+            setShowLogoutModal(false);
+            navigate('home');
+          }}
+        />
+        <FirstTimeLoginModal isOpen={showFirstLoginModal} isFirstTime={isFirstTimeLogin} customerName={customer?.profile?.name} onClose={() => setShowFirstLoginModal(false)} />
+        <header className="site-header">
+          <div className="header-inner">
+            <button className="brand" onClick={() => navigate('home')} aria-label="AkEsevai home">
+              <img src="/logo.png" alt="AkEsevai Logo" className="brand-logo-img" />
+              <div className="brand-text-wrap">
+                <strong className="brand-name">
+                  Ak <span className="brand-highlight">e-Sevai</span>
+                </strong>
+                <small className="brand-tagline">
+                  உங்கள் நம்பிக்கைக்குரிய இ-சேவை மையம்
+                </small>
+              </div>
+            </button>
+
+            <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'}>
+              {menuItems.map(([id, label]) => (
+                <button
+                  key={id}
+                  className={page === id ? 'nav-active' : ''}
+                  onClick={() => { navigate(id); setMenuOpen(false); }}
+                >
+                  {label}
+                </button>
+              ))}
+
+              {/* Mobile Drawer Quick Action Links */}
+              <div className="mobile-menu-actions">
+                <button
+                  className="lang-switcher-btn drawer-lang-switcher"
+                  onClick={() => { toggleLang(); setMenuOpen(false); }}
+                >
+                  🌐 <span>{lang === 'ta' ? 'Switch to English' : 'தமிழ் மொழிக்கு மாற்றுக'}</span>
+                </button>
+
+                <button
+                  className="nav-btn-customer"
+                  onClick={() => { navigate('customer'); setMenuOpen(false); }}
+                >
+                  <UserRound size={16} /> {t.customerPortal}
+                </button>
+
+                <button
+                  className="nav-btn-admin"
+                  onClick={() => { navigate('admin'); setMenuOpen(false); }}
+                >
+                  <LockKeyhole size={15} /> {t.admin}
+                </button>
+              </div>
+            </nav>
+
+            <div className="header-actions-right">
+              <DarkModeToggle isDark={isDark} setIsDark={setIsDark} />
+
+              <button
+                className="lang-switcher-btn"
+                onClick={toggleLang}
+                title={lang === 'ta' ? 'Switch language to English' : 'தமிழ் மொழிக்கு மாற்றுக'}
+              >
+                🌐 <span className="lang-switcher-text">{lang === 'ta' ? 'EN' : 'தமிழ்'}</span>
+              </button>
+
+              <button
+                className="nav-btn-admin desktop-only-btn"
+                onClick={() => navigate('admin')}
+                title="Admin Login"
+              >
+                <LockKeyhole size={13} style={{ color: '#fbbf24' }} /> {t.admin}
+              </button>
+
+              <button
+                className="nav-btn-customer desktop-only-btn"
+                onClick={() => navigate('customer')}
+                title="Customer Portal"
+              >
+                <UserRound size={14} /> {t.customerPortal}
+              </button>
+
+              <button
+                className="menu-button"
+                onClick={() => setMenuOpen(!menuOpen)}
+                aria-label="Toggle menu"
+                title="Toggle mobile menu"
+              >
+                {menuOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+            </div>
+          </div>
+        </header>
+        <div className="announcement-bar" aria-label="AkEsevai updates">
+          <div className="announcement-track"><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span><span>APPOINTMENTS OPEN TODAY • 10:00 AM - 5:00 PM</span><span>DOCUMENTS • CERTIFICATES • WELFARE SCHEMES</span><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span></div>
+        </div>
+
+        <main>
+          {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} />}
+          {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
+          {page === 'weblink' && (adminLoggedIn ? <WeblinkPage /> : <PrivatePageGate navigate={navigate} />)}
+          {page === 'photo-maker' && (adminLoggedIn ? <PhotoMakerPage notify={notify} /> : <PrivatePageGate navigate={navigate} />)}
+          {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} /> : <PrivatePageGate navigate={navigate} />)}
+          {page === 'notifications' && <NotificationsPage lang={lang} />}
+          {page === 'software' && (adminLoggedIn ? <SoftwarePage notify={notify} navigate={navigate} /> : <PrivatePageGate navigate={navigate} />)}
+          {page === 'whatsapp-poster' && <WhatsappPosterPage notify={notify} />}
+          {page === 'status-track' && <StatusTrackPage />}
+          {page === 'token-generator' && <TokenGeneratorPage onTokenSaved={saveToken} />}
+          {page === 'about' && <AboutPage navigate={navigate} lang={lang} />}
+          {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
+          {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} />}
+          {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} />}
+          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} notify={notify} />}
+        </main>
+
+        <footer className="site-footer">
+          <div>
+            <button className="brand footer-brand" onClick={() => navigate('home')} style={{ gap: '12px' }}>
+              <img src="/logo.png" alt="AkEsevai Logo" className="brand-logo-img" style={{ height: '44px', background: 'white', padding: '4px', borderRadius: '8px' }} />
+              <div>
+                <strong className="brand-name" style={{ fontSize: '18px', color: 'white' }}>AkEsevai CENTRE</strong>
+                <small style={{ color: '#86efac', display: 'block', fontSize: '9px', fontWeight: 700, lineHeight: 1.25 }}>{t.tagline}</small>
+              </div>
+            </button>
+            <p>{t.footerDesc}</p>
+            <div className="footer-social-links" style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <a href={siteConfig.youtube} target="_blank" rel="noreferrer" title="YouTube: @AkEsevai" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#FF0000', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(255,0,0,0.3)' }}>
+                <YoutubeIcon size={15} color="white" /> YouTube
+              </a>
+              <a href={siteConfig.instagram} target="_blank" rel="noreferrer" title="Instagram: @akesevai" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(225,48,108,0.3)' }}>
+                <InstagramIcon size={15} color="white" /> Instagram
+              </a>
+              <a href={siteConfig.facebook} target="_blank" rel="noreferrer" title="Facebook Page" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#1877F2', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(24,119,242,0.3)' }}>
+                <FacebookIcon size={15} color="white" /> Facebook
+              </a>
+            </div>
+          </div>
+          <div className="footer-contact"><span><MapPin size={16} /> {siteConfig.address}</span><a href={`tel:${siteConfig.phone}`}><Phone size={16} /> {siteConfig.displayPhone}</a><a href={`mailto:${siteConfig.email}`}><Mail size={16} /> {siteConfig.email}</a></div>
+          <div className="footer-bottom"><span>{t.footerRights}</span><span>{t.footerAssistance}</span></div>
+        </footer>
+        <FloatingQuickActions navigate={navigate} />
+        <CustomerEasyGuide navigate={navigate} />
+        {toast && <div className="toast"><Check size={18} /> {toast}</div>}
+      </div>
+    );
+  }
+
+function AdEnquiryCard() {
+      return (
+        <div className="ad-enquiry-card">
+          <div className="ad-enquiry-inner">
+            <span className="ad-speaker-icon">📢</span>
+            <div className="ad-text-block">
+              <strong className="ad-title-label">விளம்பரத்தொடர்புக்கு / For Advertisement Enquiry:</strong>
+              <a href="tel:9342318844" className="ad-phone-number">
+                📞 <span>+91 93423 18844</span>
+              </a>
+            </div>
+            <a
+              href="https://wa.me/919342318844?text=🙏%20*வணக்கம்*,%20விளம்பரம்%20குறித்து%20தொடர்பு%20கொள்கிறேன்.%20AkEsevai%20இணையதளம்%20மூலம்."
+              target="_blank"
+              rel="noreferrer"
+              className="ad-whatsapp-btn"
+            >
+              <MessageCircle size={16} /> 💬 WhatsApp
+            </a>
+          </div>
+        </div>
+      );
     }
 
-    window.dispatchEvent(new Event('storage'));
-    window.dispatchEvent(new Event('akesevai_queue_updated'));
-    setMsg('✅ நேரலை மையம், வரிசை எண்ணிக்கை & காத்திருப்பு விவரங்கள் வெற்றிகரமாக சேமிக்கப்பட்டன!');
-    setTimeout(() => setMsg(''), 4000);
+function HomePage({ navigate, notify, lang }) {
+      const t = translations[lang] || translations.en;
+      return <>
+        <section className="hero">
+          <div className="hero-content page-width">
+            <div className="eyebrow"><span className="live-dot" /> {t.eyebrow}</div>
+            <h1 className={lang === 'ta' ? 'hero-title-tamil' : ''}>{t.heroTitleLine1}<br /><em>{t.heroTitleLine2}</em></h1>
+            <p className="hero-copy">{t.heroCopy}</p>
+            <div className="hero-actions"><button className="button button-primary" onClick={() => navigate('customer')}>{t.startApp} <ArrowRight size={18} /></button><button className="button button-quiet" onClick={() => navigate('services')}>{t.exploreServices} <ChevronRight size={17} /></button></div>
+            <div className="hero-note"><ShieldCheck size={16} /> {t.heroNote}</div>
+          </div>
+          <div className="hero-visual-showcase-container" style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: '860px', margin: '20px 0', flexShrink: 1 }}>
+            <AkEsevaiOfficePhotoSlider />
+          </div>
+        </section>
+
+        {/* INSTALL PWA MOBILE APP BANNER */}
+        <div className="page-width">
+          <InstallPwaBanner />
+        </div>
+
+        {/* 🔴 LIVE NOW • நேரலை CENTER QUEUE & WAIT TIME BANNER ON HOMEPAGE FRONT */}
+        <div className="page-width">
+          <LiveWaitTimeBanner />
+        </div>
+
+        {/* ⭐ SERVICE OF THE DAY BANNER - "இன்றைய சிறப்பு சேவை" */}
+        <div className="page-width">
+          <ServiceOfTheDayBanner navigate={navigate} />
+        </div>
+
+
+
+        {/* ANIMATED LIVE COUNTER STATS STRIP */}
+        <div className="page-width">
+          <AnimatedLiveStatsStrip />
+        </div>
+
+        {/* GOVERNMENT PASSPORT PHOTO & SIGNATURE CROPPER */}
+        <div className="page-width">
+          <GovernmentPhotoCropperTool />
+        </div>
+
+
+
+        {/* TDCOMMONESEVAI STYLE HERO BANNER SLIDER */}
+        <div className="page-width">
+          <HeroBannerSlider navigate={navigate} />
+        </div>
+
+        {/* AADHAAR MARQUEE BANNER ON HOME PAGE */}
+        <div className="page-width" style={{ marginTop: '28px', marginBottom: '15px' }}>
+          <div className="aadhaar-marquee-box" style={{ margin: '0' }}>
+            <marquee scrollamount="4">
+              {t.aadhaarMarqueeText}
+            </marquee>
+          </div>
+        </div>
+
+        {/* PREMIUM LOCAL SPONSORED ADVERTISEMENTS SHOWCASE */}
+        <div className="page-width">
+          <PremiumHomeAdShowcase navigate={navigate} />
+        </div>
+
+
+
+
+
+        {/* SMART AI DOCUMENT VERIFICATION CHECKER WIDGET */}
+        <div className="page-width">
+          <AiDocumentCheckerWidget navigate={navigate} />
+        </div>
+
+
+
+        {/* QUICK TOKEN & STATUS LOOKUP TRACKER */}
+        <div className="page-width">
+          <QuickTokenStatusLookup navigate={navigate} />
+        </div>
+
+        {/* SOCIAL MEDIA CHANNELS & FOLLOW WIDGET */}
+        <div className="page-width">
+          <SocialMediaFollowWidget />
+        </div>
+
+        <section className="notifications-section page-width"><div className="section-heading"><div><span className="section-kicker">{t.notificationsKicker}</span><h2>{t.notificationsTitle}</h2></div><button className="text-button" onClick={() => navigate('notifications')}>{t.viewAllNotifications} <ArrowRight size={16} /></button></div><div className="notification-grid">{notifications.map((notification) => <NotificationCard key={notification.title} notification={notification} />)}</div><div className="visitor-counter"><Eye /> <span>{t.totalVisitors}</span><strong>18,472</strong></div></section>
+
+
+        {/* CITIZEN REVIEWS & TESTIMONIALS AT THE BOTTOM OF HOMEPAGE */}
+        <div className="page-width">
+          <CustomerTestimonials />
+        </div>
+
+        <section className="cta-section page-width"><div className="cta-box"><div><span className="section-kicker">{t.ctaKicker}</span><h2>{t.ctaTitle}</h2><p>{t.ctaText}</p></div><button className="button button-primary" onClick={() => navigate('contact')}>{t.talkToUs} <MessageCircle size={18} /></button></div></section>
+      </>;
+    }
+
+const getServiceVisual = (group, title = '') => {
+    const t = title.toLowerCase();
+    let bgGradient = 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)';
+    let icon = '📄';
+    let bannerImage = 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=400&q=80';
+
+    if (t.includes('aadhaar')) {
+      bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
+      icon = '🪪';
+      bannerImage = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('income') || t.includes('வருமான')) {
+      bgGradient = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
+      icon = '💰';
+      bannerImage = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('community') || t.includes('சாதி') || t.includes('nativity') || t.includes('residence') || t.includes('graduate')) {
+      bgGradient = 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)';
+      icon = '📜';
+      bannerImage = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('passport')) {
+      bgGradient = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
+      icon = '🛂';
+      bannerImage = 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('pan') || t.includes('பான்')) {
+      bgGradient = 'linear-gradient(135deg, #d97706 0%, #b45309 100%)';
+      icon = '💳';
+      bannerImage = 'https://images.unsplash.com/photo-1556742049-0a67daf4005a?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('smart card') || t.includes('குடும்ப அட்டை')) {
+      bgGradient = 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)';
+      icon = '🌾';
+      bannerImage = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('voter') || t.includes('வாக்காளர்')) {
+      bgGradient = 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)';
+      icon = '🗳️';
+      bannerImage = 'https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('employment') || t.includes('வேலைவாய்ப்பு') || t.includes('shram')) {
+      bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0f766e 100%)';
+      icon = '💼';
+      bannerImage = 'https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('pension') || t.includes('ஓய்வூதியம்') || t.includes('welfare') || t.includes('திருமண') || t.includes('sewing')) {
+      bgGradient = 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)';
+      icon = '🤝';
+      bannerImage = 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb0?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('tnpsc') || t.includes('mark sheet') || t.includes('education') || t.includes('loan')) {
+      bgGradient = 'linear-gradient(135deg, #9333ea 0%, #7e22ce 100%)';
+      icon = '🎓';
+      bannerImage = 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80';
+    } else if (t.includes('fssai') || t.includes('msme') || t.includes('business')) {
+      bgGradient = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)';
+      icon = '🏬';
+      bannerImage = 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=400&q=80';
+    }
+
+    return { bgGradient, icon, bannerImage };
   };
 
-  return (
-    <div style={{ background: '#f8fafc', border: '2px solid #93c5fd', borderRadius: '16px', padding: '28px', textAlign: 'left', maxWidth: '680px', margin: '0 auto' }}>
-      <div className="panel-heading" style={{ marginBottom: '18px' }}>
-        <div>
-          <span className="section-kicker">LIVE CENTER QUEUE CONTROL</span>
-          <h2 style={{ margin: '4px 0 0', color: '#022c7a' }}>⚙️ நேரலை மையம் & UPI நிர்வாகம்</h2>
-          <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>
-            நேரலை மையத்தின் நிலை, காத்திருக்கும் நபர்களின் எண்ணிக்கை மற்றும் ஆகும் நேரம் ஆகியவற்றைப் புதுப்பிக்கலாம்.
-          </p>
+  function ServicesPage({ navigate, lang }) {
+    const t = translations[lang] || translations.en;
+    const [query, setQuery] = useState('');
+    const [category, setCategory] = useState('All Services');
+    const [selectedService, setSelectedService] = useState(null);
+    const [expandedTitle, setExpandedTitle] = useState(null);
+
+    const categories = ['All Services', ...new Set(serviceCatalog.map((service) => service[2]))];
+    const filteredServices = serviceCatalog.filter((service) => {
+      const matchesQuery = service.join(' ').toLowerCase().includes(query.toLowerCase());
+      const matchesCategory = category === 'All Services' || service[2] === category;
+      return matchesQuery && matchesCategory;
+    });
+
+    return (
+      <PageIntro
+        kicker={t.servicesKicker}
+        title={t.servicesTitle}
+        text={t.servicesText}
+        action={<button className="button button-primary" onClick={() => navigate('customer')}>{t.startApp} <ArrowRight size={18} /></button>}
+      >
+        {/* 1. TOP ANNOUNCEMENT BANNER (RUNNING MARQUEE) */}
+        <div className="top-announcement-banner">
+          <marquee scrollamount="4">
+            {t.topAnnouncementText}
+          </marquee>
+        </div>
+
+        {/* 3. LOGO SHOWCASE BANNER */}
+        <div className="brand-logo-showcase-bar">
+          <img src="/logo.png" alt="AkEsevai Logo" className="showcase-logo-img" />
+          <span className="showcase-logo-text">{t.brandShowcaseText}</span>
+        </div>
+
+        <div className="service-search">
+          <Search size={18} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />
+          <span>{filteredServices.length} {t.resultsCount}</span>
+        </div>
+
+        <div className="category-tabs">
+          {categories.map((item) => (
+            <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>
+              {item === 'All Services' ? t.allCategories : item}
+            </button>
+          ))}
+        </div>
+
+        <div className="catalog-grid">
+          {filteredServices.map(([tamil, title, group]) => {
+            const visual = getServiceVisual(group, title);
+            const isExpanded = expandedTitle === title;
+            const docs = getRequiredDocuments(title, group);
+
+            return (
+              <article
+                className={`catalog-card ${isExpanded ? 'catalog-card-expanded' : ''}`}
+                key={title}
+                style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+              >
+                <div
+                  className="service-card-image-header"
+                  style={{
+                    position: 'relative',
+                    height: '120px',
+                    background: visual.bgGradient,
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    padding: '12px',
+                    backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.75)), url(${visual.bannerImage})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '10px',
+                      left: '10px',
+                      background: 'rgba(255, 255, 255, 0.95)',
+                      color: '#0f172a',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <span>{visual.icon}</span> {group}
+                  </span>
+                </div>
+
+                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                  <h3 style={{ font: '800 15px Manrope', margin: 0, color: 'var(--ink)', lineHeight: 1.3 }}>
+                    {lang === 'ta' ? tamil : title}
+                  </h3>
+                  <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0, fontWeight: 500 }}>
+                    {lang === 'ta' ? title : tamil}
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px', alignItems: 'center' }}>
+                    <button
+                      className="card-link"
+                      style={{
+                        background: isExpanded ? '#f1f5f9' : '#e0f2fe',
+                        color: isExpanded ? '#334155' : '#0052cc',
+                        padding: '7px 12px',
+                        borderRadius: '7px',
+                        fontWeight: 800,
+                        fontSize: '11px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}
+                      onClick={() => setExpandedTitle(isExpanded ? null : title)}
+                    >
+                      {isExpanded ? '✕ Hide (மறை)' : `📄 ${t.viewDetails}`}
+                    </button>
+
+                    <button
+                      style={{
+                        background: '#16a34a',
+                        color: 'white',
+                        padding: '7px 14px',
+                        borderRadius: '7px',
+                        fontWeight: 800,
+                        fontSize: '11px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginLeft: 'auto'
+                      }}
+                      onClick={() => navigate('customer')}
+                    >
+                      Apply <ArrowRight size={13} />
+                    </button>
+                  </div>
+
+                  {isExpanded && (
+                    <div
+                      className="inline-service-detail"
+                      style={{
+                        marginTop: '12px',
+                        paddingTop: '12px',
+                        borderTop: '1px dashed #cbd5e1',
+                        animation: 'fadeIn 0.2s ease'
+                      }}
+                    >
+                      <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        📋 தேவைப்படும் ஆவணங்கள் (Required Documents):
+                      </h4>
+                      <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
+                        {docs.map((doc) => (
+                          <span key={doc} style={{ fontSize: '11px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                            <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} /> {doc}
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        className="button button-primary"
+                        style={{ width: '100%', fontSize: '11px', padding: '8px', justifyContent: 'center' }}
+                        onClick={() => navigate('customer')}
+                      >
+                        Start this application <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {filteredServices.length === 0 && <div className="empty-search">{t.noServiceFound}</div>}
+        <div className="service-callout">
+          <div className="service-callout-icon"><Phone /></div>
+          <div>
+            <h3>{t.cantFindTitle}</h3>
+            <p>{t.cantFindDesc}</p>
+          </div>
+          <button className="text-button" onClick={() => navigate('contact')}>{t.askTeam} <ArrowRight size={16} /></button>
+        </div>
+      </PageIntro>
+    );
+  }
+
+  function ServiceDetail({ service, onClose, onApply }) {
+    const docs = getRequiredDocuments(service.title, service.group);
+    return (
+      <div className="service-modal-backdrop" onClick={onClose}>
+        <div className="service-modal" onClick={(event) => event.stopPropagation()}>
+          <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+          <span className="catalog-group">{service.group}</span>
+          <h2>{service.tamil}</h2>
+          <p className="modal-english">{service.title}</p>
+          <h3 className="docs-heading">Documents required for this service</h3>
+          <div className="document-checklist">
+            {docs.map((doc) => <span key={doc}><Check size={15} /> {doc}</span>)}
+          </div>
+          <small className="docs-note">AkEsevai will verify the submitted documents before application submission.</small>
+          <button className="button button-primary" onClick={onApply}>Start this application <ArrowRight size={16} /></button>
         </div>
       </div>
+    );
+  }
 
-      {msg && (
-        <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', color: '#15803d', padding: '10px 16px', borderRadius: '8px', fontWeight: 800, fontSize: '13px', marginBottom: '18px' }}>
-          {msg}
+  function WeblinkPage() { const [query, setQuery] = useState(''); const filteredLinks = webLinks.filter((link) => `${link.title} ${link.text}`.toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="USEFUL WEBLINKS" title="Trusted links, all in one place." text="Open official portals directly from AkEsevai. Search by service name and choose Open to visit the official website."><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Link-ஐ தேடவும்... Search official links" /><span>{filteredLinks.length} links</span></div><div className="link-grid">{filteredLinks.map((link) => { const Icon = link.icon; return <a className="external-link-card" href={link.href} target="_blank" rel="noreferrer" key={link.title}><span className="link-icon"><Icon /></span><span><strong>{link.title}</strong><small>{link.text}</small></span><span className="open-link">Open <ExternalLink size={14} /></span></a>; })}</div><div className="link-note"><ShieldCheck size={18} /><span>Always check that you are on the official government website before entering personal details.</span></div></PageIntro>; }
+
+  function PhotoMakerPage({ notify }) {
+    const [photo, setPhoto] = useState('');
+    const [copies, setCopies] = useState(8);
+    const [paper, setPaper] = useState('A4');
+    const [brightness, setBrightness] = useState(100);
+    const [contrast, setContrast] = useState(100);
+    const [zoom, setZoom] = useState(100);
+    const [border, setBorder] = useState(true);
+    const [textEnabled, setTextEnabled] = useState(false);
+    const [photoText, setPhotoText] = useState('');
+    const [margins, setMargins] = useState({ top: 5, bottom: 5, left: 5, right: 5 });
+    const [gaps, setGaps] = useState({ horizontal: 2.5, vertical: 2.5 });
+    const updateMargin = (key, value) => setMargins({ ...margins, [key]: value });
+    const updateGap = (key, value) => setGaps({ ...gaps, [key]: value });
+    const clearPhoto = () => { setPhoto(''); setPhotoText(''); notify('Photo cleared.'); };
+    const photoStyle = { filter: `brightness(${brightness}%) contrast(${contrast}%)`, transform: `scale(${zoom / 100})` };
+    return <PageIntro kicker="PHOTO MAKER SOFTWARE" title="Create your passport photo sheet." text="Upload one photo, adjust the layout, and generate a ready-to-print sheet just like a service centre tool."><div className="photo-tool"><div className="photo-toolbar"><span className="tool-badge"><Camera size={18} /> PHOTO MAKER</span><button className="tool-action" onClick={() => notify('Photo sheet generated.')}>Generate Sheet</button><button className="tool-action" onClick={() => notify('Select the photo area in the preview to crop.')}> <Crop size={15} /> Crop Photo</button><button className="tool-action" onClick={() => notify('Crop applied.')}>Apply Crop</button><button className="tool-action" onClick={() => notify('PDF download is ready for printing.')}> <Download size={15} /> Download PDF</button></div><div className="photo-tool-layout"><aside className="photo-controls"><label className="photo-upload compact-upload"><ImagePlus size={25} /><strong>{photo ? 'Change photo' : 'Upload photo'}</strong><small>JPG or PNG up to 10 MB</small><input type="file" accept="image/png,image/jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { setPhoto(URL.createObjectURL(file)); notify('Photo loaded into the sheet.'); } }} /></label><div className="control-section"><strong><SlidersHorizontal size={15} /> Sheet settings</strong><label>Paper<select value={paper} onChange={(event) => setPaper(event.target.value)}><option>A4</option><option>4 x 6 inch</option><option>A5</option></select></label><label>Copies<input type="number" min="1" max="40" value={copies} onChange={(event) => setCopies(Math.max(1, Math.min(40, Number(event.target.value))))} /></label></div><div className="control-section"><strong><Sun size={15} /> Image adjustment</strong><label>Brightness <output>{brightness}%</output><input type="range" min="50" max="150" value={brightness} onChange={(event) => setBrightness(event.target.value)} /></label><label><Contrast size={14} /> Contrast <output>{contrast}%</output><input type="range" min="50" max="150" value={contrast} onChange={(event) => setContrast(event.target.value)} /></label><label><ZoomIn size={14} /> Zoom <output>{zoom}%</output><input type="range" min="70" max="140" value={zoom} onChange={(event) => setZoom(event.target.value)} /></label></div><div className="control-section"><strong>Margins (mm)</strong><div className="mini-input-grid"><label>Top<input type="number" value={margins.top} onChange={(event) => updateMargin('top', event.target.value)} /></label><label>Bottom<input type="number" value={margins.bottom} onChange={(event) => updateMargin('bottom', event.target.value)} /></label><label>Left<input type="number" value={margins.left} onChange={(event) => updateMargin('left', event.target.value)} /></label><label>Right<input type="number" value={margins.right} onChange={(event) => updateMargin('right', event.target.value)} /></label></div></div><div className="control-section"><strong>Gaps (mm)</strong><div className="mini-input-grid"><label>Horizontal<input type="number" step="0.5" value={gaps.horizontal} onChange={(event) => updateGap('horizontal', event.target.value)} /></label><label>Vertical<input type="number" step="0.5" value={gaps.vertical} onChange={(event) => updateGap('vertical', event.target.value)} /></label></div></div><div className="toggle-list"><label><input type="checkbox" checked={border} onChange={(event) => setBorder(event.target.checked)} /> Photo Border</label><label><input type="checkbox" checked={textEnabled} onChange={(event) => setTextEnabled(event.target.checked)} /> Text on Photo</label>{textEnabled && <input className="text-photo-input" value={photoText} onChange={(event) => setPhotoText(event.target.value)} placeholder="Name or ID number" />}</div><div className="tool-footer-actions"><button className="button button-primary" onClick={() => notify(`${copies} photos ready on ${paper} sheet.`)}><Printer size={16} /> Print Photos</button><button className="text-button" onClick={() => notify('Single photo saved as JPEG.')}><Download size={15} /> Save Single Photo (JPEG)</button><button className="text-button" onClick={() => notify('AI background removal requested.')}><Sparkles size={15} /> AI Remove BG</button><button className="clear-photo" onClick={clearPhoto}><Trash2 size={15} /> Clear Photo</button></div></aside><section className="sheet-workspace"><div className="workspace-head"><span><strong>Preview Sheet</strong><small>{paper} · {copies} copies · {margins.top}/{margins.bottom}/{margins.left}/{margins.right} mm margins</small></span><span className="workspace-status">● Ready</span></div><div className={`print-sheet ${paper === 'A5' ? 'paper-a5' : ''}`} style={{ padding: `${margins.top}px ${margins.right}px ${margins.bottom}px ${margins.left}px`, gap: `${gaps.vertical}px ${gaps.horizontal}px` }}>{Array.from({ length: copies }).map((_, index) => <div className={`sheet-photo ${border ? 'with-border' : ''}`} key={index}>{photo ? <img src={photo} alt={`Photo copy ${index + 1}`} style={photoStyle} /> : <span><Camera size={18} />Upload a photo</span>}{textEnabled && photoText && <small>{photoText}</small>}</div>)}</div><div className="sheet-help"><Crop size={15} /> Photo size: 35 × 45 mm <span>•</span> Adjust controls on the left, then print your sheet</div></section></div></div>
+      <PhotoBackgroundRemover />
+    </PageIntro>;
+  }
+
+  function FormsPage({ notify }) { const [fileName, setFileName] = useState(''); const [query, setQuery] = useState(''); const [category, setCategory] = useState('All Forms'); const categories = ['All Forms', ...new Set(formsCatalog.map((form) => form[1]))]; const filteredForms = formsCatalog.filter((form) => (category === 'All Forms' || form[1] === category) && form.join(' ').toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="FORMS & DOWNLOADS" title="Official forms, ready to download." text="Search for a form and download the available official PDF from the TD Common e-Sevai forms collection."><div className="form-count"><FormInput size={18} /> <strong>📋 All Forms</strong><span>{filteredForms.length} forms available</span></div><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Form-ஐ தேடவும்... Search forms" /><span>{filteredForms.length} results</span></div><div className="category-tabs">{categories.map((item) => <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="forms-directory">{filteredForms.map(([title, type]) => <FormRow title={title} type={type} notify={notify} key={title} />)}</div><label className="form-dropzone full-dropzone"><UploadCloud size={30} /><strong>{fileName || 'Upload a completed form'}</strong><small>PDF, JPG or PNG up to 10 MB</small><input type="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || '')} />{fileName && <span className="upload-ready"><Check size={14} /> Ready for review</span>}</label></PageIntro>; }
+  function FormRow({ title, type, notify }) { const sourceLink = tdcscFormLinks[title]; const downloadForm = () => { if (sourceLink) { window.open(toDownloadLink(sourceLink), '_blank', 'noopener,noreferrer'); notify(`${title} download opened.`); return; } notify(`${title} is not yet linked to an official PDF.`); }; return <div className="form-row"><span className="form-icon"><FormInput size={19} /></span><span><strong>{title}</strong><small>{type} · {sourceLink ? 'Official PDF download' : 'PDF link coming soon'}</small></span><button className="icon-button" aria-label={`Download ${title}`} onClick={downloadForm} disabled={!sourceLink}><Download size={17} /></button></div>; }
+
+  function NotificationsPage({ lang }) {
+    const t = translations[lang] || translations.en;
+    return (
+      <PageIntro
+        kicker={t.notifKicker}
+        title={t.notifTitle}
+        text={t.notifText}
+      >
+        <NotificationTables forceAdmin={false} lang={lang} />
+        <div className="notice-list" style={{ marginTop: '35px' }}>
+          <div>
+            <Megaphone size={18} />
+            <span>
+              <strong>{lang === 'ta' ? 'புதிய அறிவிப்புகள் தொடர்ந்து புதுப்பிக்கப்படும்' : 'New updates are added regularly'}</strong>
+              <small>{lang === 'ta' ? 'சந்தேகங்கள் மற்றும் உதவிக்கு எங்களை அழைக்கலாம்: 93423 18844.' : 'For doubts and support, call us: 93423 18844.'}</small>
+            </span>
+          </div>
+          <div>
+            <Clock3 size={18} />
+            <span>
+              <strong>{lang === 'ta' ? 'கடைசி தேதியை எப்போதும் சரிபார்க்கவும்' : 'Always verify the last date'}</strong>
+              <small>{lang === 'ta' ? 'தேதிகள் மாற்றப்படலாம். விண்ணப்பிக்கும் முன் அதிகாரப்பூர்வ தளத்தை சரிபார்க்கவும்.' : 'Dates may change. Please verify with official portal before applying.'}</small>
+            </span>
+          </div>
         </div>
-      )}
+      </PageIntro>
+    );
+  }
 
-      <form onSubmit={handleSave} style={{ display: 'grid', gap: '18px' }}>
-        {/* 1. CENTER OPEN / CLOSED TOGGLE */}
-        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-          1. மையம் திறப்பு / மூடல் நிலை (Center Status):
-          <select
-            value={isCenterOpen}
-            onChange={(e) => {
-              setIsCenterOpen(e.target.value);
-              if (e.target.value === 'closed') {
-                setStatusText('🔴 மையம் இன்று விடுமுறை (Closed Today)');
-              } else {
-                setStatusText('🟢 மையம் திறந்துள்ளது (Open Now)');
-              }
-            }}
-            style={{ width: '100%', border: '2px solid #022c7a', borderRadius: '8px', padding: '11px', marginTop: '4px', fontSize: '14px', fontWeight: 800, background: isCenterOpen === 'open' ? '#f0fdf4' : '#fef2f2', color: isCenterOpen === 'open' ? '#15803d' : '#dc2626', outline: 'none', cursor: 'pointer' }}
-          >
-            <option value="open">🟢 மையம் திறந்துள்ளது (Center OPEN)</option>
-            <option value="closed">🔒 மையம் மூடப்பட்டுள்ளது (Center CLOSED)</option>
-          </select>
-        </label>
+  // SoftwarePage loaded from ./pages/SoftwarePage.jsx
 
-        {isCenterOpen === 'closed' && (
-          <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: '12px', padding: '16px', display: 'grid', gap: '12px' }}>
-            <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#991b1b' }}>
-              🔒 மூடல் தகவல் செய்தி (Notice Text):
-              <input
-                type="text"
-                value={closedNoticeText}
-                onChange={(e) => setClosedNoticeText(e.target.value)}
-                placeholder="எ.கா: மையம் தற்போது மூடப்பட்டுள்ளது / ஞாயிறு விடுமுறை"
-                style={{ width: '100%', border: '1px solid #fca5a5', borderRadius: '6px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
-              />
-            </label>
+  function WhatsappPosterPage({ notify }) { const [message, setMessage] = useState('AkEsevai - Digital services made simple'); return <PageIntro kicker="WHATSAPP POSTER" title="Create a shareable service poster." text="Add your message, preview a clean poster and share it with your customers or family groups."><div className="poster-maker"><div className="poster-controls"><label>Poster message<textarea rows="4" value={message} onChange={(event) => setMessage(event.target.value)} /></label><button className="button button-primary" onClick={() => notify('Poster preview is ready to share on WhatsApp.')}><Download size={17} /> Download poster</button></div><div className="poster-preview"><div className="poster-logo"><Sparkles size={17} /> AkEsevai</div><div className="poster-lines"><span>YOUR LOCAL</span><strong>{message}</strong><small>Mill Road, Sanmugapuram, Palani - 624601</small><b>93423 18844</b></div><div className="poster-stamp">OPEN<br /><strong>9 AM - 7 PM</strong></div></div></div></PageIntro>; }
 
-            <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#991b1b' }}>
-              ⏰ அடுத்த திறக்கும் நேரம் (Next Opening Time Info):
-              <input
-                type="text"
-                value={openTimeText}
-                onChange={(e) => setOpenTimeText(e.target.value)}
-                placeholder="எ.கா: Mon–Sat 10:00 AM / நாளை காலை 10:00 மணி"
-                style={{ width: '100%', border: '1px solid #fca5a5', borderRadius: '6px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
-              />
-            </label>
+  function AboutPage({ navigate, lang }) {
+    return <PageIntro kicker={lang === 'ta' ? 'AKESEVAI பற்றி' : 'ABOUT AKESEVAI'} title={lang === 'ta' ? 'உள்ளூர் அனுபவம். டிஜிட்டல் நிச்சயம்.' : 'Local knowledge. Digital confidence.'} text={lang === 'ta' ? 'பழனி மற்றும் சுற்றியுள்ள குடும்பங்களுக்கு படிவங்கள், இணையதளங்களின் சிரமமின்றி அத்தியாவசிய ஆன்லைன் சேவைகளை பெற உதவுகிறோம்.' : 'We help families in and around Palani navigate essential online services without the stress of forms, portals and follow-ups.'}><div className="about-grid"><div className="about-photo"><div className="photo-overlay"><span>{lang === 'ta' ? 'பழனி மக்களுக்குச் சேவை' : 'Serving Palani'}</span><strong>{lang === 'ta' ? 'முதல் நாளிலிருந்தே கனிவுடன்.' : 'With care since day one.'}</strong></div></div><div className="about-copy"><span className="section-kicker">{lang === 'ta' ? 'எங்கள் உறுதிமொழி' : 'OUR PROMISE'}</span><h2>{lang === 'ta' ? 'ஒவ்வொரு விண்ணப்பத்திற்கும் மனித வழிகாட்டுதல் அவசியம்.' : 'Every application deserves a human guide.'}</h2><p>{lang === 'ta' ? 'அரசு தளங்கள் கடினமாக இருக்கலாம். சிறு தவறுகள் தாமதத்தை உருவாக்கலாம். AkEsevai உங்களை சரியான பாதையில் அழைத்துச் செல்லும்.' : 'Government websites can be hard to navigate and small mistakes can create long delays. AkEsevai combines local understanding with a simple digital process so you always know what is happening next.'}</p><div className="promise-list"><span><Check /> {lang === 'ta' ? 'தொ தொடங்கும் முன் தெளிவான கட்டணம்' : 'Clear pricing before we begin'}</span><span><Check /> {lang === 'ta' ? 'எளிதில் புரியும் உடனுக்குடன் தகவல்கள்' : 'Updates you can understand'}</span><span><Check /> {lang === 'ta' ? 'பாதுகாப்பான ஆவண பராமரிப்பு' : 'Your documents handled with care'}</span></div><button className="button button-primary" onClick={() => navigate('contact')}>{lang === 'ta' ? 'பழனியில் எங்களைச் சந்திக்க' : 'Meet us in Palani'} <MapPin size={17} /></button></div></div></PageIntro>;
+  }
+
+  function ContactPage({ notify, lang }) {
+    const t = translations[lang] || translations.en;
+    return (
+      <PageIntro kicker={t.contactKicker} title={t.contactTitle} text={t.contactText}>
+        <div className="contact-grid">
+          <div className="contact-panel">
+            <div className="contact-item"><span><MapPin /></span><div><small>{t.visitUs}</small><strong>Mill Road, Sanmugapuram</strong><p>Palani - 624601, Tamil Nadu</p></div></div>
+            <div className="contact-item"><span><Phone /></span><div><small>{t.callUs}</small><a href="tel:9342318844"><strong>93423 18844</strong></a><p>Mon - Sat, 9:00 AM - 7:00 PM</p></div></div>
+            <div className="contact-item"><span><Mail /></span><div><small>EMAIL US</small><a href="mailto:akesevaipalani@gmail.com"><strong>akesevaipalani@gmail.com</strong></a><p>We reply within 24 hours</p></div></div>
+            <div className="contact-item"><span><MessageCircle /></span><div><small>{t.whatsappUs}</small><a href="https://wa.me/919342318844"><strong>Chat with AkEsevai</strong></a><p>Quick questions and document checklist</p></div></div>
+            <div className="contact-item"><span><YoutubeIcon size={20} color="#FF0000" /></span><div><small>YOUTUBE CHANNEL</small><a href={siteConfig.youtube} target="_blank" rel="noreferrer"><strong>@AkEsevai</strong></a><p>Subscribe for video guides & updates</p></div></div>
+            <div className="contact-item"><span><InstagramIcon size={20} color="#E1306C" /></span><div><small>INSTAGRAM PAGE</small><a href={siteConfig.instagram} target="_blank" rel="noreferrer"><strong>@akesevai</strong></a><p>Follow us for daily posts & news</p></div></div>
+            <div className="contact-item"><span><FacebookIcon size={20} color="#1877F2" /></span><div><small>FACEBOOK PAGE</small><a href={siteConfig.facebook} target="_blank" rel="noreferrer"><strong>AkEsevai Facebook</strong></a><p>Connect on our Facebook page</p></div></div>
+          </div>
+          <form className="contact-form" onSubmit={(event) => { event.preventDefault(); notify(lang === 'ta' ? 'செய்தி பெறப்பட்டது. AkEsevai விரைவில் உங்களை அழைக்கும்.' : 'Message received. AkEsevai will call you shortly.'); event.currentTarget.reset(); }}>
+            <label>{t.yourName}<input required placeholder="Enter your name" /></label>
+            <label>{t.phoneNumber}<input required type="tel" placeholder="10-digit mobile number" /></label>
+            <label>{t.howCanWeHelp}<textarea required placeholder="Tell us a little about your service need" rows="4" /></label>
+            <button className="button button-primary" type="submit">{t.sendMessage} <Send size={16} /></button>
+          </form>
+        </div>
+
+        {/* SOCIAL MEDIA FOLLOW WIDGET */}
+        <SocialMediaFollowWidget />
+
+        {/* GOOGLE MAPS EMBED */}
+        <GoogleMapEmbed />
+      </PageIntro>
+    );
+  }
+  function PageIntro({ kicker, title, text, action, children }) { return <section className="page-width inner-page"><div className="inner-hero"><span className="section-kicker">{kicker}</span><h1>{title}</h1><p>{text}</p>{action}</div>{children}</section>; }
+
+  function PrivatePageGate({ navigate }) {
+    return <section className="private-gate page-width"><div><span className="section-kicker">PRIVATE ADMIN AREA</span><h1>This page is not public.</h1><p>Only an AkEsevai administrator can open Weblinks, Forms, Software, and Photo Maker tools.</p><button className="button button-primary" onClick={() => navigate('admin')}><LockKeyhole size={17} /> Admin sign in</button></div></section>;
+  }
+
+  function AdminLiveQueueControlForm() {
+    const [isCenterOpen, setIsCenterOpen] = useState('open'); // 'open' or 'closed'
+    const [queueCount, setQueueCount] = useState('3 நபர்கள்');
+    const [waitTime, setWaitTime] = useState('5-10 நிமிடங்கள்');
+    const [statusText, setStatusText] = useState('🟢 மையம் திறந்துள்ளது (Open Now)');
+    const [closedNoticeText, setClosedNoticeText] = useState('மையம் தற்போது மூடப்பட்டுள்ளது');
+    const [openTimeText, setOpenTimeText] = useState('Mon–Sat 10:00 AM');
+    const [serviceOfDay, setServiceOfDay] = useState('auto');
+    const [upiId, setUpiId] = useState('alakesh.kumar7@okhdfcbank');
+    const [msg, setMsg] = useState('');
+
+    useEffect(() => {
+      const unsubQueue = subscribeLiveQueue((parsed) => {
+        if (parsed && Object.keys(parsed).length > 0) {
+          if (parsed.status) setIsCenterOpen(parsed.status);
+          if (parsed.queueCount !== undefined) setQueueCount(parsed.queueCount);
+          if (parsed.waitTime !== undefined) setWaitTime(parsed.waitTime);
+          if (parsed.statusText) setStatusText(parsed.statusText);
+          if (parsed.closedNotice) setClosedNoticeText(parsed.closedNotice);
+          if (parsed.openTime) setOpenTimeText(parsed.openTime);
+          if (parsed.upiId) setUpiId(parsed.upiId);
+        }
+      });
+
+      const unsubSod = subscribeServiceOfDay((parsedSod) => {
+        if (parsedSod && parsedSod.tamil) {
+          setServiceOfDay(parsedSod.tamil);
+        }
+      });
+
+      return () => {
+        unsubQueue();
+        unsubSod();
+      };
+    }, []);
+
+    const handleSave = (e) => {
+      e.preventDefault();
+      const data = {
+        status: isCenterOpen,
+        queueCount,
+        waitTime,
+        statusText,
+        closedNotice: closedNoticeText,
+        openTime: openTimeText,
+        upiId
+      };
+      saveLiveQueueCloud(data);
+
+      // Handle Service of the Day override
+      const sodCatalog = [
+        { tamil: 'வருமானச் சான்றிதழ்', english: 'Income Certificate', emoji: '📋', color: '#3b82f6', bg: '#eff6ff', desc: 'கல்வி உதவித்தொகை மற்றும் அரசு திட்டங்களுக்கு அவசியமானது.', fee: '₹60', days: '3-7 நாட்கள்' },
+        { tamil: 'சாதிச் சான்றிதழ்', english: 'Community Certificate', emoji: '🏛️', color: '#16a34a', bg: '#f0fdf4', desc: 'கல்லூரி சேர்க்கை மற்றும் அரசு வேலைவாய்ப்புகளுக்குத் தேவை.', fee: '₹60', days: '3-5 நாட்கள்' },
+        { tamil: 'ஆதார் மொபைல் மாற்றம்', english: 'Aadhaar Mobile Update', emoji: '📱', color: '#7c3aed', bg: '#faf5ff', desc: 'ஆதார் அட்டையில் மொபைல் எண்ணை விரைவாக இணைக்கலாம்.', fee: '₹50', days: '2-5 நாட்கள்' },
+        { tamil: 'புதிய வாக்காளர் அட்டை', english: 'New Voter Card', emoji: '🗳️', color: '#dc2626', bg: '#fef2f2', desc: 'புதிய வாக்காளர் பதிவு மற்றும் திருத்தங்களுக்கு உதவுகிறோம்.', fee: '₹0 (Free)', days: '7-14 நாட்கள்' },
+        { tamil: 'TNPSC விண்ணப்பம்', english: 'TNPSC Application', emoji: '📝', color: '#d97706', bg: '#fffbeb', desc: 'TNPSC தேர்வு விண்ணப்பம் தவறின்றி பூர்த்தி செய்ய உதவுகிறோம்.', fee: '₹100+', days: '1-2 நாட்கள்' },
+        { tamil: 'e-SHRAM CARD', english: 'e-Shram Card', emoji: '🪪', color: '#0052cc', bg: '#eff6ff', desc: 'அசங்கடித் தொழிலாளர்களுக்கான அரசு அடையாள அட்டை.', fee: '₹50', days: '1 நாள்' },
+        { tamil: 'புதிய குடும்ப அட்டை', english: 'New Smart Card', emoji: '👨‍👩‍👧‍👦', color: '#15803d', bg: '#f0fdf4', desc: 'புதிய ரேஷன் அட்டை மற்றும் திருத்தங்களுக்கு விண்ணப்பிக்கலாம்.', fee: '₹100', days: '5-10 நாட்கள்' },
+      ];
+
+      if (serviceOfDay === 'auto') {
+        saveServiceOfDayCloud(null);
+      } else {
+        const selectedSodObj = sodCatalog.find(s => s.tamil === serviceOfDay);
+        if (selectedSodObj) {
+          saveServiceOfDayCloud(selectedSodObj);
+        }
+      }
+
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('akesevai_queue_updated'));
+      setMsg('✅ நேரலை மையம், வரிசை எண்ணிக்கை & காத்திருப்பு விவரங்கள் வெற்றிகரமாக சேமிக்கப்பட்டன!');
+      setTimeout(() => setMsg(''), 4000);
+    };
+
+    return (
+      <div style={{ background: '#f8fafc', border: '2px solid #93c5fd', borderRadius: '16px', padding: '28px', textAlign: 'left', maxWidth: '680px', margin: '0 auto' }}>
+        <div className="panel-heading" style={{ marginBottom: '18px' }}>
+          <div>
+            <span className="section-kicker">LIVE CENTER QUEUE CONTROL</span>
+            <h2 style={{ margin: '4px 0 0', color: '#022c7a' }}>⚙️ நேரலை மையம் & UPI நிர்வாகம்</h2>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>
+              நேரலை மையத்தின் நிலை, காத்திருக்கும் நபர்களின் எண்ணிக்கை மற்றும் ஆகும் நேரம் ஆகியவற்றைப் புதுப்பிக்கலாம்.
+            </p>
+          </div>
+        </div>
+
+        {msg && (
+          <div style={{ background: '#dcfce7', border: '1.5px solid #86efac', color: '#15803d', padding: '10px 16px', borderRadius: '8px', fontWeight: 800, fontSize: '13px', marginBottom: '18px' }}>
+            {msg}
           </div>
         )}
 
-        {/* 2. QUEUE COUNT (இன்னும் எத்தனை பேர் இருக்கிறார்கள் / Number of People Waiting) */}
-        <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: '12px', padding: '16px', display: 'grid', gap: '10px' }}>
-          <label style={{ fontSize: '13px', fontWeight: 800, color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            👥 2. இன்னும் எத்தனை பேர் இருக்கிறார்கள்? (வரிசை நபர்கள் எண்ணிக்கை / Queue Count):
-          </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        <form onSubmit={handleSave} style={{ display: 'grid', gap: '18px' }}>
+          {/* 1. CENTER OPEN / CLOSED TOGGLE */}
+          <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+            1. மையம் திறப்பு / மூடல் நிலை (Center Status):
             <select
-              value={queueCount}
-              onChange={(e) => setQueueCount(e.target.value)}
-              style={{ border: '1.5px solid #86efac', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 800, color: '#14532d', background: 'white' }}
+              value={isCenterOpen}
+              onChange={(e) => {
+                setIsCenterOpen(e.target.value);
+                if (e.target.value === 'closed') {
+                  setStatusText('🔴 மையம் இன்று விடுமுறை (Closed Today)');
+                } else {
+                  setStatusText('🟢 மையம் திறந்துள்ளது (Open Now)');
+                }
+              }}
+              style={{ width: '100%', border: '2px solid #022c7a', borderRadius: '8px', padding: '11px', marginTop: '4px', fontSize: '14px', fontWeight: 800, background: isCenterOpen === 'open' ? '#f0fdf4' : '#fef2f2', color: isCenterOpen === 'open' ? '#15803d' : '#dc2626', outline: 'none', cursor: 'pointer' }}
             >
-              <option value="0 நபர்கள்">0 நபர்கள் (வரிசையில் யாருமில்லை)</option>
-              <option value="1 நபர்">1 நபர் (1 Person Waiting)</option>
-              <option value="2 நபர்கள்">2 நபர்கள் (2 People Waiting)</option>
-              <option value="3 நபர்கள்">3 நபர்கள் (3 People Waiting)</option>
-              <option value="5 நபர்கள்">5 நபர்கள் (5 People Waiting)</option>
-              <option value="7 நபர்கள்">7 நபர்கள் (7 People Waiting)</option>
-              <option value="10 நபர்கள்">10 நபர்கள் (10 People Waiting)</option>
-              <option value="15+ நபர்கள்">15+ நபர்கள் (அதிக நெரிசல்)</option>
+              <option value="open">🟢 மையம் திறந்துள்ளது (Center OPEN)</option>
+              <option value="closed">🔒 மையம் மூடப்பட்டுள்ளது (Center CLOSED)</option>
             </select>
+          </label>
+
+          {isCenterOpen === 'closed' && (
+            <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', borderRadius: '12px', padding: '16px', display: 'grid', gap: '12px' }}>
+              <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#991b1b' }}>
+                🔒 மூடல் தகவல் செய்தி (Notice Text):
+                <input
+                  type="text"
+                  value={closedNoticeText}
+                  onChange={(e) => setClosedNoticeText(e.target.value)}
+                  placeholder="எ.கா: மையம் தற்போது மூடப்பட்டுள்ளது / ஞாயிறு விடுமுறை"
+                  style={{ width: '100%', border: '1px solid #fca5a5', borderRadius: '6px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </label>
+
+              <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#991b1b' }}>
+                ⏰ அடுத்த திறக்கும் நேரம் (Next Opening Time Info):
+                <input
+                  type="text"
+                  value={openTimeText}
+                  onChange={(e) => setOpenTimeText(e.target.value)}
+                  placeholder="எ.கா: Mon–Sat 10:00 AM / நாளை காலை 10:00 மணி"
+                  style={{ width: '100%', border: '1px solid #fca5a5', borderRadius: '6px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </label>
+            </div>
+          )}
+
+          {/* 2. QUEUE COUNT (இன்னும் எத்தனை பேர் இருக்கிறார்கள் / Number of People Waiting) */}
+          <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: '12px', padding: '16px', display: 'grid', gap: '10px' }}>
+            <label style={{ fontSize: '13px', fontWeight: 800, color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              👥 2. இன்னும் எத்தனை பேர் இருக்கிறார்கள்? (வரிசை நபர்கள் எண்ணிக்கை / Queue Count):
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <select
+                value={queueCount}
+                onChange={(e) => setQueueCount(e.target.value)}
+                style={{ border: '1.5px solid #86efac', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 800, color: '#14532d', background: 'white' }}
+              >
+                <option value="0 நபர்கள்">0 நபர்கள் (வரிசையில் யாருமில்லை)</option>
+                <option value="1 நபர்">1 நபர் (1 Person Waiting)</option>
+                <option value="2 நபர்கள்">2 நபர்கள் (2 People Waiting)</option>
+                <option value="3 நபர்கள்">3 நபர்கள் (3 People Waiting)</option>
+                <option value="5 நபர்கள்">5 நபர்கள் (5 People Waiting)</option>
+                <option value="7 நபர்கள்">7 நபர்கள் (7 People Waiting)</option>
+                <option value="10 நபர்கள்">10 நபர்கள் (10 People Waiting)</option>
+                <option value="15+ நபர்கள்">15+ நபர்கள் (அதிக நெரிசல்)</option>
+              </select>
+              <input
+                type="text"
+                value={queueCount}
+                onChange={(e) => setQueueCount(e.target.value)}
+                placeholder="எ.கா: 3 நபர்கள்"
+                style={{ border: '1.5px solid #86efac', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 700, color: '#0f172a', background: 'white' }}
+              />
+            </div>
+            <small style={{ fontSize: '11px', color: '#15803d', fontWeight: 700 }}>
+              💡 வாடிக்கையாளர்களின் நேரலை பேனரில் "காத்திருக்கும் பேர்" எண்ணிக்கையாக இது தோன்றும்.
+            </small>
+          </div>
+
+          {/* 3. ESTIMATED WAIT TIME (எவ்வளவு நேரம் ஆகும் / Wait Time in Minutes) */}
+          <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', padding: '16px', display: 'grid', gap: '10px' }}>
+            <label style={{ fontSize: '13px', fontWeight: 800, color: '#92400e', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              ⏱️ 3. சேவையைப் பெற எவ்வளவு நேரம் ஆகும்? (காத்திருக்கும் நேரம் / Estimated Wait Time):
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <select
+                value={waitTime}
+                onChange={(e) => setWaitTime(e.target.value)}
+                style={{ border: '1.5px solid #fcd34d', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 800, color: '#78350f', background: 'white' }}
+              >
+                <option value="5 நிமிடங்கள்">~ 5 நிமிடங்கள் (5 Mins Wait)</option>
+                <option value="10 நிமிடங்கள்">~ 10 நிமிடங்கள் (10 Mins Wait)</option>
+                <option value="15 நிமிடங்கள்">~ 15 நிமிடங்கள் (15 Mins Wait)</option>
+                <option value="20 நிமிடங்கள்">~ 20 நிமிடங்கள் (20 Mins Wait)</option>
+                <option value="30 நிமிடங்கள்">~ 30 நிமிடங்கள் (30 Mins Wait)</option>
+                <option value="காத்திருப்பு இல்லை">காத்திருப்பு இல்லை (No Wait Time)</option>
+              </select>
+              <input
+                type="text"
+                value={waitTime}
+                onChange={(e) => setWaitTime(e.target.value)}
+                placeholder="எ.கா: ~ 10 நிமிடங்கள்"
+                style={{ border: '1.5px solid #fcd34d', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 700, color: '#0f172a', background: 'white' }}
+              />
+            </div>
+            <small style={{ fontSize: '11px', color: '#b45309', fontWeight: 700 }}>
+              💡 வாடிக்கையாளர்களுக்கு தோராயமாக காத்திருக்க வேண்டிய நேரம் நிமிடங்களில் காட்டும்.
+            </small>
+          </div>
+
+          {/* 4. SERVICE OF THE DAY (இன்றைய சிறப்பு சேவை) */}
+          <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+            ⭐ 4. இன்றைய சிறப்பு சேவை (Service of the Day):
+            <select
+              value={serviceOfDay}
+              onChange={(e) => setServiceOfDay(e.target.value)}
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', fontWeight: 700, background: 'white' }}
+            >
+              <option value="auto">🔄 தானியங்கு முறை (Auto Rotating Daily)</option>
+              <option value="வருமானச் சான்றிதழ்">📋 வருமானச் சான்றிதழ் (Income Certificate)</option>
+              <option value="சாதிச் சான்றிதழ்">🏛️ சாதிச் சான்றிதழ் (Community Certificate)</option>
+              <option value="ஆதார் மொபைல் மாற்றம்">📱 ஆதார் மொபைல் மாற்றம் (Aadhaar Mobile Update)</option>
+              <option value="புதிய வாக்காளர் அட்டை">🗳️ புதிய வாக்காளர் அட்டை (New Voter Card)</option>
+              <option value="TNPSC விண்ணப்பம்">📝 TNPSC விண்ணப்பம் (TNPSC Application)</option>
+              <option value="e-SHRAM CARD">🪪 e-SHRAM CARD</option>
+              <option value="புதிய குடும்ப அட்டை">👨‍👩‍👧‍👦 புதிய குடும்ப அட்டை (New Smart Card)</option>
+            </select>
+          </label>
+
+          {/* 5. UPI PAYMENT ID */}
+          <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+            💳 5. கட்டணம் செலுத்தும் UPI ID (GPay / PhonePe / Paytm):
             <input
               type="text"
-              value={queueCount}
-              onChange={(e) => setQueueCount(e.target.value)}
-              placeholder="எ.கா: 3 நபர்கள்"
-              style={{ border: '1.5px solid #86efac', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 700, color: '#0f172a', background: 'white' }}
+              value={upiId}
+              onChange={(e) => setUpiId(e.target.value)}
+              placeholder="e.g. alakesh.kumar7@okhdfcbank"
+              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', fontWeight: 700 }}
             />
-          </div>
-          <small style={{ fontSize: '11px', color: '#15803d', fontWeight: 700 }}>
-            💡 வாடிக்கையாளர்களின் நேரலை பேனரில் "காத்திருக்கும் பேர்" எண்ணிக்கையாக இது தோன்றும்.
-          </small>
-        </div>
-
-        {/* 3. ESTIMATED WAIT TIME (எவ்வளவு நேரம் ஆகும் / Wait Time in Minutes) */}
-        <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', padding: '16px', display: 'grid', gap: '10px' }}>
-          <label style={{ fontSize: '13px', fontWeight: 800, color: '#92400e', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            ⏱️ 3. சேவையைப் பெற எவ்வளவு நேரம் ஆகும்? (காத்திருக்கும் நேரம் / Estimated Wait Time):
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <select
-              value={waitTime}
-              onChange={(e) => setWaitTime(e.target.value)}
-              style={{ border: '1.5px solid #fcd34d', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 800, color: '#78350f', background: 'white' }}
-            >
-              <option value="5 நிமிடங்கள்">~ 5 நிமிடங்கள் (5 Mins Wait)</option>
-              <option value="10 நிமிடங்கள்">~ 10 நிமிடங்கள் (10 Mins Wait)</option>
-              <option value="15 நிமிடங்கள்">~ 15 நிமிடங்கள் (15 Mins Wait)</option>
-              <option value="20 நிமிடங்கள்">~ 20 நிமிடங்கள் (20 Mins Wait)</option>
-              <option value="30 நிமிடங்கள்">~ 30 நிமிடங்கள் (30 Mins Wait)</option>
-              <option value="காத்திருப்பு இல்லை">காத்திருப்பு இல்லை (No Wait Time)</option>
-            </select>
-            <input
-              type="text"
-              value={waitTime}
-              onChange={(e) => setWaitTime(e.target.value)}
-              placeholder="எ.கா: ~ 10 நிமிடங்கள்"
-              style={{ border: '1.5px solid #fcd34d', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 700, color: '#0f172a', background: 'white' }}
-            />
-          </div>
-          <small style={{ fontSize: '11px', color: '#b45309', fontWeight: 700 }}>
-            💡 வாடிக்கையாளர்களுக்கு தோராயமாக காத்திருக்க வேண்டிய நேரம் நிமிடங்களில் காட்டும்.
-          </small>
-        </div>
 
-        {/* 4. SERVICE OF THE DAY (இன்றைய சிறப்பு சேவை) */}
-        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-          ⭐ 4. இன்றைய சிறப்பு சேவை (Service of the Day):
-          <select
-            value={serviceOfDay}
-            onChange={(e) => setServiceOfDay(e.target.value)}
-            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', fontWeight: 700, background: 'white' }}
+          <button
+            type="submit"
+            className="button button-primary"
+            style={{ background: 'linear-gradient(135deg, #16a34a 0%, #022c7a 100%)', justifySelf: 'start', padding: '12px 28px', marginTop: '6px' }}
           >
-            <option value="auto">🔄 தானியங்கு முறை (Auto Rotating Daily)</option>
-            <option value="வருமானச் சான்றிதழ்">📋 வருமானச் சான்றிதழ் (Income Certificate)</option>
-            <option value="சாதிச் சான்றிதழ்">🏛️ சாதிச் சான்றிதழ் (Community Certificate)</option>
-            <option value="ஆதார் மொபைல் மாற்றம்">📱 ஆதார் மொபைல் மாற்றம் (Aadhaar Mobile Update)</option>
-            <option value="புதிய வாக்காளர் அட்டை">🗳️ புதிய வாக்காளர் அட்டை (New Voter Card)</option>
-            <option value="TNPSC விண்ணப்பம்">📝 TNPSC விண்ணப்பம் (TNPSC Application)</option>
-            <option value="e-SHRAM CARD">🪪 e-SHRAM CARD</option>
-            <option value="புதிய குடும்ப அட்டை">👨‍👩‍👧‍👦 புதிய குடும்ப அட்டை (New Smart Card)</option>
+            <Check size={18} /> நேரலை விவரங்களைச் சேமி / Update Live Status
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  function AdminDocumentUploadCard({ customerPhone, customerName, notify, setCustomerRecords }) {
+    const [docCategory, setDocCategory] = useState('Aadhaar Card');
+    const [customRequirement, setCustomRequirement] = useState('');
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [uploading, setUploading] = useState(false);
+
+    const handleAdminUpload = async (e) => {
+      e.preventDefault();
+      if (!selectedFile) {
+        notify('❌ Please select a PDF or Image file to upload.');
+        return;
+      }
+      const cleanPhone = String(customerPhone).replace(/\D/g, '');
+      if (!cleanPhone) {
+        notify('❌ Invalid customer phone number.');
+        return;
+      }
+
+      const requirementName = docCategory === 'Other' ? (customRequirement.trim() || 'Uploaded Document') : docCategory;
+      
+      setUploading(true);
+      notify(`⏳ Uploading ${selectedFile.name} to Firebase Cloud Storage...`);
+
+      try {
+        const docRecord = await uploadFileToFirebaseStorage(selectedFile, 'customer_documents', cleanPhone);
+        if (docRecord && docRecord.url) {
+          const docId = `AK-${cleanPhone}-${requirementName.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const newDocument = {
+            id: docId,
+            applicationId: `ADMIN-${Date.now()}`,
+            requirement: requirementName,
+            name: selectedFile.name,
+            type: selectedFile.type || 'File',
+            uploadedAt: new Date().toLocaleDateString('en-IN'),
+            data: docRecord.url,
+            url: docRecord.url,
+            customerPhone: cleanPhone,
+            storagePath: docRecord.storagePath || ''
+          };
+
+          // Save to 'documents' collection in Firestore
+          await saveExpiryDocumentCloud(newDocument);
+
+          // Update customer profile in 'customers' collection in Firestore
+          let currentCust = readCustomerRecords()[cleanPhone] || { phone: cleanPhone, profile: { name: customerName } };
+          const existingDocs = Array.isArray(currentCust.documents) ? currentCust.documents : [];
+          const filteredDocs = existingDocs.filter(d => d.requirement !== requirementName && d.id !== docId);
+          const updatedCust = {
+            ...currentCust,
+            phone: cleanPhone,
+            documents: [...filteredDocs, newDocument],
+            updatedAt: new Date().toISOString()
+          };
+          await saveCustomerProfileCloud(cleanPhone, updatedCust);
+
+          // Update React state
+          if (setCustomerRecords) {
+            setCustomerRecords(prev => ({
+              ...prev,
+              [cleanPhone]: updatedCust
+            }));
+          }
+
+          setSelectedFile(null);
+          setCustomRequirement('');
+          notify(`🎉 Document "${requirementName}" uploaded and saved to Firebase Cloud!`);
+        } else {
+          notify('❌ Upload failed. Please try again.');
+        }
+      } catch (err) {
+        notify(`❌ Upload error: ${err.message || String(err)}`);
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    return (
+      <div style={{ background: '#f0f9ff', border: '2px dashed #0284c7', borderRadius: '12px', padding: '16px', margin: '16px 0 20px' }}>
+        <h4 style={{ margin: '0 0 10px', fontSize: '14px', font: '800 14px Manrope', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <UploadCloud size={18} /> 📤 Admin Document Upload for +91 {customerPhone} ({customerName})
+        </h4>
+        <form onSubmit={handleAdminUpload} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
+          <div>
+            <label style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+              Document Category / Name:
+            </label>
+            <select
+              value={docCategory}
+              onChange={(e) => setDocCategory(e.target.value)}
+              style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #7dd3fc', fontSize: '12px', fontWeight: 700 }}
+            >
+              <option value="Aadhaar Card">Aadhaar Card (ஆதார் கார்டு)</option>
+              <option value="Smart Card / Ration Card">Smart Card / Ration Card (ரேஷன் கார்டு)</option>
+              <option value="Income Proof / Payslip">Income Proof (வருமானச் சான்று)</option>
+              <option value="Community Certificate">Community Certificate (சாதிச் சான்றிதழ்)</option>
+              <option value="Nativity / Residence Cert">Nativity / Residence Certificate</option>
+              <option value="Educational Marksheet / TC">Educational Marksheet / TC</option>
+              <option value="Passport Size Photo">Passport Size Photo</option>
+              <option value="Other">Other / Custom Document Name...</option>
+            </select>
+          </div>
+
+          {docCategory === 'Other' ? (
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+                Custom Document Name:
+              </label>
+              <input
+                type="text"
+                required
+                value={customRequirement}
+                onChange={(e) => setCustomRequirement(e.target.value)}
+                placeholder="e.g. Bank Passbook"
+                style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #7dd3fc', fontSize: '12px', fontWeight: 700 }}
+              />
+            </div>
+          ) : (
+            <div>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+                Select File (PDF or Image):
+              </label>
+              <input
+                type="file"
+                accept=".pdf,image/*"
+                required
+                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                style={{ width: '100%', padding: '6px', fontSize: '11px' }}
+              />
+            </div>
+          )}
+
+          {docCategory === 'Other' && (
+            <div style={{ gridColumn: 'span 2' }}>
+              <label style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+                Select File (PDF or Image):
+              </label>
+              <input
+                type="file"
+                accept=".pdf,image/*"
+                required
+                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                style={{ width: '100%', padding: '6px', fontSize: '11px' }}
+              />
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={uploading}
+            style={{
+              background: '#0284c7',
+              color: 'white',
+              border: 'none',
+              padding: '9px 18px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: 800,
+              cursor: uploading ? 'wait' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              height: '36px'
+            }}
+          >
+            {uploading ? '⏳ Uploading...' : '☁️ Upload Document'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], setTokenBookings, customerRecords = {}, setCustomerRecords, applicationRecords = {}, setApplicationRecords, notify }) {
+    const [password, setPassword] = useState('');
+    const [query, setQuery] = useState('');
+    const [tokenSearch, setTokenSearch] = useState('');
+    const [appSearch, setAppSearch] = useState('');
+    const [activeCustomer, setActiveCustomer] = useState('');
+    const [adminTab, setAdminTab] = useState('smartdesk');
+    const [editingCustomer, setEditingCustomer] = useState(null);
+    const [editName, setEditName] = useState('');
+    const [editPhone, setEditPhone] = useState('');
+    const [activeDocPreview, setActiveDocPreview] = useState(null);
+
+    if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button></form></section>;
+    const activeRecords = customerRecords || {};
+    const customers = Object.values(activeRecords)
+      .filter(c => c && (c.phone || c.profile?.name || c.name))
+      .sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
+
+    const matchingCustomers = customers.filter((customer) => {
+      const name = customer.profile?.name || customer.name || 'Customer';
+      const phone = customer.phone || '';
+      const apps = Array.isArray(customer.applications) ? customer.applications.map((app) => app?.name || '').join(' ') : '';
+      return `${name} ${phone} ${apps}`.toLowerCase().includes(query.toLowerCase());
+    });
+
+    const selected = matchingCustomers.find((customer) => customer.phone === activeCustomer) || matchingCustomers[0];
+    const totalApplications = Object.keys(applicationRecords || {}).length || customers.reduce((total, customer) => total + (Array.isArray(customer.applications) ? customer.applications.length : 0), 0);
+    const totalDocuments = customers.reduce((total, customer) => total + (Array.isArray(customer.documents) ? customer.documents.length : 0), 0);
+    
+    const filteredTokens = tokenBookings.filter((tok) => {
+      const q = tokenSearch.trim().toLowerCase();
+      if (!q) return true;
+      return (tok.tokenNo || '').toLowerCase().includes(q) || (tok.phone || '').toLowerCase().includes(q) || (tok.customerName || '').toLowerCase().includes(q) || (tok.service || '').toLowerCase().includes(q) || (tok.date || '').toLowerCase().includes(q);
+    });
+
+    const allAppsList = Object.values(applicationRecords || {});
+    const filteredApps = allAppsList.filter((app) => {
+      const q = appSearch.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (app.id || '').toLowerCase().includes(q) ||
+        (app.applicantName || '').toLowerCase().includes(q) ||
+        (app.phone || '').toLowerCase().includes(q) ||
+        (app.service || '').toLowerCase().includes(q) ||
+        (app.statusLabel || '').toLowerCase().includes(q)
+      );
+    });
+
+    const handleUpdateAppStage = async (appId, newStage) => {
+      const updated = updateApplicationStage(appId, newStage);
+      if (updated && setApplicationRecords) {
+        setApplicationRecords((prev) => ({ ...prev, [appId]: updated }));
+      }
+      notify(`✅ Application ${appId} updated to Stage ${newStage}!`);
+    };
+
+    const handleDeleteApp = async (appId) => {
+      if (!appId) return;
+      const confirmDelete = window.confirm(`Are you sure you want to PERMANENTLY delete application "${appId}" from Firebase Cloud?`);
+      if (confirmDelete) {
+        if (setApplicationRecords) {
+          setApplicationRecords((prev) => {
+            const copy = { ...prev };
+            delete copy[appId];
+            return copy;
+          });
+        }
+        await deleteApplicationCloud(appId);
+        notify(`🗑️ Application ${appId} deleted permanently from Firebase Cloud!`);
+      }
+    };
+
+    const handleSaveEditCustomer = async () => {
+      if (!editingCustomer) return;
+      const cleanOldPhone = editingCustomer.phone.replace(/\D/g, '');
+      const cleanNewPhone = editPhone.replace(/\D/g, '') || cleanOldPhone;
+
+      const updatedRecord = {
+        ...editingCustomer,
+        phone: cleanNewPhone,
+        profile: {
+          ...(editingCustomer.profile || {}),
+          name: editName
+        },
+        updatedAt: new Date().toISOString()
+      };
+
+      if (cleanOldPhone !== cleanNewPhone) {
+        await deleteCustomerProfileCloud(cleanOldPhone);
+      }
+      await saveCustomerProfileCloud(cleanNewPhone, updatedRecord);
+      if (setCustomerRecords) {
+        setCustomerRecords((prev) => {
+          const copy = { ...prev };
+          delete copy[cleanOldPhone];
+          copy[cleanNewPhone] = updatedRecord;
+          return copy;
+        });
+      }
+      setEditingCustomer(null);
+      notify('🎉 Customer profile updated and synced to Firebase Cloud!');
+    };
+
+    const handleDeleteCustomer = async (cust) => {
+      if (!cust) return;
+      const custName = cust.profile?.name || cust.name || 'Customer';
+      const confirmDelete = window.confirm(`Are you sure you want to remove customer "${custName}" (+91 ${cust.phone}) from Firebase Cloud?`);
+      if (confirmDelete) {
+        const cleanPhone = String(cust.phone).replace(/\D/g, '');
+        if (setCustomerRecords) {
+          setCustomerRecords((prev) => {
+            const updated = { ...prev };
+            delete updated[cleanPhone];
+            delete updated[cust.phone];
+            return updated;
+          });
+        }
+        setActiveCustomer('');
+        await deleteCustomerProfileCloud(cust.phone);
+        notify(`🗑️ Customer ${custName} removed from Firebase database!`);
+      }
+    };
+
+    const handleUpdateTokenStatus = async (tok, newStatus) => {
+      const updated = {
+        ...tok,
+        status: newStatus,
+        updatedAt: new Date().toISOString()
+      };
+      await saveTokenBookingCloud(updated);
+      notify(`✅ Token ${tok.tokenNo} status updated to "${newStatus}"!`);
+    };
+
+    const handleDeleteToken = async (tok) => {
+      if (!tok || !tok.tokenNo) return;
+      const confirmDelete = window.confirm(`Delete Token ${tok.tokenNo} for ${tok.customerName}?`);
+      if (confirmDelete) {
+        if (setTokenBookings) {
+          setTokenBookings((prev) => prev.filter(t => String(t.tokenNo) !== String(tok.tokenNo)));
+        }
+        await deleteTokenBookingCloud(tok.tokenNo);
+        notify(`🗑️ Token ${tok.tokenNo} removed!`);
+      }
+    };
+
+    return (
+      <section className="admin-dashboard page-width">
+        <div className="dashboard-top">
+          <div><span className="section-kicker">ADMIN DASHBOARD</span><h1>Customer <em>requests.</em></h1><p>View submitted services, documents, and token bookings.</p></div>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button className="logout-button" style={{ background: '#0052cc', color: 'white', borderColor: '#0043a8' }} onClick={async () => {
+              notify('⏳ Fetching latest data from Firebase Cloud...');
+              const cloud = await fetchAllCloudRecords();
+              if (cloud) {
+                notify('✅ Firebase Cloud sync complete!');
+              } else {
+                notify('⚡ Using latest synchronized cloud state');
+              }
+            }}><Sparkles size={14} /> 🔄 Sync Firebase Cloud</button>
+            <button className="logout-button" onClick={logout}><LogOut size={14} /> Logout admin</button>
+          </div>
+        </div>
+        <div className="admin-tools">
+          <button onClick={() => setAdminTab('notifications')}><Bell size={18} /><span><strong>Notifications</strong><small>Add & delete notifications</small></span></button>
+          <button onClick={() => navigate('weblink')}><ExternalLink size={18} /><span><strong>Weblinks</strong><small>Private service links</small></span></button>
+          <button onClick={() => navigate('forms')}><FormInput size={18} /><span><strong>Forms</strong><small>Official PDF downloads</small></span></button>
+          <button onClick={() => navigate('software')}><FileCog size={18} /><span><strong>Software</strong><small>AkEsevai tools</small></span></button>
+          <button onClick={() => navigate('photo-maker')}><Camera size={18} /><span><strong>Photo Maker</strong><small>Private photo tools</small></span></button>
+        </div>
+        <div className="dashboard-stats">
+          <div><span className="stat-icon yellow"><Users /></span><span><strong>{customers.length}</strong><small>Customers</small></span></div>
+          <div><span className="stat-icon blue"><FileText /></span><span><strong>{totalApplications}</strong><small>Service requests</small></span></div>
+          <div><span className="stat-icon green"><FileCheck2 /></span><span><strong>{totalDocuments}</strong><small>Uploaded documents</small></span></div>
+          <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><CalendarDays /></span><span><strong>{tokenBookings.length}</strong><small>Token Bookings</small></span></div>
+          <div><span className="stat-icon" style={{ background: '#f0fdf4', color: '#16a34a' }}><IndianRupee /></span><span><strong>₹{tokenBookings.length * 50}</strong><small>Est. Token Revenue</small></span></div>
+        </div>
+        <div className="dashboard-tabs" style={{ marginBottom: '24px' }}>
+          <button className={adminTab === 'applications' ? 'tab-active' : ''} onClick={() => setAdminTab('applications')} style={{ background: adminTab === 'applications' ? '#0052cc' : undefined, color: adminTab === 'applications' ? 'white' : undefined }}>📋 Applications Manager ({allAppsList.length})</button>
+          <button className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests</button>
+          <button className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings {tokenBookings.length > 0 && <span className="tab-count">{tokenBookings.length}</span>}</button>
+          <button className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={() => setAdminTab('notifications')} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
+          <button className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={() => setAdminTab('smartdesk')} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
+          <button className={adminTab === 'analytics' ? 'tab-active' : ''} onClick={() => setAdminTab('analytics')} style={{ background: adminTab === 'analytics' ? '#7c3aed' : undefined, color: adminTab === 'analytics' ? 'white' : undefined }}>📊 Revenue Analytics</button>
+          <button className={adminTab === 'queue' ? 'tab-active' : ''} onClick={() => setAdminTab('queue')} style={{ background: adminTab === 'queue' ? '#0052cc' : undefined, color: adminTab === 'queue' ? 'white' : undefined }}>⚙️ Live Center Queue Control</button>
+        </div>
+
+        {editingCustomer && (
+          <div style={{ background: '#f8fafc', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 20px rgba(0,0,0,0.06)' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '6px' }}>✏️ Edit Customer Profile ({editingCustomer.phone})</h3>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+                Customer Name:
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
+              </label>
+              <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+                Mobile Phone Number:
+                <input type="text" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setEditingCustomer(null)} style={{ background: '#94a3b8', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleSaveEditCustomer} style={{ background: '#16a34a', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>💾 Save Changes</button>
+            </div>
+          </div>
+        )}
+
+        {adminTab === 'applications' && (
+          <div style={{ marginTop: '10px' }}>
+            <div className="panel-heading" style={{ marginBottom: '16px' }}>
+              <div>
+                <span className="section-kicker">APPLICATIONS MANAGER</span>
+                <h2>All Created Service Applications</h2>
+                <p>Manage stages, update status, or delete application records from Firebase Cloud.</p>
+              </div>
+            </div>
+            <div style={{ marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div className="service-search" style={{ flex: 1, margin: 0 }}>
+                <Search size={18} />
+                <input
+                  type="text"
+                  value={appSearch}
+                  onChange={(e) => setAppSearch(e.target.value)}
+                  placeholder="🔍 Search by Application ID (e.g. TN-AK-2026-12345), Applicant Name, or Mobile Number..."
+                />
+                {appSearch && (
+                  <button type="button" onClick={() => setAppSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--muted)' }}>Clear</button>
+                )}
+              </div>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                {filteredApps.length} {filteredApps.length === 1 ? 'Application' : 'Applications'}
+              </span>
+            </div>
+
+            {filteredApps.length === 0 ? (
+              <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}>
+                <FileText size={36} style={{ opacity: 0.3, marginBottom: '12px' }} />
+                <p>No applications found.</p>
+              </div>
+            ) : (
+              <div className="token-bookings-table-wrap">
+                <table className="admin-token-table">
+                  <thead>
+                    <tr>
+                      <th>App ID / Ack No</th>
+                      <th>Applicant Name</th>
+                      <th>Mobile</th>
+                      <th>Service</th>
+                      <th>Date</th>
+                      <th>Stage (1-6)</th>
+                      <th>Status Label</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredApps.map((app) => (
+                      <tr key={app.id || app.ackNo}>
+                        <td><span className="token-id-badge">{app.id || app.ackNo}</span></td>
+                        <td><strong>{app.applicantName || app.name || 'Applicant'}</strong></td>
+                        <td>+91 {app.phone}</td>
+                        <td style={{ maxWidth: '200px' }}>{app.service || app.serviceName || 'General Service'}</td>
+                        <td>{app.date || app.submittedDate || 'Recently'}</td>
+                        <td>
+                          <select
+                            value={app.currentStage || 3}
+                            onChange={(e) => handleUpdateAppStage(app.id || app.ackNo, parseInt(e.target.value, 10))}
+                            style={{
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              border: '1.5px solid #0052cc',
+                              fontWeight: 800,
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              background: '#eff6ff',
+                              color: '#1d4ed8'
+                            }}
+                          >
+                            <option value={1}>Step 1: Received</option>
+                            <option value={2}>Step 2: Verified</option>
+                            <option value={3}>Step 3: Fee Paid</option>
+                            <option value={4}>Step 4: Submitted to Govt</option>
+                            <option value={5}>Step 5: Officer Review</option>
+                            <option value={6}>Step 6: Approved & Completed</option>
+                          </select>
+                        </td>
+                        <td style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8' }}>
+                          {app.statusLabel || app.status || 'Processing'}
+                        </td>
+                        <td>
+                          <button
+                            onClick={() => handleDeleteApp(app.id || app.ackNo)}
+                            title="Delete Application"
+                            style={{
+                              background: '#fef2f2',
+                              color: '#dc2626',
+                              border: '1px solid #fca5a5',
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <Trash2 size={13} /> Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {adminTab === 'smartdesk' && (
+          <div style={{ marginTop: '10px' }}>
+            <AdminSevaiSmartDesk notify={notify} />
+          </div>
+        )}
+        {adminTab === 'notifications' && (
+          <div style={{ marginTop: '10px' }}>
+            <div style={{ background: '#fffbeb', border: '2px solid #fcd34d', borderRadius: '16px', padding: '18px 24px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '1px', color: '#b45309', textTransform: 'uppercase' }}>ADMIN NOTIFICATION MANAGEMENT</span>
+                <h2 style={{ margin: '4px 0 0', fontSize: '18px', color: '#78350f', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  📢 அறிவிப்புகள் மேலாண்மை / Notification Management Panel
+                </h2>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#92400e' }}>
+                  அட்மின்கள் மட்டுமே புதிய அறிவிப்புகளைச் சேர்க்கவும், பழைய அறிவிப்புகளை நீக்கவும், மற்றும் தேதி முடிந்தவற்றைத் தானாக நீக்கவும் முடியும்.
+                </p>
+              </div>
+            </div>
+            <NotificationTables forceAdmin={true} />
+          </div>
+        )}
+
+        {adminTab === 'analytics' && (
+          <div style={{ marginTop: '10px' }}>
+            <AdminRevenueDashboard tokenBookings={tokenBookings} />
+          </div>
+        )}
+
+
+        {adminTab === 'customers' && (
+          <div className="admin-grid">
+            <aside className="admin-customers">
+              <div className="panel-heading"><div><span className="section-kicker">CUSTOMERS</span><h2>All requests</h2></div></div>
+              <div className="service-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer or service" /></div>
+              {matchingCustomers.length ? matchingCustomers.map((customer) => {
+                const custName = customer.profile?.name || customer.name || customer.phone || 'Customer';
+                const avatar = custName.slice(0, 2).toUpperCase();
+                const appCount = Array.isArray(customer.applications) ? customer.applications.length : 0;
+                return (
+                  <button className={`admin-customer-row ${selected?.phone === customer.phone ? 'admin-customer-active' : ''}`} onClick={() => setActiveCustomer(customer.phone)} key={customer.phone || Math.random()}>
+                    <span className="avatar">{avatar}</span>
+                    <span><strong>{custName}</strong><small>+91 {customer.phone} · {appCount} services</small></span>
+                    <ChevronRight size={16} />
+                  </button>
+                );
+              }) : <p className="empty-customer-state">No matching customer requests.</p>}
+            </aside>
+            <section className="admin-detail">
+              {selected ? (() => {
+                const liveCustomerMap = customerRecords || {};
+                const cleanSelectedPhone = (selected.phone || '').replace(/\D/g, '');
+                const profileRecord = liveCustomerMap[cleanSelectedPhone] || liveCustomerMap[selected.phone] || {};
+                const globalExpiryDocs = cloudExpiryDocs || [];
+
+                const combinedDocs = [
+                  ...(selected.documents || []),
+                  ...(profileRecord.documents || []),
+                  ...globalExpiryDocs.filter((d) => {
+                    const docPhone = (d.customerPhone || '').replace(/\D/g, '');
+                    return cleanSelectedPhone && docPhone && (docPhone === cleanSelectedPhone || docPhone.includes(cleanSelectedPhone) || cleanSelectedPhone.includes(docPhone));
+                  }).map(d => ({
+                    id: d.id || d.url,
+                    requirement: d.requirement || d.title || d.name,
+                    name: d.name || 'Uploaded Document',
+                    uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
+                    data: d.url || d.data
+                  }))
+                ];
+
+                const selectedDocs = combinedDocs.reduce((acc, current) => {
+                  const url = current.data || current.url;
+                  const name = current.name || current.requirement;
+                  const exists = acc.find(item => (url && (item.data === url || item.url === url)) || (item.name === name && item.name));
+                  if (!exists) return acc.concat([{ ...current, data: url || current.data }]);
+                  return acc;
+                }, []);
+
+                const selectedName = selected.profile?.name || selected.name || 'Customer';
+                const selectedApps = Array.isArray(selected.applications) ? selected.applications : [];
+
+                return (
+                  <>
+                    <div className="panel-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                      <div>
+                        <span className="section-kicker">CUSTOMER DETAILS</span>
+                        <h2>{selectedName}</h2>
+                        <p>+91 {selected.phone}</p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => { setEditingCustomer(selected); setEditName(selectedName); setEditPhone(selected.phone || ''); }}
+                          style={{ background: '#0052cc', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          ✏️ Edit Profile
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCustomer(selected)}
+                          style={{ background: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          🗑️ Delete Customer
+                        </button>
+                      </div>
+                    </div>
+
+                    <AdminDocumentUploadCard
+                      customerPhone={selected.phone}
+                      customerName={selectedName}
+                      notify={notify}
+                      setCustomerRecords={setCustomerRecords}
+                    />
+
+                    <h3 className="admin-section-title">Selected services</h3>
+                    {selectedApps.length ? selectedApps.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
+                    <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
+                    {selectedDocs.length ? selectedDocs.map((document, idx) => (
+                      <div className="admin-service-row" key={document.id || idx} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span className="doc-symbol" style={{ background: '#dcfce7', color: '#16a34a', padding: '8px', borderRadius: '8px' }}>
+                            <FileCheck2 size={20} />
+                          </span>
+                          <div>
+                            <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{document.requirement || document.name}</strong>
+                            <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>📄 {document.name} · Uploaded {document.uploadedAt}</small>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                          <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                            <Eye size={15} /> View (காண்க)
+                          </button>
+                          <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                            <Download size={14} /> Download (பதிவிறக்கு)
+                          </button>
+                          <button
+                            className="document-open"
+                            onClick={async () => {
+                              const reqName = document.requirement || document.name;
+                              if (window.confirm(`Are you sure you want to PERMANENTLY delete document "${reqName}"?`)) {
+                                const docId = document.id || document.url;
+                                const phone = selected.phone;
+
+                                if (setCustomerRecords) {
+                                  setCustomerRecords((prev) => {
+                                    const cleanPhone = String(phone).replace(/\D/g, '');
+                                    const custObj = prev[cleanPhone] || prev[phone];
+                                    if (!custObj) return prev;
+                                    const updatedDocs = (custObj.documents || []).filter(
+                                      (d) => String(d.id) !== String(docId) && d.requirement !== reqName && String(d.url || d.data) !== String(docId)
+                                    );
+                                    return {
+                                      ...prev,
+                                      [cleanPhone]: { ...custObj, documents: updatedDocs }
+                                    };
+                                  });
+                                }
+
+                                await deleteExpiryDocumentCloud(docId, phone);
+                                notify(`🗑️ Document "${reqName}" deleted from Firebase Cloud!`);
+                              }
+                            }}
+                            title="Delete Document"
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                          >
+                            <Trash2 size={14} /> Delete (நீக்கு)
+                          </button>
+                        </div>
+                      </div>
+                    )) : <p className="empty-customer-state">This customer has not uploaded documents yet.</p>}
+                  </>
+                );
+              })() : <div className="empty-customer-state">Customer uploads will appear here after customers select a service and upload documents.</div>}
+            </section>
+          </div>
+        )}
+        {adminTab === 'tokens' && (
+          <div className="admin-token-bookings">
+            <div className="panel-heading" style={{ marginBottom: '16px' }}><div><span className="section-kicker">TOKEN BOOKINGS</span><h2>Appointment Requests & Token Slips</h2><p>Search by Token Number or Phone Number to easily locate token details.</p></div></div>
+            <div className="admin-token-search-bar" style={{ marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div className="service-search" style={{ flex: 1, margin: 0 }}><Search size={18} /><input type="text" value={tokenSearch} onChange={(e) => setTokenSearch(e.target.value)} placeholder="🔍 Search by Token No (e.g. TOK-123) or Mobile Number (e.g. 9342318844)..." />{tokenSearch && <button type="button" onClick={() => setTokenSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--muted)' }}>Clear</button>}</div>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{filteredTokens.length} {filteredTokens.length === 1 ? 'Token' : 'Tokens'} found</span>
+            </div>
+            {tokenBookings.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><CalendarDays size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token bookings yet. Customers who generate a token from the Token Slip page will appear here.</p></div> : filteredTokens.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><Search size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token found matching <strong>"{tokenSearch}"</strong>.</p><small style={{ color: 'var(--muted)' }}>Try searching with Token Number (e.g., TOK-101) or Mobile Number.</small></div> : <div className="token-bookings-table-wrap"><table className="admin-token-table"><thead><tr><th>Token No</th><th>Applicant Name</th><th>Mobile</th><th>Service</th><th>Visit Date</th><th>Time Slot</th><th>WhatsApp Alert</th><th>Technical Status</th><th>Action</th></tr></thead><tbody>{filteredTokens.map((tok) => {
+              const waText = encodeURIComponent(`🙏 *வணக்கம் ${tok.customerName}*,\n\nஉங்கள் AkEsevai டோக்கன் *${tok.tokenNo}* உறுதி செய்யப்பட்டது.\nசேவை: ${tok.service}\nதேதி & நேரம்: ${tok.date} (${tok.slot})\n\nAkEsevai மையம், பழனியில் சேவையைப் பெறலாம்.`);
+              return (
+                <tr key={tok.tokenNo}>
+                  <td><span className="token-id-badge">{tok.tokenNo}</span></td>
+                  <td><strong>{tok.customerName}</strong></td>
+                  <td>+91 {tok.phone}</td>
+                  <td style={{ maxWidth: '200px' }}>{tok.service}</td>
+                  <td>{tok.date}</td>
+                  <td>{tok.slot}</td>
+                  <td>
+                    <a
+                      href={`https://wa.me/91${tok.phone.replace(/\D/g, '')}?text=${waText}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ background: '#25D366', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <MessageCircle size={13} /> WA Alert
+                    </a>
+                  </td>
+                  <td>
+                    <select
+                      value={tok.status || 'CHECKED-IN / VERIFIED'}
+                      onChange={(e) => handleUpdateTokenStatus(tok, e.target.value)}
+                      style={{
+                        background: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#f0fdf4' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#fffbebf' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#fef2f2' : '#eff6ff',
+                        color: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#16a34a' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#d97706' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#dc2626' : '#2563eb',
+                        border: '1.5px solid currentColor',
+                        padding: '5px 8px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="CHECKED-IN / VERIFIED">🟢 VERIFIED / CHECKED-IN (பெறப்பட்டது)</option>
+                      <option value="AWAITING VISIT">🟡 AWAITING VISIT (காத்திருப்பில்)</option>
+                      <option value="COMPLETED / SERVED">🔵 COMPLETED / SERVED (நிறைவடைந்தது)</option>
+                      <option value="NO-SHOW / CANCELLED">🔴 NO-SHOW / CANCELLED (வரவில்லை / ரத்து)</option>
+                    </select>
+                  </td>
+                  <td>
+                    <button
+                      onClick={() => handleDeleteToken(tok)}
+                      title="Delete Token"
+                      style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '5px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}</tbody></table></div>}
+          </div>
+        )}
+        {adminTab === 'queue' && (
+          <div style={{ marginTop: '10px' }}>
+            <AdminLiveQueueControlForm />
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function CustomerPage({ customer, updateCustomer, logout, notify, saveToken }) {
+    const [activeTab, setActiveTab] = useState('overview');
+    const [selectedService, setSelectedService] = useState('');
+    const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
+    if (!customer.profile.complete) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> Customer profile</span><h1>Welcome to<br /><em>AkEsevai.</em></h1><p>Please enter your name once. We will save it with your mobile number for your next login.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); const cleanedName = name.trim(); if (!cleanedName) return; updateCustomer((current) => ({ ...current, profile: { ...current.profile, name: cleanedName, complete: true } })); notify('Your name has been saved. Welcome to your dashboard.'); }}><div className="login-icon"><UserRound size={22} /></div><span className="section-kicker">YOUR DETAILS</span><h2>What is your name?</h2><p>This is visible only in your customer account and to AkEsevai administration.</p><label>Full name<input className="admin-password" autoFocus required value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your full name" /></label><button className="button button-primary button-wide" type="submit">Continue <ArrowRight size={17} /></button></form></section>;
+    const tabs = [['overview', 'Overview'], ['documents', 'My documents'], ['token-slip', '🎫 Token Slip']];
+    const applications = customer.applications;
+    const addApplication = (event) => { event.preventDefault(); if (!selectedService) return; const service = serviceCatalog.find(([, title]) => title === selectedService); const requirements = getRequiredDocuments(selectedService, service?.[2]); const application = { id: `AK-${Date.now().toString().slice(-8)}`, name: selectedService, status: 'Submitted', date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), progress: 22, requirements }; updateCustomer((current) => ({ ...current, applications: [application, ...current.applications] })); setSelectedService(''); setActiveTab('documents'); notify('Service selected. Upload only the required documents for this application.'); };
+    const initials = customer.profile.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+    return (
+      <section className="customer-dashboard page-width">
+        <div className="dashboard-top">
+          <div><span className="section-kicker">PRIVATE CUSTOMER PORTAL</span><h1>Welcome, <em>{customer.profile.name}.</em></h1><p>Only the services, applications and documents for +91 {customer.phone} are shown here.</p></div>
+          <div className="profile-pill"><span className="avatar">{initials}</span><span><strong>{customer.profile.name}</strong><small>Mobile: {customer.phone}</small></span><button className="logout-button" onClick={logout}><LogOut size={14} /> Logout</button></div>
+        </div>
+        <div className="dashboard-tabs">
+          {tabs.map(([id, label]) => <button className={activeTab === id ? 'tab-active' : ''} onClick={() => setActiveTab(id)} key={id}>{label}{id === 'documents' && <span className="tab-count">{customer.documents.length}</span>}</button>)}
+          <button className="notification-button" aria-label="Notifications"><Bell size={18} /><i /></button>
+        </div>
+        {activeTab === 'overview' && (
+          <>
+            <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+              <div><span className="stat-icon yellow"><FileText /></span><span><strong>{applications.length}</strong><small>My services</small></span></div>
+              <div><span className="stat-icon green"><Check /></span><span><strong>{customer.documents.length}</strong><small>My documents</small></span></div>
+              <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><Ticket /></span><span><strong>{customer.lastToken?.tokenNo || 'Get Token'}</strong><small>Token Slip</small></span></div>
+            </div>
+            <div className="dashboard-columns">
+              <div className="application-panel">
+                <div className="panel-heading">
+                  <div><span className="section-kicker">YOUR ACTIVITY</span><h2>My selected services</h2></div>
+                  <button className="text-button" onClick={() => setActiveTab('token-slip')}>Get Token Slip <Ticket size={15} /></button>
+                </div>
+                {applications.length ? applications.map((application) => <ApplicationRow application={application} key={application.id} />) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
+              </div>
+              <div className="quick-panel">
+                <span className="section-kicker">SELECT A SERVICE</span><h2>Start your request</h2><p>We will show only the documents required for the service you choose.</p>
+                <form onSubmit={addApplication}>
+                  <select value={selectedService} onChange={(event) => setSelectedService(event.target.value)} required>
+                    <option value="">Select a service</option>
+                    {serviceCatalog.map(([, title]) => <option key={title}>{title}</option>)}
+                  </select>
+                  <button className="button button-primary button-wide" type="submit">Continue to documents <ArrowRight size={16} /></button>
+                </form>
+              </div>
+            </div>
+          </>
+        )}
+        {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} />}
+        {activeTab === 'token-slip' && (
+          <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
+            <TokenPass
+              defaultToken={customer.lastToken || null}
+              initialName={customer.profile.name || ''}
+              initialPhone={customer.phone || ''}
+              onTokenSaved={(tok) => {
+                if (typeof saveToken === 'function') saveToken(tok);
+                updateCustomer((curr) => ({ ...curr, lastToken: tok }));
+                notify(`Token ${tok.tokenNo} generated and saved to your customer portal!`);
+              }}
+            />
+          </div>
+        )}
+
+        {/* BROWSER NOTIFICATION OPT-IN */}
+        <div style={{ padding: '0 0 8px' }}>
+          <BrowserNotificationOptIn />
+        </div>
+
+        {/* CUSTOMER REFERRAL CARD */}
+        <CustomerReferralCard customerName={customer.profile.name || ''} />
+
+      </section>
+    );
+  }
+
+  function ApplicationRow({ application }) { return <div className="application-row"><span className={`app-icon ${application.status === 'Completed' ? 'done' : ''}`}>{application.status === 'Completed' ? <Check size={19} /> : <Clock3 size={19} />}</span><span className="app-info"><strong>{application.name}</strong><small>{application.id} · Started {application.date}</small></span><span className={`status-text ${application.status.toLowerCase().replace(' ', '-')}`}>{application.status}</span><span className="row-arrow"><ChevronRight size={17} /></span></div>; }
+  function DocumentsTab({ customer, updateCustomer, notify }) {
+    const [applicationId, setApplicationId] = useState(customer.applications[0]?.id || '');
+    const application = customer.applications.find((item) => item.id === applicationId);
+
+    const uploadDocument = async (event, requirement) => {
+      const file = event.target.files?.[0];
+      if (!file || !application) return;
+      if (file.size > 10 * 1024 * 1024) {
+        notify('❌ Please upload a document smaller than 10 MB.');
+        return;
+      }
+
+      notify(`⏳ Uploading ${file.name} to Firebase Storage...`);
+      const docRecord = await uploadFileToFirebaseStorage(file, 'customer_documents', customer.phone || 'guest');
+
+      if (docRecord) {
+        const documentObj = {
+          id: `${application.id}-${requirement}`,
+          applicationId: application.id,
+          requirement,
+          name: file.name,
+          type: file.type || 'File',
+          uploadedAt: new Date().toLocaleDateString('en-IN'),
+          data: docRecord.url || docRecord.data,
+          storagePath: docRecord.storagePath || ''
+        };
+
+        updateCustomer((current) => {
+          const existingDocs = current.documents || [];
+          const filtered = existingDocs.filter((item) => item.requirement !== requirement && item.id !== documentObj.id);
+          return {
+            ...current,
+            documents: [...filtered, documentObj]
+          };
+        });
+
+        saveExpiryDocumentCloud({
+          id: documentObj.id,
+          name: file.name,
+          requirement,
+          url: docRecord.url || docRecord.data,
+          customerPhone: customer.phone,
+          uploadedAt: new Date().toISOString()
+        });
+
+        notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`);
+      }
+    };
+
+    if (!customer.applications.length) return <div className="tab-content"><div className="panel-heading"><div><span className="section-kicker">DOCUMENT VAULT</span><h2>My documents</h2><p>Select a service first. Its required document list will appear here.</p></div></div></div>;
+
+    return (
+      <div className="tab-content">
+        <div className="panel-heading">
+          <div>
+            <span className="section-kicker">DOCUMENT VAULT</span>
+            <h2>Required documents</h2>
+            <p>Only documents required for your selected service can be uploaded and viewed.</p>
+          </div>
+        </div>
+
+        <label className="document-service-select">
+          Service
+          <select value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
+            {customer.applications.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
           </select>
         </label>
 
-        {/* 5. UPI PAYMENT ID */}
-        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-          💳 5. கட்டணம் செலுத்தும் UPI ID (GPay / PhonePe / Paytm):
-          <input
-            type="text"
-            value={upiId}
-            onChange={(e) => setUpiId(e.target.value)}
-            placeholder="e.g. alakesh.kumar7@okhdfcbank"
-            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', fontWeight: 700 }}
-          />
-        </label>
+        <div className="document-list">
+          {application.requirements.map((requirement) => {
+            const globalExpiryDocs = cloudExpiryDocs || [];
+            const cleanPhone = (customer.phone || '').replace(/\D/g, '');
+            const allDocs = [
+              ...(customer.documents || []),
+              ...globalExpiryDocs.filter(d => {
+                const docPhone = (d.customerPhone || '').replace(/\D/g, '');
+                return cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
+              }).map(d => ({
+                id: d.id || d.url,
+                requirement: d.requirement || d.title || d.name,
+                name: d.name || 'Uploaded Document',
+                uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
+                data: d.url
+              }))
+            ];
 
-        <button
-          type="submit"
-          className="button button-primary"
-          style={{ background: 'linear-gradient(135deg, #16a34a 0%, #022c7a 100%)', justifySelf: 'start', padding: '12px 28px', marginTop: '6px' }}
-        >
-          <Check size={18} /> நேரலை விவரங்களைச் சேமி / Update Live Status
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], customerRecords = {}, notify }) {
-  const [password, setPassword] = useState('');
-  const [query, setQuery] = useState('');
-  const [tokenSearch, setTokenSearch] = useState('');
-  const [activeCustomer, setActiveCustomer] = useState('');
-  const [adminTab, setAdminTab] = useState('smartdesk');
-  const [editingCustomer, setEditingCustomer] = useState(null);
-  const [editName, setEditName] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [activeDocPreview, setActiveDocPreview] = useState(null);
-
-  if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button></form></section>;
-  const activeRecords = customerRecords || {};
-  const customers = Object.values(activeRecords)
-    .filter(c => c && (c.phone || c.profile?.name || c.name))
-    .sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
-  
-  const matchingCustomers = customers.filter((customer) => {
-    const name = customer.profile?.name || customer.name || 'Customer';
-    const phone = customer.phone || '';
-    const apps = Array.isArray(customer.applications) ? customer.applications.map((app) => app?.name || '').join(' ') : '';
-    return `${name} ${phone} ${apps}`.toLowerCase().includes(query.toLowerCase());
-  });
-
-  const selected = matchingCustomers.find((customer) => customer.phone === activeCustomer) || matchingCustomers[0];
-  const totalApplications = customers.reduce((total, customer) => total + (Array.isArray(customer.applications) ? customer.applications.length : 0), 0);
-  const totalDocuments = customers.reduce((total, customer) => total + (Array.isArray(customer.documents) ? customer.documents.length : 0), 0);
-  const filteredTokens = tokenBookings.filter((tok) => {
-    const q = tokenSearch.trim().toLowerCase();
-    if (!q) return true;
-    return (tok.tokenNo || '').toLowerCase().includes(q) || (tok.phone || '').toLowerCase().includes(q) || (tok.customerName || '').toLowerCase().includes(q) || (tok.service || '').toLowerCase().includes(q) || (tok.date || '').toLowerCase().includes(q);
-  });
-
-  const handleSaveEditCustomer = async () => {
-    if (!editingCustomer) return;
-    const cleanOldPhone = editingCustomer.phone.replace(/\D/g, '');
-    const cleanNewPhone = editPhone.replace(/\D/g, '') || cleanOldPhone;
-
-    const updatedRecord = {
-      ...editingCustomer,
-      phone: cleanNewPhone,
-      profile: {
-        ...(editingCustomer.profile || {}),
-        name: editName
-      },
-      updatedAt: new Date().toISOString()
-    };
-
-    if (cleanOldPhone !== cleanNewPhone) {
-      await deleteCustomerProfileCloud(cleanOldPhone);
-    }
-    await saveCustomerProfileCloud(cleanNewPhone, updatedRecord);
-    setEditingCustomer(null);
-    notify('🎉 Customer profile updated and synced to Firebase Cloud!');
-  };
-
-  const handleDeleteCustomer = async (cust) => {
-    if (!cust) return;
-    const custName = cust.profile?.name || cust.name || 'Customer';
-    const confirmDelete = window.confirm(`Are you sure you want to remove customer "${custName}" (+91 ${cust.phone}) from Firebase Cloud?`);
-    if (confirmDelete) {
-      const cleanPhone = String(cust.phone).replace(/\D/g, '');
-      // Update React state immediately so UI removes the customer
-      setCustomerRecords((prev) => {
-        const updated = { ...prev };
-        delete updated[cleanPhone];
-        delete updated[cust.phone];
-        return updated;
-      });
-      setActiveCustomer('');
-      // Delete from localStorage + Firebase Cloud
-      await deleteCustomerProfileCloud(cust.phone);
-      notify(`🗑️ Customer ${custName} removed from Firebase database!`);
-    }
-  };
-
-  const handleUpdateTokenStatus = async (tok, newStatus) => {
-    const updated = {
-      ...tok,
-      status: newStatus,
-      updatedAt: new Date().toISOString()
-    };
-    await saveTokenBookingCloud(updated);
-    notify(`✅ Token ${tok.tokenNo} status updated to "${newStatus}"!`);
-  };
-
-  const handleDeleteToken = async (tok) => {
-    if (!tok || !tok.tokenNo) return;
-    const confirmDelete = window.confirm(`Delete Token ${tok.tokenNo} for ${tok.customerName}?`);
-    if (confirmDelete) {
-      // Update React state immediately so UI removes the token
-      setTokenBookings((prev) => prev.filter(t => String(t.tokenNo) !== String(tok.tokenNo)));
-      // Delete from localStorage + Firebase Cloud
-      await deleteTokenBookingCloud(tok.tokenNo);
-      notify(`🗑️ Token ${tok.tokenNo} removed!`);
-    }
-  };
-
-  return (
-    <section className="admin-dashboard page-width">
-      <div className="dashboard-top">
-        <div><span className="section-kicker">ADMIN DASHBOARD</span><h1>Customer <em>requests.</em></h1><p>View submitted services, documents, and token bookings.</p></div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button className="logout-button" style={{ background: '#0052cc', color: 'white', borderColor: '#0043a8' }} onClick={async () => {
-            notify('⏳ Fetching latest data from Firebase Cloud...');
-            const cloud = await fetchAllCloudRecords();
-            if (cloud) {
-              notify('✅ Firebase Cloud sync complete!');
-            } else {
-              notify('⚡ Using latest synchronized cloud state');
-            }
-          }}><Sparkles size={14} /> 🔄 Sync Firebase Cloud</button>
-          <button className="logout-button" onClick={logout}><LogOut size={14} /> Logout admin</button>
-        </div>
-      </div>
-      <div className="admin-tools">
-        <button onClick={() => setAdminTab('notifications')}><Bell size={18} /><span><strong>Notifications</strong><small>Add & delete notifications</small></span></button>
-        <button onClick={() => navigate('weblink')}><ExternalLink size={18} /><span><strong>Weblinks</strong><small>Private service links</small></span></button>
-        <button onClick={() => navigate('forms')}><FormInput size={18} /><span><strong>Forms</strong><small>Official PDF downloads</small></span></button>
-        <button onClick={() => navigate('software')}><FileCog size={18} /><span><strong>Software</strong><small>AkEsevai tools</small></span></button>
-        <button onClick={() => navigate('photo-maker')}><Camera size={18} /><span><strong>Photo Maker</strong><small>Private photo tools</small></span></button>
-      </div>
-      <div className="dashboard-stats">
-        <div><span className="stat-icon yellow"><Users /></span><span><strong>{customers.length}</strong><small>Customers</small></span></div>
-        <div><span className="stat-icon blue"><FileText /></span><span><strong>{totalApplications}</strong><small>Service requests</small></span></div>
-        <div><span className="stat-icon green"><FileCheck2 /></span><span><strong>{totalDocuments}</strong><small>Uploaded documents</small></span></div>
-        <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><CalendarDays /></span><span><strong>{tokenBookings.length}</strong><small>Token Bookings</small></span></div>
-        <div><span className="stat-icon" style={{ background: '#f0fdf4', color: '#16a34a' }}><IndianRupee /></span><span><strong>₹{tokenBookings.length * 50}</strong><small>Est. Token Revenue</small></span></div>
-      </div>
-      <div className="dashboard-tabs" style={{ marginBottom: '24px' }}>
-        <button className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests</button>
-        <button className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings {tokenBookings.length > 0 && <span className="tab-count">{tokenBookings.length}</span>}</button>
-        <button className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={() => setAdminTab('notifications')} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
-        <button className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={() => setAdminTab('smartdesk')} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
-        <button className={adminTab === 'analytics' ? 'tab-active' : ''} onClick={() => setAdminTab('analytics')} style={{ background: adminTab === 'analytics' ? '#7c3aed' : undefined, color: adminTab === 'analytics' ? 'white' : undefined }}>📊 Revenue Analytics</button>
-        <button className={adminTab === 'queue' ? 'tab-active' : ''} onClick={() => setAdminTab('queue')} style={{ background: adminTab === 'queue' ? '#0052cc' : undefined, color: adminTab === 'queue' ? 'white' : undefined }}>⚙️ Live Center Queue Control</button>
-      </div>
-
-      {editingCustomer && (
-        <div style={{ background: '#f8fafc', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 20px rgba(0,0,0,0.06)' }}>
-          <h3 style={{ margin: 0, fontSize: '15px', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '6px' }}>✏️ Edit Customer Profile ({editingCustomer.phone})</h3>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
-              Customer Name:
-              <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
-            </label>
-            <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
-              Mobile Phone Number:
-              <input type="text" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
-            </label>
-          </div>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-            <button onClick={() => setEditingCustomer(null)} style={{ background: '#94a3b8', color: 'white', border: 'none', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>Cancel</button>
-            <button onClick={handleSaveEditCustomer} style={{ background: '#16a34a', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>💾 Save Changes</button>
-          </div>
-        </div>
-      )}
-
-      {adminTab === 'smartdesk' && (
-        <div style={{ marginTop: '10px' }}>
-          <AdminSevaiSmartDesk notify={notify} />
-        </div>
-      )}
-      {adminTab === 'notifications' && (
-        <div style={{ marginTop: '10px' }}>
-          <div style={{ background: '#fffbeb', border: '2px solid #fcd34d', borderRadius: '16px', padding: '18px 24px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <span style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '1px', color: '#b45309', textTransform: 'uppercase' }}>ADMIN NOTIFICATION MANAGEMENT</span>
-              <h2 style={{ margin: '4px 0 0', fontSize: '18px', color: '#78350f', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                📢 அறிவிப்புகள் மேலாண்மை / Notification Management Panel
-              </h2>
-              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#92400e' }}>
-                அட்மின்கள் மட்டுமே புதிய அறிவிப்புகளைச் சேர்க்கவும், பழைய அறிவிப்புகளை நீக்கவும், மற்றும் தேதி முடிந்தவற்றைத் தானாக நீக்கவும் முடியும்.
-              </p>
-            </div>
-          </div>
-          <NotificationTables forceAdmin={true} />
-        </div>
-      )}
-
-      {adminTab === 'analytics' && (
-        <div style={{ marginTop: '10px' }}>
-          <AdminRevenueDashboard tokenBookings={tokenBookings} />
-        </div>
-      )}
-
-
-      {adminTab === 'customers' && (
-        <div className="admin-grid">
-          <aside className="admin-customers">
-            <div className="panel-heading"><div><span className="section-kicker">CUSTOMERS</span><h2>All requests</h2></div></div>
-            <div className="service-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer or service" /></div>
-            {matchingCustomers.length ? matchingCustomers.map((customer) => {
-              const custName = customer.profile?.name || customer.name || customer.phone || 'Customer';
-              const avatar = custName.slice(0, 2).toUpperCase();
-              const appCount = Array.isArray(customer.applications) ? customer.applications.length : 0;
-              return (
-                <button className={`admin-customer-row ${selected?.phone === customer.phone ? 'admin-customer-active' : ''}`} onClick={() => setActiveCustomer(customer.phone)} key={customer.phone || Math.random()}>
-                  <span className="avatar">{avatar}</span>
-                  <span><strong>{custName}</strong><small>+91 {customer.phone} · {appCount} services</small></span>
-                  <ChevronRight size={16} />
-                </button>
-              );
-            }) : <p className="empty-customer-state">No matching customer requests.</p>}
-          </aside>
-          <section className="admin-detail">
-            {selected ? (() => {
-              const liveCustomerMap = customerRecords || {};
-              const cleanSelectedPhone = (selected.phone || '').replace(/\D/g, '');
-              const profileRecord = liveCustomerMap[cleanSelectedPhone] || liveCustomerMap[selected.phone] || {};
-              const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
-
-              const combinedDocs = [
-                ...(selected.documents || []),
-                ...(profileRecord.documents || []),
-                ...globalExpiryDocs.filter((d) => {
-                  const docPhone = (d.customerPhone || '').replace(/\D/g, '');
-                  return cleanSelectedPhone && docPhone && (docPhone === cleanSelectedPhone || docPhone.includes(cleanSelectedPhone) || cleanSelectedPhone.includes(docPhone));
-                }).map(d => ({
-                  id: d.id || d.url,
-                  requirement: d.requirement || d.title || d.name,
-                  name: d.name || 'Uploaded Document',
-                  uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
-                  data: d.url || d.data
-                }))
-              ];
-
-              const selectedDocs = combinedDocs.reduce((acc, current) => {
-                const url = current.data || current.url;
-                const name = current.name || current.requirement;
-                const exists = acc.find(item => (url && (item.data === url || item.url === url)) || (item.name === name && item.name));
-                if (!exists) return acc.concat([{ ...current, data: url || current.data }]);
-                return acc;
-              }, []);
-
-              const selectedName = selected.profile?.name || selected.name || 'Customer';
-              const selectedApps = Array.isArray(selected.applications) ? selected.applications : [];
-
-              return (
-                <>
-                  <div className="panel-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
-                    <div>
-                      <span className="section-kicker">CUSTOMER DETAILS</span>
-                      <h2>{selectedName}</h2>
-                      <p>+91 {selected.phone}</p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => { setEditingCustomer(selected); setEditName(selectedName); setEditPhone(selected.phone || ''); }}
-                        style={{ background: '#0052cc', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        ✏️ Edit Profile
-                      </button>
-                      <button
-                        onClick={() => handleDeleteCustomer(selected)}
-                        style={{ background: '#dc2626', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      >
-                        🗑️ Delete Customer
-                      </button>
-                    </div>
-                  </div>
-                  <h3 className="admin-section-title">Selected services</h3>
-                  {selectedApps.length ? selectedApps.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
-                  <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
-                  {selectedDocs.length ? selectedDocs.map((document, idx) => (
-                    <div className="admin-service-row" key={document.id || idx} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span className="doc-symbol" style={{ background: '#dcfce7', color: '#16a34a', padding: '8px', borderRadius: '8px' }}>
-                          <FileCheck2 size={20} />
-                        </span>
-                        <div>
-                          <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{document.requirement || document.name}</strong>
-                          <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>📄 {document.name} · Uploaded {document.uploadedAt}</small>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                        <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                          <Eye size={15} /> View (காண்க)
-                        </button>
-                        <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                          <Download size={14} /> Download (பதிவிறக்கு)
-                        </button>
-                      </div>
-                    </div>
-                  )) : <p className="empty-customer-state">This customer has not uploaded documents yet.</p>}
-                </>
-              );
-            })() : <div className="empty-customer-state">Customer uploads will appear here after customers select a service and upload documents.</div>}
-          </section>
-        </div>
-      )}
-      {adminTab === 'tokens' && (
-        <div className="admin-token-bookings">
-          <div className="panel-heading" style={{ marginBottom: '16px' }}><div><span className="section-kicker">TOKEN BOOKINGS</span><h2>Appointment Requests & Token Slips</h2><p>Search by Token Number or Phone Number to easily locate token details.</p></div></div>
-          <div className="admin-token-search-bar" style={{ marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <div className="service-search" style={{ flex: 1, margin: 0 }}><Search size={18} /><input type="text" value={tokenSearch} onChange={(e) => setTokenSearch(e.target.value)} placeholder="🔍 Search by Token No (e.g. TOK-123) or Mobile Number (e.g. 9342318844)..." />{tokenSearch && <button type="button" onClick={() => setTokenSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--muted)' }}>Clear</button>}</div>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{filteredTokens.length} {filteredTokens.length === 1 ? 'Token' : 'Tokens'} found</span>
-          </div>
-          {tokenBookings.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><CalendarDays size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token bookings yet. Customers who generate a token from the Token Slip page will appear here.</p></div> : filteredTokens.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><Search size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token found matching <strong>"{tokenSearch}"</strong>.</p><small style={{ color: 'var(--muted)' }}>Try searching with Token Number (e.g., TOK-101) or Mobile Number.</small></div> : <div className="token-bookings-table-wrap"><table className="admin-token-table"><thead><tr><th>Token No</th><th>Applicant Name</th><th>Mobile</th><th>Service</th><th>Visit Date</th><th>Time Slot</th><th>WhatsApp Alert</th><th>Technical Status</th><th>Action</th></tr></thead><tbody>{filteredTokens.map((tok) => {
-            const waText = encodeURIComponent(`🙏 *வணக்கம் ${tok.customerName}*,\n\nஉங்கள் AkEsevai டோக்கன் *${tok.tokenNo}* உறுதி செய்யப்பட்டது.\nசேவை: ${tok.service}\nதேதி & நேரம்: ${tok.date} (${tok.slot})\n\nAkEsevai மையம், பழனியில் சேவையைப் பெறலாம்.`);
-            return (
-              <tr key={tok.tokenNo}>
-                <td><span className="token-id-badge">{tok.tokenNo}</span></td>
-                <td><strong>{tok.customerName}</strong></td>
-                <td>+91 {tok.phone}</td>
-                <td style={{ maxWidth: '200px' }}>{tok.service}</td>
-                <td>{tok.date}</td>
-                <td>{tok.slot}</td>
-                <td>
-                  <a
-                    href={`https://wa.me/91${tok.phone.replace(/\D/g, '')}?text=${waText}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ background: '#25D366', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    <MessageCircle size={13} /> WA Alert
-                  </a>
-                </td>
-                <td>
-                  <select
-                    value={tok.status || 'CHECKED-IN / VERIFIED'}
-                    onChange={(e) => handleUpdateTokenStatus(tok, e.target.value)}
-                    style={{
-                      background: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#f0fdf4' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#fffbebf' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#fef2f2' : '#eff6ff',
-                      color: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#16a34a' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#d97706' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#dc2626' : '#2563eb',
-                      border: '1.5px solid currentColor',
-                      padding: '5px 8px',
-                      borderRadius: '6px',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="CHECKED-IN / VERIFIED">🟢 VERIFIED / CHECKED-IN (பெறப்பட்டது)</option>
-                    <option value="AWAITING VISIT">🟡 AWAITING VISIT (காத்திருப்பில்)</option>
-                    <option value="COMPLETED / SERVED">🔵 COMPLETED / SERVED (நிறைவடைந்தது)</option>
-                    <option value="NO-SHOW / CANCELLED">🔴 NO-SHOW / CANCELLED (வரவில்லை / ரத்து)</option>
-                  </select>
-                </td>
-                <td>
-                  <button
-                    onClick={() => handleDeleteToken(tok)}
-                    title="Delete Token"
-                    style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '5px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </td>
-              </tr>
+            const document = allDocs.find(
+              (item) => item.requirement === requirement || item.id === `${application.id}-${requirement}` || (item.requirement && requirement && item.requirement.toLowerCase() === requirement.toLowerCase())
             );
-          })}</tbody></table></div>}
-        </div>
-      )}
-      {adminTab === 'queue' && (
-        <div style={{ marginTop: '10px' }}>
-          <AdminLiveQueueControlForm />
-        </div>
-      )}
-    </section>
-  );
-}
 
-function CustomerPage({ customer, updateCustomer, logout, notify, saveToken }) {
-  const [activeTab, setActiveTab] = useState('overview');
-  const [selectedService, setSelectedService] = useState('');
-  const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
-  if (!customer.profile.complete) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> Customer profile</span><h1>Welcome to<br /><em>AkEsevai.</em></h1><p>Please enter your name once. We will save it with your mobile number for your next login.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); const cleanedName = name.trim(); if (!cleanedName) return; updateCustomer((current) => ({ ...current, profile: { ...current.profile, name: cleanedName, complete: true } })); notify('Your name has been saved. Welcome to your dashboard.'); }}><div className="login-icon"><UserRound size={22} /></div><span className="section-kicker">YOUR DETAILS</span><h2>What is your name?</h2><p>This is visible only in your customer account and to AkEsevai administration.</p><label>Full name<input className="admin-password" autoFocus required value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your full name" /></label><button className="button button-primary button-wide" type="submit">Continue <ArrowRight size={17} /></button></form></section>;
-  const tabs = [['overview', 'Overview'], ['documents', 'My documents'], ['token-slip', '🎫 Token Slip']];
-  const applications = customer.applications;
-  const addApplication = (event) => { event.preventDefault(); if (!selectedService) return; const service = serviceCatalog.find(([, title]) => title === selectedService); const requirements = getRequiredDocuments(selectedService, service?.[2]); const application = { id: `AK-${Date.now().toString().slice(-8)}`, name: selectedService, status: 'Submitted', date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), progress: 22, requirements }; updateCustomer((current) => ({ ...current, applications: [application, ...current.applications] })); setSelectedService(''); setActiveTab('documents'); notify('Service selected. Upload only the required documents for this application.'); };
-  const initials = customer.profile.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
-  return (
-    <section className="customer-dashboard page-width">
-      <div className="dashboard-top">
-        <div><span className="section-kicker">PRIVATE CUSTOMER PORTAL</span><h1>Welcome, <em>{customer.profile.name}.</em></h1><p>Only the services, applications and documents for +91 {customer.phone} are shown here.</p></div>
-        <div className="profile-pill"><span className="avatar">{initials}</span><span><strong>{customer.profile.name}</strong><small>Mobile: {customer.phone}</small></span><button className="logout-button" onClick={logout}><LogOut size={14} /> Logout</button></div>
-      </div>
-      <div className="dashboard-tabs">
-        {tabs.map(([id, label]) => <button className={activeTab === id ? 'tab-active' : ''} onClick={() => setActiveTab(id)} key={id}>{label}{id === 'documents' && <span className="tab-count">{customer.documents.length}</span>}</button>)}
-        <button className="notification-button" aria-label="Notifications"><Bell size={18} /><i /></button>
-      </div>
-      {activeTab === 'overview' && (
-        <>
-          <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            <div><span className="stat-icon yellow"><FileText /></span><span><strong>{applications.length}</strong><small>My services</small></span></div>
-            <div><span className="stat-icon green"><Check /></span><span><strong>{customer.documents.length}</strong><small>My documents</small></span></div>
-            <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><Ticket /></span><span><strong>{customer.lastToken?.tokenNo || 'Get Token'}</strong><small>Token Slip</small></span></div>
-          </div>
-          <div className="dashboard-columns">
-            <div className="application-panel">
-              <div className="panel-heading">
-                <div><span className="section-kicker">YOUR ACTIVITY</span><h2>My selected services</h2></div>
-                <button className="text-button" onClick={() => setActiveTab('token-slip')}>Get Token Slip <Ticket size={15} /></button>
-              </div>
-              {applications.length ? applications.map((application) => <ApplicationRow application={application} key={application.id} />) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
-            </div>
-            <div className="quick-panel">
-              <span className="section-kicker">SELECT A SERVICE</span><h2>Start your request</h2><p>We will show only the documents required for the service you choose.</p>
-              <form onSubmit={addApplication}>
-                <select value={selectedService} onChange={(event) => setSelectedService(event.target.value)} required>
-                  <option value="">Select a service</option>
-                  {serviceCatalog.map(([, title]) => <option key={title}>{title}</option>)}
-                </select>
-                <button className="button button-primary button-wide" type="submit">Continue to documents <ArrowRight size={16} /></button>
-              </form>
-            </div>
-          </div>
-        </>
-      )}
-      {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} />}
-      {activeTab === 'token-slip' && (
-        <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
-          <TokenPass
-            defaultToken={customer.lastToken || null}
-            initialName={customer.profile.name || ''}
-            initialPhone={customer.phone || ''}
-            onTokenSaved={(tok) => {
-              if (typeof saveToken === 'function') saveToken(tok);
-              updateCustomer((curr) => ({ ...curr, lastToken: tok }));
-              notify(`Token ${tok.tokenNo} generated and saved to your customer portal!`);
-            }}
-          />
-        </div>
-      )}
-
-      {/* BROWSER NOTIFICATION OPT-IN */}
-      <div style={{ padding: '0 0 8px' }}>
-        <BrowserNotificationOptIn />
-      </div>
-
-      {/* CUSTOMER REFERRAL CARD */}
-      <CustomerReferralCard customerName={customer.profile.name || ''} />
-
-    </section>
-  );
-}
-
-function ApplicationRow({ application }) { return <div className="application-row"><span className={`app-icon ${application.status === 'Completed' ? 'done' : ''}`}>{application.status === 'Completed' ? <Check size={19} /> : <Clock3 size={19} />}</span><span className="app-info"><strong>{application.name}</strong><small>{application.id} · Started {application.date}</small></span><span className={`status-text ${application.status.toLowerCase().replace(' ', '-')}`}>{application.status}</span><span className="row-arrow"><ChevronRight size={17} /></span></div>; }
-function DocumentsTab({ customer, updateCustomer, notify }) {
-  const [applicationId, setApplicationId] = useState(customer.applications[0]?.id || '');
-  const application = customer.applications.find((item) => item.id === applicationId);
-
-  const uploadDocument = async (event, requirement) => { 
-    const file = event.target.files?.[0]; 
-    if (!file || !application) return; 
-    if (file.size > 10 * 1024 * 1024) { 
-      notify('❌ Please upload a document smaller than 10 MB.'); 
-      return; 
-    } 
-
-    notify(`⏳ Uploading ${file.name} to Firebase Storage...`);
-    const docRecord = await uploadFileToFirebaseStorage(file, 'customer_documents', customer.phone || 'guest');
-
-    if (docRecord) {
-      const documentObj = { 
-        id: `${application.id}-${requirement}`, 
-        applicationId: application.id, 
-        requirement, 
-        name: file.name, 
-        type: file.type || 'File', 
-        uploadedAt: new Date().toLocaleDateString('en-IN'), 
-        data: docRecord.url || docRecord.data,
-        storagePath: docRecord.storagePath || ''
-      }; 
-
-      updateCustomer((current) => {
-        const existingDocs = current.documents || [];
-        const filtered = existingDocs.filter((item) => item.requirement !== requirement && item.id !== documentObj.id);
-        return { 
-          ...current, 
-          documents: [...filtered, documentObj] 
-        };
-      }); 
-
-      saveExpiryDocumentCloud({
-        id: documentObj.id,
-        name: file.name,
-        requirement,
-        url: docRecord.url || docRecord.data,
-        customerPhone: customer.phone,
-        uploadedAt: new Date().toISOString()
-      });
-
-      notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`); 
-    }
-  };
-
-  if (!customer.applications.length) return <div className="tab-content"><div className="panel-heading"><div><span className="section-kicker">DOCUMENT VAULT</span><h2>My documents</h2><p>Select a service first. Its required document list will appear here.</p></div></div></div>;
-  
-  return (
-    <div className="tab-content">
-      <div className="panel-heading">
-        <div>
-          <span className="section-kicker">DOCUMENT VAULT</span>
-          <h2>Required documents</h2>
-          <p>Only documents required for your selected service can be uploaded and viewed.</p>
-        </div>
-      </div>
-
-      <label className="document-service-select">
-        Service
-        <select value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
-          {customer.applications.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
-        </select>
-      </label>
-
-      <div className="document-list">
-        {application.requirements.map((requirement) => { 
-          const globalExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
-          const cleanPhone = (customer.phone || '').replace(/\D/g, '');
-          const allDocs = [
-            ...(customer.documents || []),
-            ...globalExpiryDocs.filter(d => {
-              const docPhone = (d.customerPhone || '').replace(/\D/g, '');
-              return cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
-            }).map(d => ({
-              id: d.id || d.url,
-              requirement: d.requirement || d.title || d.name,
-              name: d.name || 'Uploaded Document',
-              uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
-              data: d.url
-            }))
-          ];
-
-          const document = allDocs.find(
-            (item) => item.requirement === requirement || item.id === `${application.id}-${requirement}` || (item.requirement && requirement && item.requirement.toLowerCase() === requirement.toLowerCase())
-          ); 
-
-          return (
-            <div key={requirement} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '16px', background: document ? '#f0fdf4' : 'white', border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc' }}>
-                  {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
-                </span>
-                <div>
-                  <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{requirement}</strong>
-                  {document ? (
-                    <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>
-                      📄 {document.name} · Uploaded {document.uploadedAt}
-                    </small>
-                  ) : (
-                    <small style={{ fontSize: '12px', color: '#64748b' }}>Required — not uploaded yet</small>
-                  )}
-                </div>
-              </div>
-
-              {document ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                  <span style={{ background: '#16a34a', color: 'white', padding: '4px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <Check size={13} /> UPLOAD SUCCESS
+            return (
+              <div key={requirement} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '16px', background: document ? '#f0fdf4' : 'white', border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc' }}>
+                    {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
                   </span>
-
-                  <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                    <Eye size={14} /> View (காண்க)
-                  </button>
-
-                  <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                    <Download size={14} /> Download (பதிவிறக்கு)
-                  </button>
-
-                  <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
-                    Change
-                    <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
-                  </label>
+                  <div>
+                    <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{requirement}</strong>
+                    {document ? (
+                      <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>
+                        📄 {document.name} · Uploaded {document.uploadedAt}
+                      </small>
+                    ) : (
+                      <small style={{ fontSize: '12px', color: '#64748b' }}>Required — not uploaded yet</small>
+                    )}
+                  </div>
                 </div>
-              ) : (
-                <label className="document-upload" style={{ marginLeft: 'auto' }}>
-                  Upload PDF / JPG
-                  <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} />
-                </label>
-              )}
-            </div>
-          ); 
-        })}
-      </div>
-    </div>
-  );
-}
 
-export default App;
+                {document ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+                    <span style={{ background: '#16a34a', color: 'white', padding: '4px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <Check size={13} /> UPLOAD SUCCESS
+                    </span>
+
+                    <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <Eye size={14} /> View (காண்க)
+                    </button>
+
+                    <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <Download size={14} /> Download (பதிவிறக்கு)
+                    </button>
+
+                    <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
+                      Change
+                      <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                    </label>
+                  </div>
+                ) : (
+                  <label className="document-upload" style={{ marginLeft: 'auto' }}>
+                    Upload PDF / JPG
+                    <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} />
+                  </label>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  export default App;
