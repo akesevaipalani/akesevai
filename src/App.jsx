@@ -157,8 +157,48 @@ import {
   deleteTokenBookingCloud
 } from './utils/firebaseService';
 
+const defaultSampleCustomerRecords = {
+  '9876543210': {
+    phone: '9876543210',
+    profile: { name: 'Karthikeyan M', createdAt: '2026-07-25T10:00:00Z' },
+    applications: [
+      { id: 'APP-1001', name: 'வருமானச் சான்றிதழ் (Income Certificate)', status: 'Submitted & Processing', date: '25/07/2026' }
+    ],
+    documents: [
+      { id: 'doc-1', requirement: 'ஆதார் கார்டு (Aadhaar Card)', name: 'aadhaar_card_front.jpg', uploadedAt: '25/07/2026', data: '/office1.jpg' },
+      { id: 'doc-2', requirement: 'சம்பளச் சான்று (Salary Slip / Ration Card)', name: 'salary_certificate.pdf', uploadedAt: '25/07/2026', data: '/office2.jpg' }
+    ],
+    updatedAt: '2026-07-25T10:00:00Z'
+  },
+  '9123456789': {
+    phone: '9123456789',
+    profile: { name: 'Anitha S', createdAt: '2026-07-26T14:30:00Z' },
+    applications: [
+      { id: 'APP-1002', name: 'சாதிச்சான்று (Community Certificate)', status: 'Under Verification', date: '26/07/2026' }
+    ],
+    documents: [
+      { id: 'doc-3', requirement: 'பெற்றோர் சாதிச்சான்று (Parents Community Cert)', name: 'parents_community.jpg', uploadedAt: '26/07/2026', data: '/office3.jpg' }
+    ],
+    updatedAt: '2026-07-26T14:30:00Z'
+  }
+};
+
 const readCustomerRecords = () => {
-  try { return JSON.parse(localStorage.getItem(CUSTOMER_RECORDS_KEY) || '{}'); } catch { return {}; }
+  try {
+    const raw = localStorage.getItem(CUSTOMER_RECORDS_KEY);
+    if (!raw) {
+      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(defaultSampleCustomerRecords));
+      return defaultSampleCustomerRecords;
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || Object.keys(parsed).length === 0) {
+      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(defaultSampleCustomerRecords));
+      return defaultSampleCustomerRecords;
+    }
+    return parsed;
+  } catch {
+    return defaultSampleCustomerRecords;
+  }
 };
 
 const saveCustomerRecord = (record) => {
@@ -777,17 +817,75 @@ function HomePage({ navigate, notify, lang }) {
   </>;
 }
 
+const getServiceVisual = (group, title = '') => {
+  const t = title.toLowerCase();
+  let bgGradient = 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)';
+  let icon = '📄';
+  let bannerImage = 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=400&q=80';
+
+  if (t.includes('aadhaar')) {
+    bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
+    icon = '🪪';
+    bannerImage = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('income') || t.includes('வருமான')) {
+    bgGradient = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
+    icon = '💰';
+    bannerImage = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('community') || t.includes('சாதி') || t.includes('nativity') || t.includes('residence') || t.includes('graduate')) {
+    bgGradient = 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)';
+    icon = '📜';
+    bannerImage = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('passport')) {
+    bgGradient = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
+    icon = '🛂';
+    bannerImage = 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('pan') || t.includes('பான்')) {
+    bgGradient = 'linear-gradient(135deg, #d97706 0%, #b45309 100%)';
+    icon = '💳';
+    bannerImage = 'https://images.unsplash.com/photo-1556742049-0a67daf4005a?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('smart card') || t.includes('குடும்ப அட்டை')) {
+    bgGradient = 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)';
+    icon = '🌾';
+    bannerImage = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('voter') || t.includes('வாக்காளர்')) {
+    bgGradient = 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)';
+    icon = '🗳️';
+    bannerImage = 'https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('employment') || t.includes('வேலைவாய்ப்பு') || t.includes('shram')) {
+    bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0f766e 100%)';
+    icon = '💼';
+    bannerImage = 'https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('pension') || t.includes('ஓய்வூதியம்') || t.includes('welfare') || t.includes('திருமண') || t.includes('sewing')) {
+    bgGradient = 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)';
+    icon = '🤝';
+    bannerImage = 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb0?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('tnpsc') || t.includes('mark sheet') || t.includes('education') || t.includes('loan')) {
+    bgGradient = 'linear-gradient(135deg, #9333ea 0%, #7e22ce 100%)';
+    icon = '🎓';
+    bannerImage = 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80';
+  } else if (t.includes('fssai') || t.includes('msme') || t.includes('business')) {
+    bgGradient = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)';
+    icon = '🏬';
+    bannerImage = 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=400&q=80';
+  }
+
+  return { bgGradient, icon, bannerImage };
+};
+
 function ServicesPage({ navigate, lang }) {
   const t = translations[lang] || translations.en;
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All Services');
   const [selectedService, setSelectedService] = useState(null);
+  const [expandedTitle, setExpandedTitle] = useState(null);
+
   const categories = ['All Services', ...new Set(serviceCatalog.map((service) => service[2]))];
   const filteredServices = serviceCatalog.filter((service) => {
     const matchesQuery = service.join(' ').toLowerCase().includes(query.toLowerCase());
     const matchesCategory = category === 'All Services' || service[2] === category;
     return matchesQuery && matchesCategory;
   });
+
   return (
     <PageIntro
       kicker={t.servicesKicker}
@@ -813,6 +911,7 @@ function ServicesPage({ navigate, lang }) {
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />
         <span>{filteredServices.length} {t.resultsCount}</span>
       </div>
+
       <div className="category-tabs">
         {categories.map((item) => (
           <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>
@@ -820,18 +919,137 @@ function ServicesPage({ navigate, lang }) {
           </button>
         ))}
       </div>
+
       <div className="catalog-grid">
-        {filteredServices.map(([tamil, title, group]) => (
-          <article className="catalog-card" key={title}>
-            <span className="catalog-icon"><FileText size={19} /></span>
-            <span className="catalog-group">{group}</span>
-            <h3>{lang === 'ta' ? tamil : title}</h3>
-            <p>{lang === 'ta' ? title : tamil}</p>
-            <button className="card-link" onClick={() => setSelectedService({ tamil, title, group })}>
-              {t.viewDetails} <ArrowRight size={15} />
-            </button>
-          </article>
-        ))}
+        {filteredServices.map(([tamil, title, group]) => {
+          const visual = getServiceVisual(group, title);
+          const isExpanded = expandedTitle === title;
+          const docs = getRequiredDocuments(title, group);
+
+          return (
+            <article
+              className={`catalog-card ${isExpanded ? 'catalog-card-expanded' : ''}`}
+              key={title}
+              style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            >
+              <div
+                className="service-card-image-header"
+                style={{
+                  position: 'relative',
+                  height: '120px',
+                  background: visual.bgGradient,
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  padding: '12px',
+                  backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.75)), url(${visual.bannerImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center'
+                }}
+              >
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '10px',
+                    left: '10px',
+                    background: 'rgba(255, 255, 255, 0.95)',
+                    color: '#0f172a',
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    fontSize: '10px',
+                    fontWeight: 800,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <span>{visual.icon}</span> {group}
+                </span>
+              </div>
+
+              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                <h3 style={{ font: '800 15px Manrope', margin: 0, color: 'var(--ink)', lineHeight: 1.3 }}>
+                  {lang === 'ta' ? tamil : title}
+                </h3>
+                <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0, fontWeight: 500 }}>
+                  {lang === 'ta' ? title : tamil}
+                </p>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px', alignItems: 'center' }}>
+                  <button
+                    className="card-link"
+                    style={{
+                      background: isExpanded ? '#f1f5f9' : '#e0f2fe',
+                      color: isExpanded ? '#334155' : '#0052cc',
+                      padding: '7px 12px',
+                      borderRadius: '7px',
+                      fontWeight: 800,
+                      fontSize: '11px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                    onClick={() => setExpandedTitle(isExpanded ? null : title)}
+                  >
+                    {isExpanded ? '✕ Hide (மறை)' : `📄 ${t.viewDetails}`}
+                  </button>
+
+                  <button
+                    style={{
+                      background: '#16a34a',
+                      color: 'white',
+                      padding: '7px 14px',
+                      borderRadius: '7px',
+                      fontWeight: 800,
+                      fontSize: '11px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      marginLeft: 'auto'
+                    }}
+                    onClick={() => navigate('customer')}
+                  >
+                    Apply <ArrowRight size={13} />
+                  </button>
+                </div>
+
+                {isExpanded && (
+                  <div
+                    className="inline-service-detail"
+                    style={{
+                      marginTop: '12px',
+                      paddingTop: '12px',
+                      borderTop: '1px dashed #cbd5e1',
+                      animation: 'fadeIn 0.2s ease'
+                    }}
+                  >
+                    <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📋 தேவைப்படும் ஆவணங்கள் (Required Documents):
+                    </h4>
+                    <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
+                      {docs.map((doc) => (
+                        <span key={doc} style={{ fontSize: '11px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                          <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} /> {doc}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      className="button button-primary"
+                      style={{ width: '100%', fontSize: '11px', padding: '8px', justifyContent: 'center' }}
+                      onClick={() => navigate('customer')}
+                    >
+                      Start this application <ArrowRight size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </article>
+          );
+        })}
       </div>
       {filteredServices.length === 0 && <div className="empty-search">{t.noServiceFound}</div>}
       <div className="service-callout">
@@ -842,18 +1060,29 @@ function ServicesPage({ navigate, lang }) {
         </div>
         <button className="text-button" onClick={() => navigate('contact')}>{t.askTeam} <ArrowRight size={16} /></button>
       </div>
-      {selectedService && (
-        <ServiceDetail
-          service={selectedService}
-          onClose={() => setSelectedService(null)}
-          onApply={() => navigate('customer')}
-        />
-      )}
     </PageIntro>
   );
 }
 
-function ServiceDetail({ service, onClose, onApply }) { const docs = getRequiredDocuments(service.title, service.group); return <div className="service-modal-backdrop" onClick={onClose}><div className="service-modal" onClick={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button><span className="catalog-group">{service.group}</span><h2>{service.tamil}</h2><p className="modal-english">{service.title}</p><h3 className="docs-heading">Documents required for this service</h3><div className="document-checklist">{docs.map((doc) => <span key={doc}><Check size={15} /> {doc}</span>)}</div><small className="docs-note">AkEsevai will verify the submitted documents before application submission.</small><button className="button button-primary" onClick={onApply}>Start this application <ArrowRight size={16} /></button></div></div>; }
+function ServiceDetail({ service, onClose, onApply }) {
+  const docs = getRequiredDocuments(service.title, service.group);
+  return (
+    <div className="service-modal-backdrop" onClick={onClose}>
+      <div className="service-modal" onClick={(event) => event.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        <span className="catalog-group">{service.group}</span>
+        <h2>{service.tamil}</h2>
+        <p className="modal-english">{service.title}</p>
+        <h3 className="docs-heading">Documents required for this service</h3>
+        <div className="document-checklist">
+          {docs.map((doc) => <span key={doc}><Check size={15} /> {doc}</span>)}
+        </div>
+        <small className="docs-note">AkEsevai will verify the submitted documents before application submission.</small>
+        <button className="button button-primary" onClick={onApply}>Start this application <ArrowRight size={16} /></button>
+      </div>
+    </div>
+  );
+}
 
 function WeblinkPage() { const [query, setQuery] = useState(''); const filteredLinks = webLinks.filter((link) => `${link.title} ${link.text}`.toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="USEFUL WEBLINKS" title="Trusted links, all in one place." text="Open official portals directly from AkEsevai. Search by service name and choose Open to visit the official website."><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Link-ஐ தேடவும்... Search official links" /><span>{filteredLinks.length} links</span></div><div className="link-grid">{filteredLinks.map((link) => { const Icon = link.icon; return <a className="external-link-card" href={link.href} target="_blank" rel="noreferrer" key={link.title}><span className="link-icon"><Icon /></span><span><strong>{link.title}</strong><small>{link.text}</small></span><span className="open-link">Open <ExternalLink size={14} /></span></a>; })}</div><div className="link-note"><ShieldCheck size={18} /><span>Always check that you are on the official government website before entering personal details.</span></div></PageIntro>; }
 
@@ -1092,92 +1321,6 @@ function AdminLiveQueueControlForm() {
             </label>
           </div>
         )}
-
-        {/* 2. CENTER STATUS LABEL */}
-        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-          2. நிலை அறிக்கை விவரம் (Status Display Label):
-          <select
-            value={statusText}
-            onChange={(e) => setStatusText(e.target.value)}
-            style={{ width: '100%', border: '1.5px solid #0052cc', borderRadius: '8px', padding: '11px', marginTop: '4px', fontSize: '13.5px', fontWeight: 700, background: 'white', outline: 'none', cursor: 'pointer' }}
-          >
-            <option value="🟢 மையம் திறந்துள்ளது (Open Now)">🟢 மையம் திறந்துள்ளது (Open Now)</option>
-            <option value="🟡 கூட்டம் அதிகமாக உள்ளது (High Rush)">🟡 கூட்டம் அதிகமாக உள்ளது (High Rush - Book Slot)</option>
-            <option value="🔴 மதிய உணவு இடைவேளை (Lunch Break)">🔴 மதிய உணவு இடைவேளை (Lunch Break 1:30 - 2:30 PM)</option>
-            <option value="🔴 மையம் இன்று விடுமுறை (Closed Today)">🔴 மையம் இன்று விடுமுறை (Closed Today)</option>
-            <option value="🟢 டோக்கன் பதிவு வரவேற்கப்படுகிறது (Tokens Open)">🟢 டோக்கன் பதிவு வரவேற்கப்படுகிறது (Tokens Open)</option>
-          </select>
-        </label>
-
-        {/* 2 & 3. QUEUE COUNT & WAIT TIME DROPDOWNS */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-          <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-            2. வரிசையில் உள்ளவர்கள் (Queue Count):
-            <select
-              value={queueCount}
-              onChange={(e) => setQueueCount(e.target.value)}
-              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '11px', marginTop: '4px', fontSize: '13.5px', fontWeight: 700, background: 'white', outline: 'none', cursor: 'pointer' }}
-            >
-              <option value="0 நபர்கள் (வரிசையில்லை)">0 நபர்கள் (வரிசையில்லை / Empty)</option>
-              <option value="1 - 2 நபர்கள் (In Queue)">1 - 2 நபர்கள் (1-2 People)</option>
-              <option value="3 நபர்கள் (In Queue)">3 நபர்கள் (3 People)</option>
-              <option value="3 - 5 நபர்கள் (In Queue)">3 - 5 நபர்கள் (3-5 People)</option>
-              <option value="5 - 10 நபர்கள் (In Queue)">5 - 10 நபர்கள் (5-10 People)</option>
-              <option value="10+ நபர்கள் (In Queue)">10+ நபர்கள் (Heavy Queue)</option>
-            </select>
-          </label>
-
-          <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-            3. காத்திருக்கும் நேரம் (Wait Time):
-            <select
-              value={waitTime}
-              onChange={(e) => setWaitTime(e.target.value)}
-              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '11px', marginTop: '4px', fontSize: '13.5px', fontWeight: 700, background: 'white', outline: 'none', cursor: 'pointer' }}
-            >
-              <option value="உடனடி அனுமதி (0 Mins)">உடனடி அனுமதி (Immediate Entry)</option>
-              <option value="~ 5 நிமிடங்கள்">~ 5 நிமிடங்கள் (5 Mins)</option>
-              <option value="~ 10 நிமிடங்கள்">~ 10 நிமிடங்கள் (10 Mins)</option>
-              <option value="~ 15 - 20 நிமிடங்கள்">~ 15 - 20 நிமிடங்கள் (15-20 Mins)</option>
-              <option value="~ 30 நிமிடங்கள்">~ 30 நிமிடங்கள் (30 Mins)</option>
-              <option value="~ 1 மணி நேரம்">~ 1 மணி நேரம் (1 Hour)</option>
-            </select>
-          </label>
-        </div>
-
-        {/* 4. SERVICE OF THE DAY OVERRIDE */}
-        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-          4. இன்றைய சிறப்பு சேவைத் தேர்வு (Featured Service of the Day):
-          <select
-            value={serviceOfDay}
-            onChange={(e) => setServiceOfDay(e.target.value)}
-            style={{ width: '100%', border: '1.5px solid #d97706', borderRadius: '8px', padding: '11px', marginTop: '4px', fontSize: '13.5px', fontWeight: 800, color: '#92400e', background: '#fffbeb', outline: 'none', cursor: 'pointer' }}
-          >
-            <option value="auto">🔄 தானாகவே சுழலும் (Automatic Daily Rotation)</option>
-            <option value="வருமானச் சான்றிதழ்">📋 வருமானச் சான்றிதழ் (Income Certificate)</option>
-            <option value="சாதிச் சான்றிதழ்">🏛️ சாதிச் சான்றிதழ் (Community Certificate)</option>
-            <option value="ஆதார் மொபைல் மாற்றம்">📱 ஆதார் மொபைல் மாற்றம் (Aadhaar Mobile Update)</option>
-            <option value="புதிய வாக்காளர் அட்டை">🗳️ புதிய வாக்காளர் அட்டை (New Voter Card)</option>
-            <option value="TNPSC விண்ணப்பம்">📝 TNPSC விண்ணப்பம் (TNPSC Exam Registration)</option>
-            <option value="e-SHRAM CARD">🪪 e-SHRAM CARD (Unorganised Worker Card)</option>
-            <option value="புதிய குடும்ப அட்டை">👨‍👩‍👧‍👦 புதிய குடும்ப அட்டை (New Smart Ration Card)</option>
-          </select>
-        </label>
-
-        {/* 5. UPI ID DROPDOWN & CUSTOM INPUT */}
-        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-          5. மையத்தின் UPI Payment ID (Target UPI ID):
-          <select
-            value={upiId}
-            onChange={(e) => setUpiId(e.target.value)}
-            style={{ width: '100%', border: '1.5px solid #16a34a', borderRadius: '8px', padding: '11px', marginTop: '4px', fontSize: '13.5px', fontWeight: 800, color: '#022c7a', background: '#f0fdf4', outline: 'none', cursor: 'pointer' }}
-          >
-            <option value="alakesh.kumar7@okhdfcbank">alakesh.kumar7@okhdfcbank (HDFC Bank Official)</option>
-            <option value="9342318844@ybl">9342318844@ybl (Yes Bank PhonePe)</option>
-            <option value="9342318844@paytm">9342318844@paytm (Paytm Payments Bank)</option>
-            <option value="9342318844@postbank">9342318844@postbank (IPPB India Post)</option>
-          </select>
-        </label>
-
         <button
           type="submit"
           className="button button-primary"
@@ -1199,15 +1342,16 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [activeDocPreview, setActiveDocPreview] = useState(null);
 
-  if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button><small className="form-help">Demo password: admin123</small></form></section>;
+  if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button></form></section>;
   const activeRecords = (customerRecords && Object.keys(customerRecords).length > 0) ? customerRecords : readCustomerRecords();
   const customers = Object.values(activeRecords)
-    .filter(c => c && (c.phone || c.profile?.name))
+    .filter(c => c && (c.phone || c.profile?.name || c.name))
     .sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
   
   const matchingCustomers = customers.filter((customer) => {
-    const name = customer.profile?.name || 'Customer';
+    const name = customer.profile?.name || customer.name || 'Customer';
     const phone = customer.phone || '';
     const apps = Array.isArray(customer.applications) ? customer.applications.map((app) => app?.name || '').join(' ') : '';
     return `${name} ${phone} ${apps}`.toLowerCase().includes(query.toLowerCase());
@@ -1247,7 +1391,7 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
 
   const handleDeleteCustomer = async (cust) => {
     if (!cust) return;
-    const confirmDelete = window.confirm(`Are you sure you want to remove customer "${cust.profile?.name || 'Customer'}" (+91 ${cust.phone}) from Firebase Cloud?`);
+    const confirmDelete = window.confirm(`Are you sure you want to remove customer "${cust.profile?.name || cust.name || 'Customer'}" (+91 ${cust.phone}) from Firebase Cloud?`);
     if (confirmDelete) {
       await deleteCustomerProfileCloud(cust.phone);
       notify(`🗑️ Customer ${cust.profile?.name || cust.phone} removed from Firebase database!`);
@@ -1341,6 +1485,8 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
           <AdminRevenueDashboard tokenBookings={tokenBookings} />
         </div>
       )}
+
+
       {adminTab === 'customers' && (
         <div className="admin-grid">
           <aside className="admin-customers">

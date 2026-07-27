@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { subscribeLiveQueue } from '../utils/firebaseService';
 
 const QUEUE_KEY = 'akesevai-live-queue-status';
 
@@ -12,8 +13,21 @@ export default function LiveWaitTimeBanner() {
   useEffect(() => {
     const refresh = () => setQueueData(readQueue());
     window.addEventListener('storage', refresh);
-    const interval = setInterval(refresh, 15000);
-    return () => { window.removeEventListener('storage', refresh); clearInterval(interval); };
+    window.addEventListener('akesevai_queue_updated', refresh);
+    
+    const unsubscribe = subscribeLiveQueue((cloudData) => {
+      if (cloudData) {
+        setQueueData(cloudData);
+      }
+    });
+
+    const interval = setInterval(refresh, 5000);
+    return () => {
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('akesevai_queue_updated', refresh);
+      if (unsubscribe) unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   const isOpen = queueData.status === 'open' || queueData.status === undefined;
