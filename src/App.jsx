@@ -3,6 +3,7 @@ import { siteConfig } from './config/siteConfig';
 import { translations } from './config/translations';
 import { publicPages } from './data/pageManifest';
 import { getStoredApplications } from './utils/statusStore';
+import { handleViewDocument, handleDownloadDocument } from './utils/documentHelper';
 import ServiceCard from './components/ServiceCard';
 import NotificationCard from './components/NotificationCard';
 import NotificationTables from './components/NotificationTables';
@@ -1727,12 +1728,12 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                        <a className="document-open" href={document.data} target="_blank" rel="noreferrer" title="View Document" style={{ background: '#0052cc', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none' }}>
+                        <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
                           <Eye size={15} /> View (காண்க)
-                        </a>
-                        <a className="document-open" href={document.data} download={document.name || 'document.pdf'} style={{ background: '#16a34a', color: 'white', borderColor: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none' }} title="Download Document">
+                        </button>
+                        <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
                           <Download size={14} /> Download (பதிவிறக்கு)
-                        </a>
+                        </button>
                       </div>
                     </div>
                   )) : <p className="empty-customer-state">This customer has not uploaded documents yet.</p>}
@@ -2003,13 +2004,13 @@ function DocumentsTab({ customer, updateCustomer, notify }) {
                     <Check size={13} /> UPLOAD SUCCESS
                   </span>
 
-                  <a className="document-open" href={document.data} target="_blank" rel="noreferrer" title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                     <Eye size={14} /> View (காண்க)
-                  </a>
+                  </button>
 
-                  <a className="document-open" href={document.data} download={document.name || 'document.pdf'} style={{ background: '#16a34a', color: 'white', borderColor: '#15803d', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="Download Document">
+                  <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                     <Download size={14} /> Download (பதிவிறக்கு)
-                  </a>
+                  </button>
 
                   <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
                     Change
