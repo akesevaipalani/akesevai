@@ -1118,7 +1118,7 @@ function NotificationsPage({ lang }) {
       title={t.notifTitle}
       text={t.notifText}
     >
-      <NotificationTables lang={lang} />
+      <NotificationTables forceAdmin={false} lang={lang} />
       <div className="notice-list" style={{ marginTop: '35px' }}>
         <div>
           <Megaphone size={18} />
@@ -1185,8 +1185,8 @@ function PrivatePageGate({ navigate }) {
 
 function AdminLiveQueueControlForm() {
   const [isCenterOpen, setIsCenterOpen] = useState('open'); // 'open' or 'closed'
-  const [queueCount, setQueueCount] = useState('3 நபர்கள் (In Queue)');
-  const [waitTime, setWaitTime] = useState('~ 5 நிமிடங்கள்');
+  const [queueCount, setQueueCount] = useState('3 நபர்கள்');
+  const [waitTime, setWaitTime] = useState('5-10 நிமிடங்கள்');
   const [statusText, setStatusText] = useState('🟢 மையம் திறந்துள்ளது (Open Now)');
   const [closedNoticeText, setClosedNoticeText] = useState('மையம் தற்போது மூடப்பட்டுள்ளது');
   const [openTimeText, setOpenTimeText] = useState('Mon–Sat 10:00 AM');
@@ -1200,8 +1200,8 @@ function AdminLiveQueueControlForm() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.status) setIsCenterOpen(parsed.status);
-        if (parsed.queueCount) setQueueCount(parsed.queueCount);
-        if (parsed.waitTime) setWaitTime(parsed.waitTime);
+        if (parsed.queueCount !== undefined) setQueueCount(parsed.queueCount);
+        if (parsed.waitTime !== undefined) setWaitTime(parsed.waitTime);
         if (parsed.statusText) setStatusText(parsed.statusText);
         if (parsed.closedNotice) setClosedNoticeText(parsed.closedNotice);
         if (parsed.openTime) setOpenTimeText(parsed.openTime);
@@ -1253,8 +1253,9 @@ function AdminLiveQueueControlForm() {
     }
 
     window.dispatchEvent(new Event('storage'));
-    setMsg('✅ நேரலை மையம் & சிறப்பு சேவை விவரங்கள் வெற்றிகரமாக புதுப்பிக்கப்பட்டன!');
-    setTimeout(() => setMsg(''), 3500);
+    window.dispatchEvent(new Event('akesevai_queue_updated'));
+    setMsg('✅ நேரலை மையம், வரிசை எண்ணிக்கை & காத்திருப்பு விவரங்கள் வெற்றிகரமாக சேமிக்கப்பட்டன!');
+    setTimeout(() => setMsg(''), 4000);
   };
 
   return (
@@ -1264,7 +1265,7 @@ function AdminLiveQueueControlForm() {
           <span className="section-kicker">LIVE CENTER QUEUE CONTROL</span>
           <h2 style={{ margin: '4px 0 0', color: '#022c7a' }}>⚙️ நேரலை மையம் & UPI நிர்வாகம்</h2>
           <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>
-            கீழேயுள்ள கீழ்தோன்றும் பட்டியலிலிருந்து (Dropdown Select) நேரலை விவரங்களைத் தேர்ந்தெடுத்து உடனுக்குடன் புதுப்பிக்கலாம்.
+            நேரலை மையத்தின் நிலை, காத்திருக்கும் நபர்களின் எண்ணிக்கை மற்றும் ஆகும் நேரம் ஆகியவற்றைப் புதுப்பிக்கலாம்.
           </p>
         </div>
       </div>
@@ -1275,7 +1276,7 @@ function AdminLiveQueueControlForm() {
         </div>
       )}
 
-      <form onSubmit={handleSave} style={{ display: 'grid', gap: '16px' }}>
+      <form onSubmit={handleSave} style={{ display: 'grid', gap: '18px' }}>
         {/* 1. CENTER OPEN / CLOSED TOGGLE */}
         <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
           1. மையம் திறப்பு / மூடல் நிலை (Center Status):
@@ -1321,6 +1322,102 @@ function AdminLiveQueueControlForm() {
             </label>
           </div>
         )}
+
+        {/* 2. QUEUE COUNT (இன்னும் எத்தனை பேர் இருக்கிறார்கள் / Number of People Waiting) */}
+        <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: '12px', padding: '16px', display: 'grid', gap: '10px' }}>
+          <label style={{ fontSize: '13px', fontWeight: 800, color: '#166534', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            👥 2. இன்னும் எத்தனை பேர் இருக்கிறார்கள்? (வரிசை நபர்கள் எண்ணிக்கை / Queue Count):
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <select
+              value={queueCount}
+              onChange={(e) => setQueueCount(e.target.value)}
+              style={{ border: '1.5px solid #86efac', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 800, color: '#14532d', background: 'white' }}
+            >
+              <option value="0 நபர்கள்">0 நபர்கள் (வரிசையில் யாருமில்லை)</option>
+              <option value="1 நபர்">1 நபர் (1 Person Waiting)</option>
+              <option value="2 நபர்கள்">2 நபர்கள் (2 People Waiting)</option>
+              <option value="3 நபர்கள்">3 நபர்கள் (3 People Waiting)</option>
+              <option value="5 நபர்கள்">5 நபர்கள் (5 People Waiting)</option>
+              <option value="7 நபர்கள்">7 நபர்கள் (7 People Waiting)</option>
+              <option value="10 நபர்கள்">10 நபர்கள் (10 People Waiting)</option>
+              <option value="15+ நபர்கள்">15+ நபர்கள் (அதிக நெரிசல்)</option>
+            </select>
+            <input
+              type="text"
+              value={queueCount}
+              onChange={(e) => setQueueCount(e.target.value)}
+              placeholder="எ.கா: 3 நபர்கள்"
+              style={{ border: '1.5px solid #86efac', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 700, color: '#0f172a', background: 'white' }}
+            />
+          </div>
+          <small style={{ fontSize: '11px', color: '#15803d', fontWeight: 700 }}>
+            💡 வாடிக்கையாளர்களின் நேரலை பேனரில் "காத்திருக்கும் பேர்" எண்ணிக்கையாக இது தோன்றும்.
+          </small>
+        </div>
+
+        {/* 3. ESTIMATED WAIT TIME (எவ்வளவு நேரம் ஆகும் / Wait Time in Minutes) */}
+        <div style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '12px', padding: '16px', display: 'grid', gap: '10px' }}>
+          <label style={{ fontSize: '13px', fontWeight: 800, color: '#92400e', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            ⏱️ 3. சேவையைப் பெற எவ்வளவு நேரம் ஆகும்? (காத்திருக்கும் நேரம் / Estimated Wait Time):
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <select
+              value={waitTime}
+              onChange={(e) => setWaitTime(e.target.value)}
+              style={{ border: '1.5px solid #fcd34d', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 800, color: '#78350f', background: 'white' }}
+            >
+              <option value="5 நிமிடங்கள்">~ 5 நிமிடங்கள் (5 Mins Wait)</option>
+              <option value="10 நிமிடங்கள்">~ 10 நிமிடங்கள் (10 Mins Wait)</option>
+              <option value="15 நிமிடங்கள்">~ 15 நிமிடங்கள் (15 Mins Wait)</option>
+              <option value="20 நிமிடங்கள்">~ 20 நிமிடங்கள் (20 Mins Wait)</option>
+              <option value="30 நிமிடங்கள்">~ 30 நிமிடங்கள் (30 Mins Wait)</option>
+              <option value="காத்திருப்பு இல்லை">காத்திருப்பு இல்லை (No Wait Time)</option>
+            </select>
+            <input
+              type="text"
+              value={waitTime}
+              onChange={(e) => setWaitTime(e.target.value)}
+              placeholder="எ.கா: ~ 10 நிமிடங்கள்"
+              style={{ border: '1.5px solid #fcd34d', borderRadius: '8px', padding: '10px', fontSize: '13px', fontWeight: 700, color: '#0f172a', background: 'white' }}
+            />
+          </div>
+          <small style={{ fontSize: '11px', color: '#b45309', fontWeight: 700 }}>
+            💡 வாடிக்கையாளர்களுக்கு தோராயமாக காத்திருக்க வேண்டிய நேரம் நிமிடங்களில் காட்டும்.
+          </small>
+        </div>
+
+        {/* 4. SERVICE OF THE DAY (இன்றைய சிறப்பு சேவை) */}
+        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+          ⭐ 4. இன்றைய சிறப்பு சேவை (Service of the Day):
+          <select
+            value={serviceOfDay}
+            onChange={(e) => setServiceOfDay(e.target.value)}
+            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', fontWeight: 700, background: 'white' }}
+          >
+            <option value="auto">🔄 தானியங்கு முறை (Auto Rotating Daily)</option>
+            <option value="வருமானச் சான்றிதழ்">📋 வருமானச் சான்றிதழ் (Income Certificate)</option>
+            <option value="சாதிச் சான்றிதழ்">🏛️ சாதிச் சான்றிதழ் (Community Certificate)</option>
+            <option value="ஆதார் மொபைல் மாற்றம்">📱 ஆதார் மொபைல் மாற்றம் (Aadhaar Mobile Update)</option>
+            <option value="புதிய வாக்காளர் அட்டை">🗳️ புதிய வாக்காளர் அட்டை (New Voter Card)</option>
+            <option value="TNPSC விண்ணப்பம்">📝 TNPSC விண்ணப்பம் (TNPSC Application)</option>
+            <option value="e-SHRAM CARD">🪪 e-SHRAM CARD</option>
+            <option value="புதிய குடும்ப அட்டை">👨‍👩‍👧‍👦 புதிய குடும்ப அட்டை (New Smart Card)</option>
+          </select>
+        </label>
+
+        {/* 5. UPI PAYMENT ID */}
+        <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
+          💳 5. கட்டணம் செலுத்தும் UPI ID (GPay / PhonePe / Paytm):
+          <input
+            type="text"
+            value={upiId}
+            onChange={(e) => setUpiId(e.target.value)}
+            placeholder="e.g. alakesh.kumar7@okhdfcbank"
+            style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', fontWeight: 700 }}
+          />
+        </label>
+
         <button
           type="submit"
           className="button button-primary"
@@ -1435,6 +1532,7 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
         </div>
       </div>
       <div className="admin-tools">
+        <button onClick={() => setAdminTab('notifications')}><Bell size={18} /><span><strong>Notifications</strong><small>Add & delete notifications</small></span></button>
         <button onClick={() => navigate('weblink')}><ExternalLink size={18} /><span><strong>Weblinks</strong><small>Private service links</small></span></button>
         <button onClick={() => navigate('forms')}><FormInput size={18} /><span><strong>Forms</strong><small>Official PDF downloads</small></span></button>
         <button onClick={() => navigate('software')}><FileCog size={18} /><span><strong>Software</strong><small>AkEsevai tools</small></span></button>
@@ -1450,6 +1548,7 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
       <div className="dashboard-tabs" style={{ marginBottom: '24px' }}>
         <button className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests</button>
         <button className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings {tokenBookings.length > 0 && <span className="tab-count">{tokenBookings.length}</span>}</button>
+        <button className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={() => setAdminTab('notifications')} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
         <button className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={() => setAdminTab('smartdesk')} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
         <button className={adminTab === 'analytics' ? 'tab-active' : ''} onClick={() => setAdminTab('analytics')} style={{ background: adminTab === 'analytics' ? '#7c3aed' : undefined, color: adminTab === 'analytics' ? 'white' : undefined }}>📊 Revenue Analytics</button>
         <button className={adminTab === 'queue' ? 'tab-active' : ''} onClick={() => setAdminTab('queue')} style={{ background: adminTab === 'queue' ? '#0052cc' : undefined, color: adminTab === 'queue' ? 'white' : undefined }}>⚙️ Live Center Queue Control</button>
@@ -1480,6 +1579,23 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
           <AdminSevaiSmartDesk notify={notify} />
         </div>
       )}
+      {adminTab === 'notifications' && (
+        <div style={{ marginTop: '10px' }}>
+          <div style={{ background: '#fffbeb', border: '2px solid #fcd34d', borderRadius: '16px', padding: '18px 24px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <span style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '1px', color: '#b45309', textTransform: 'uppercase' }}>ADMIN NOTIFICATION MANAGEMENT</span>
+              <h2 style={{ margin: '4px 0 0', fontSize: '18px', color: '#78350f', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📢 அறிவிப்புகள் மேலாண்மை / Notification Management Panel
+              </h2>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#92400e' }}>
+                அட்மின்கள் மட்டுமே புதிய அறிவிப்புகளைச் சேர்க்கவும், பழைய அறிவிப்புகளை நீக்கவும், மற்றும் தேதி முடிந்தவற்றைத் தானாக நீக்கவும் முடியும்.
+              </p>
+            </div>
+          </div>
+          <NotificationTables forceAdmin={true} />
+        </div>
+      )}
+
       {adminTab === 'analytics' && (
         <div style={{ marginTop: '10px' }}>
           <AdminRevenueDashboard tokenBookings={tokenBookings} />
@@ -1492,7 +1608,18 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
           <aside className="admin-customers">
             <div className="panel-heading"><div><span className="section-kicker">CUSTOMERS</span><h2>All requests</h2></div></div>
             <div className="service-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer or service" /></div>
-            {matchingCustomers.length ? matchingCustomers.map((customer) => <button className={`admin-customer-row ${selected?.phone === customer.phone ? 'admin-customer-active' : ''}`} onClick={() => setActiveCustomer(customer.phone)} key={customer.phone}><span className="avatar">{customer.profile.name.slice(0, 2).toUpperCase()}</span><span><strong>{customer.profile.name}</strong><small>+91 {customer.phone} · {customer.applications.length} services</small></span><ChevronRight size={16} /></button>) : <p className="empty-customer-state">No matching customer requests.</p>}
+            {matchingCustomers.length ? matchingCustomers.map((customer) => {
+              const custName = customer.profile?.name || customer.name || customer.phone || 'Customer';
+              const avatar = custName.slice(0, 2).toUpperCase();
+              const appCount = Array.isArray(customer.applications) ? customer.applications.length : 0;
+              return (
+                <button className={`admin-customer-row ${selected?.phone === customer.phone ? 'admin-customer-active' : ''}`} onClick={() => setActiveCustomer(customer.phone)} key={customer.phone || Math.random()}>
+                  <span className="avatar">{avatar}</span>
+                  <span><strong>{custName}</strong><small>+91 {customer.phone} · {appCount} services</small></span>
+                  <ChevronRight size={16} />
+                </button>
+              );
+            }) : <p className="empty-customer-state">No matching customer requests.</p>}
           </aside>
           <section className="admin-detail">
             {selected ? (() => {
@@ -1524,17 +1651,20 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
                 return acc;
               }, []);
 
+              const selectedName = selected.profile?.name || selected.name || 'Customer';
+              const selectedApps = Array.isArray(selected.applications) ? selected.applications : [];
+
               return (
                 <>
                   <div className="panel-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
                     <div>
                       <span className="section-kicker">CUSTOMER DETAILS</span>
-                      <h2>{selected.profile.name}</h2>
+                      <h2>{selectedName}</h2>
                       <p>+91 {selected.phone}</p>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button
-                        onClick={() => { setEditingCustomer(selected); setEditName(selected.profile.name || ''); setEditPhone(selected.phone || ''); }}
+                        onClick={() => { setEditingCustomer(selected); setEditName(selectedName); setEditPhone(selected.phone || ''); }}
                         style={{ background: '#0052cc', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                       >
                         ✏️ Edit Profile
@@ -1548,7 +1678,7 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
                     </div>
                   </div>
                   <h3 className="admin-section-title">Selected services</h3>
-                  {selected.applications.length ? selected.applications.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
+                  {selectedApps.length ? selectedApps.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
                   <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
                   {selectedDocs.length ? selectedDocs.map((document, idx) => (
                     <div className="admin-service-row" key={document.id || idx} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>

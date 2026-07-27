@@ -212,7 +212,7 @@ export const jobNotificationsData = initialJobData;
 export const examScheduleData = initialExamData;
 export const educationNotificationsData = initialEducationData;
 
-export default function NotificationTables() {
+export default function NotificationTables({ forceAdmin }) {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -234,8 +234,23 @@ export default function NotificationTables() {
     return saved ? JSON.parse(saved) : initialEducationData;
   });
 
-  // Admin status check (checks both hyphen and underscore session keys)
-  const isAdmin = sessionStorage.getItem('akesevai-admin-session') === 'true' || sessionStorage.getItem('akesevai_admin_session') === 'true';
+  useEffect(() => {
+    const syncLists = () => {
+      try {
+        const savedJobs = localStorage.getItem('akesevai_notif_jobs');
+        if (savedJobs) setJobs(JSON.parse(savedJobs));
+        const savedExams = localStorage.getItem('akesevai_notif_exams');
+        if (savedExams) setExams(JSON.parse(savedExams));
+        const savedEdu = localStorage.getItem('akesevai_notif_edu');
+        if (savedEdu) setEducation(JSON.parse(savedEdu));
+      } catch (e) { console.error(e); }
+    };
+    window.addEventListener('storage', syncLists);
+    return () => window.removeEventListener('storage', syncLists);
+  }, []);
+
+  // Admin status check (only true when forceAdmin prop is explicitly true)
+  const isAdmin = forceAdmin === true;
 
   // Automated Next Upcoming Notifications Pipeline
   const upcomingJobsPool = [
