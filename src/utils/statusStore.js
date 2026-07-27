@@ -4,105 +4,6 @@ import { saveApplicationCloud } from './firebaseService';
 const STATUS_RECORDS_KEY = 'akesevai-application-records';
 const TOKEN_BOOKINGS_KEY = 'akesevai-token-bookings';
 
-const defaultMockApplications = {
-  'TN-AK-2026-108': {
-    id: 'TN-AK-2026-108',
-    tokenId: 'TOK-108',
-    applicantName: 'K. Lakshmi (லெட்சுமி)',
-    phone: '9443287654',
-    aadhaarNo: '5432 1098 7654',
-    service: 'வருமானச் சான்றிதழ் (Income Certificate)',
-    fee: '₹60',
-    date: '2026-07-25',
-    submittedDate: '25 Jul 2026',
-    estimatedDate: '25 Jul 2026',
-    currentStage: 6,
-    statusLabel: 'சான்றிதழ் தயாராக உள்ளது (Approved ✅)',
-    statusColor: '#16a34a',
-    remarks: 'தட்டாட்சியர் டிஜிட்டல் கையொப்பமிட்ட சான்றிதழ் தயார் நிலையில் உள்ளது. AkEsevai மையத்தில் பெற்றுக்கொள்ளலாம்.',
-    timeline: [
-      { step: 1, title: 'Application Received', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: '25 Jul, 09:30 AM', done: true },
-      { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: '25 Jul, 10:15 AM', done: true },
-      { step: 3, title: 'Fee Payment Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: '25 Jul, 10:20 AM', done: true },
-      { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: '25 Jul, 11:00 AM', done: true },
-      { step: 5, title: 'VAO / RI Verification', tamil: 'அதிகாரி பரிசீலனை', date: '25 Jul, 02:00 PM', done: true },
-      { step: 6, title: 'Approved & Issued', tamil: 'சான்றிதழ் வழங்கப்பட்டது', date: '25 Jul, 03:30 PM', done: true, active: true }
-    ]
-  },
-  'TN-AK-2026-112': {
-    id: 'TN-AK-2026-112',
-    tokenId: 'TOK-112',
-    applicantName: 'P. Karthik (கார்த்திக்)',
-    phone: '9876543210',
-    aadhaarNo: '9876 5432 1098',
-    service: 'முதல் பட்டதாரி சான்றிதழ் (First Graduate)',
-    fee: '₹60',
-    date: '2026-07-24',
-    submittedDate: '24 Jul 2026',
-    estimatedDate: '25 Jul 2026',
-    currentStage: 6,
-    statusLabel: 'சான்றிதழ் தயாராக உள்ளது (Approved ✅)',
-    statusColor: '#16a34a',
-    remarks: 'சான்றிதழ் அங்கீகரிக்கப்பட்டு டிஜிட்டல் சான்றிதழ் பதிவிறக்கத்திற்குத் தயாராக உள்ளது.',
-    timeline: [
-      { step: 1, title: 'Application Received', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: '24 Jul, 10:00 AM', done: true },
-      { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: '24 Jul, 11:00 AM', done: true },
-      { step: 3, title: 'Fee Payment Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: '24 Jul, 11:15 AM', done: true },
-      { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: '24 Jul, 01:00 PM', done: true },
-      { step: 5, title: 'VAO / RI Verification', tamil: 'அதிகாரி பரிசீலனை', date: '24 Jul, 04:30 PM', done: true },
-      { step: 6, title: 'Approved & Issued', tamil: 'சான்றிதழ் வழங்கப்பட்டது', date: '25 Jul, 11:00 AM', done: true, active: true }
-    ]
-  },
-  'TN-AK-2026-104': {
-    id: 'TN-AK-2026-104',
-    tokenId: 'TOK-104',
-    applicantName: 'M. Senthil Kumar (செந்தில்குமார்)',
-    phone: '9842154321',
-    aadhaarNo: '7689 4321 0984',
-    service: 'சாதிச்சான்று (Community Certificate)',
-    fee: '₹60',
-    date: '2026-07-25',
-    submittedDate: '25 Jul 2026',
-    estimatedDate: '28 Jul 2026',
-    currentStage: 4,
-    statusLabel: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது (Submitted)',
-    statusColor: '#d97706',
-    remarks: 'ஆவணங்கள் சரிபார்க்கப்பட்டு வருவாய்த் துறை (TNeGA) தளத்தில் விண்ணப்பிக்கப்பட்டது.',
-    timeline: [
-      { step: 1, title: 'Application Received', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: '25 Jul, 10:15 AM', done: true },
-      { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: '25 Jul, 11:30 AM', done: true },
-      { step: 3, title: 'Fee Payment Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: '25 Jul, 11:45 AM', done: true },
-      { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: '25 Jul, 02:20 PM', done: true, active: true },
-      { step: 5, title: 'VAO / RI Verification', tamil: 'அதிகாரி பரிசீலனை', date: 'Pending', done: false },
-      { step: 6, title: 'Approved & Issued', tamil: 'சான்றிதழ் வழங்கப்பட்டது', date: 'Pending', done: false }
-    ]
-  },
-  'TN-AK-2026-115': {
-    id: 'TN-AK-2026-115',
-    tokenId: 'TOK-115',
-    applicantName: 'S. Anitha (அனிதா)',
-    phone: '9342318844',
-    aadhaarNo: '1234 5678 9012',
-    service: 'இருப்பிட சான்றிதழ் (Nativity Certificate)',
-    fee: '₹60',
-    date: '2026-07-25',
-    submittedDate: '25 Jul 2026',
-    estimatedDate: '27 Jul 2026',
-    currentStage: 5,
-    statusLabel: 'VAO / RI களப்பரிசீலனையில் உள்ளது (VAO Review)',
-    statusColor: '#b45309',
-    remarks: 'கிராம நிர்வாக அதிகாரி (VAO) மற்றும் வருவாய் ஆய்வாளர் (RI) பரிசீலனையில் உள்ளது.',
-    timeline: [
-      { step: 1, title: 'Application Received', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: '25 Jul, 08:30 AM', done: true },
-      { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: '25 Jul, 09:00 AM', done: true },
-      { step: 3, title: 'Fee Payment Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: '25 Jul, 09:15 AM', done: true },
-      { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: '25 Jul, 10:00 AM', done: true },
-      { step: 5, title: 'VAO / RI Verification', tamil: 'அதிகாரி பரிசீலனை', date: '25 Jul, 01:30 PM', done: true, active: true },
-      { step: 6, title: 'Approved & Issued', tamil: 'சான்றிதழ் வழங்கப்பட்டது', date: 'Pending', done: false }
-    ]
-  }
-};
-
 // Sync with Vite Server Central Store API (/api/store)
 export const syncWithCentralServer = async () => {
   try {
@@ -149,13 +50,12 @@ export const getStoredApplications = () => {
     const saved = localStorage.getItem(STATUS_RECORDS_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         return parsed;
       }
     }
   } catch (e) {}
-  localStorage.setItem(STATUS_RECORDS_KEY, JSON.stringify(defaultMockApplications));
-  return defaultMockApplications;
+  return {};
 };
 
 export const saveApplicationRecord = (appRecord) => {

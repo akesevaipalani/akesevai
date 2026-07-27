@@ -160,47 +160,14 @@ import {
   deleteExpiryDocumentCloud
 } from './utils/firebaseService';
 
-const defaultSampleCustomerRecords = {
-  '9876543210': {
-    phone: '9876543210',
-    profile: { name: 'Karthikeyan M', createdAt: '2026-07-25T10:00:00Z' },
-    applications: [
-      { id: 'APP-1001', name: 'வருமானச் சான்றிதழ் (Income Certificate)', status: 'Submitted & Processing', date: '25/07/2026' }
-    ],
-    documents: [
-      { id: 'doc-1', requirement: 'ஆதார் கார்டு (Aadhaar Card)', name: 'aadhaar_card_front.jpg', uploadedAt: '25/07/2026', data: '/office1.jpg' },
-      { id: 'doc-2', requirement: 'சம்பளச் சான்று (Salary Slip / Ration Card)', name: 'salary_certificate.pdf', uploadedAt: '25/07/2026', data: '/office2.jpg' }
-    ],
-    updatedAt: '2026-07-25T10:00:00Z'
-  },
-  '9123456789': {
-    phone: '9123456789',
-    profile: { name: 'Anitha S', createdAt: '2026-07-26T14:30:00Z' },
-    applications: [
-      { id: 'APP-1002', name: 'சாதிச்சான்று (Community Certificate)', status: 'Under Verification', date: '26/07/2026' }
-    ],
-    documents: [
-      { id: 'doc-3', requirement: 'பெற்றோர் சாதிச்சான்று (Parents Community Cert)', name: 'parents_community.jpg', uploadedAt: '26/07/2026', data: '/office3.jpg' }
-    ],
-    updatedAt: '2026-07-26T14:30:00Z'
-  }
-};
-
 const readCustomerRecords = () => {
   try {
     const raw = localStorage.getItem(CUSTOMER_RECORDS_KEY);
-    if (!raw) {
-      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(defaultSampleCustomerRecords));
-      return defaultSampleCustomerRecords;
-    }
+    if (!raw) return {};
     const parsed = JSON.parse(raw);
-    if (!parsed || Object.keys(parsed).length === 0) {
-      localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(defaultSampleCustomerRecords));
-      return defaultSampleCustomerRecords;
-    }
-    return parsed;
+    return parsed || {};
   } catch {
-    return defaultSampleCustomerRecords;
+    return {};
   }
 };
 
@@ -1478,7 +1445,7 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
   const [activeDocPreview, setActiveDocPreview] = useState(null);
 
   if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button></form></section>;
-  const activeRecords = (customerRecords && Object.keys(customerRecords).length > 0) ? customerRecords : readCustomerRecords();
+  const activeRecords = customerRecords || {};
   const customers = Object.values(activeRecords)
     .filter(c => c && (c.phone || c.profile?.name || c.name))
     .sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
@@ -1524,10 +1491,21 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
 
   const handleDeleteCustomer = async (cust) => {
     if (!cust) return;
-    const confirmDelete = window.confirm(`Are you sure you want to remove customer "${cust.profile?.name || cust.name || 'Customer'}" (+91 ${cust.phone}) from Firebase Cloud?`);
+    const custName = cust.profile?.name || cust.name || 'Customer';
+    const confirmDelete = window.confirm(`Are you sure you want to remove customer "${custName}" (+91 ${cust.phone}) from Firebase Cloud?`);
     if (confirmDelete) {
+      const cleanPhone = String(cust.phone).replace(/\D/g, '');
+      // Update React state immediately so UI removes the customer
+      setCustomerRecords((prev) => {
+        const updated = { ...prev };
+        delete updated[cleanPhone];
+        delete updated[cust.phone];
+        return updated;
+      });
+      setActiveCustomer('');
+      // Delete from localStorage + Firebase Cloud
       await deleteCustomerProfileCloud(cust.phone);
-      notify(`🗑️ Customer ${cust.profile?.name || cust.phone} removed from Firebase database!`);
+      notify(`🗑️ Customer ${custName} removed from Firebase database!`);
     }
   };
 
@@ -1545,6 +1523,9 @@ function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], cust
     if (!tok || !tok.tokenNo) return;
     const confirmDelete = window.confirm(`Delete Token ${tok.tokenNo} for ${tok.customerName}?`);
     if (confirmDelete) {
+      // Update React state immediately so UI removes the token
+      setTokenBookings((prev) => prev.filter(t => String(t.tokenNo) !== String(tok.tokenNo)));
+      // Delete from localStorage + Firebase Cloud
       await deleteTokenBookingCloud(tok.tokenNo);
       notify(`🗑️ Token ${tok.tokenNo} removed!`);
     }

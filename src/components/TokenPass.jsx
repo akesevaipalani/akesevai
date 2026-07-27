@@ -40,11 +40,11 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
   const timeString = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const dateString = time.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
-  // Continuous sequential token numbers (TOK-101, TOK-102, TOK-103...)
+  // Continuous sequential token numbers (TOK-001, TOK-002, TOK-003...)
   const getNextSequentialTokenNo = () => {
-    let maxId = 100;
+    let maxId = 0;
 
-    const storedLast = parseInt(localStorage.getItem('akesevai-last-token-id') || '100', 10);
+    const storedLast = parseInt(localStorage.getItem('akesevai-last-token-id') || '0', 10);
     if (!isNaN(storedLast) && storedLast > maxId) {
       maxId = storedLast;
     }
@@ -71,7 +71,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
 
     const nextId = maxId + 1;
     localStorage.setItem('akesevai-last-token-id', nextId.toString());
-    return `TOK-${nextId}`;
+    return `TOK-${String(nextId).padStart(3, '0')}`;
   };
 
   // Direct Instant Token Booking Handler

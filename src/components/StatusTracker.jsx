@@ -121,20 +121,6 @@ export default function StatusTracker({ initialQuery = '' }) {
       };
     }
 
-    // Demo Sample Seed Records for Testing
-    if (!found && (cleanKey === '9842154321' || cleanKey === '9342318844' || cleanKey === '9876543210' || key === 'TN-AK-2026-98124')) {
-      found = {
-        id: key.startsWith('TN-AK') ? key : `TN-AK-2026-98124`,
-        tokenId: 'TOK-104',
-        applicantName: cleanKey === '9342318844' ? 'அழகேஷ் குமார்' : 'செல்வகுமார்',
-        phone: cleanKey || '9842154321',
-        service: 'வருமானச் சான்றிதழ் (Income Certificate)',
-        currentStage: 4,
-        statusLabel: 'VAO & RI களப்பரிசீலனையில் உள்ளது (VAO & RI Inspection)',
-        remarks: 'விண்ணப்பம் TNeGA அரசுத் தளத்தில் பதிவேற்றப்பட்டு VAO & RI பரிசீலனையில் உள்ளது.'
-      };
-    }
-
     if (found) {
       setSearchedApp({
         ...found,
