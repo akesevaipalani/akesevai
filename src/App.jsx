@@ -867,10 +867,7 @@ function HomePage({ navigate, notify, lang }) {
           <InstallPwaBanner />
         </div>
 
-        {/* 🔴 LIVE NOW • நேரலை CENTER QUEUE & WAIT TIME BANNER ON HOMEPAGE FRONT */}
-        <div className="page-width">
-          <LiveWaitTimeBanner />
-        </div>
+
 
         {/* ⭐ SERVICE OF THE DAY BANNER - "இன்றைய சிறப்பு சேவை" */}
         <div className="page-width">
