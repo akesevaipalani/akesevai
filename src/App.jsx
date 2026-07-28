@@ -873,6 +873,11 @@ function HomePage({ navigate, notify, lang, visitorCount = 18472 }) {
           <InstallPwaBanner />
         </div>
 
+        {/* EASY & CLEAR LIVE CENTER STATUS BANNER */}
+        <div className="page-width">
+          <LiveWaitTimeBanner lang={lang} navigate={navigate} />
+        </div>
+
 
 
         {/* ⭐ SERVICE OF THE DAY BANNER - "இன்றைய சிறப்பு சேவை" */}
