@@ -779,7 +779,7 @@ function App() {
         </div>
 
         <main>
-          {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} />}
+          {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
           {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
           {page === 'weblink' && (adminLoggedIn ? <WeblinkPage /> : <PrivatePageGate navigate={navigate} />)}
           {page === 'photo-maker' && (adminLoggedIn ? <PhotoMakerPage notify={notify} /> : <PrivatePageGate navigate={navigate} />)}
@@ -852,7 +852,7 @@ function AdEnquiryCard() {
       );
     }
 
-function HomePage({ navigate, notify, lang }) {
+function HomePage({ navigate, notify, lang, visitorCount = 18472 }) {
       const t = translations[lang] || translations.en;
       return <>
         <section className="hero">
