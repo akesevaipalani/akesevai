@@ -452,9 +452,12 @@ function App() {
 
     window.addEventListener('popstate', handlePopState);
     const initial = getInitialPage();
-    const cleanPath = initial === 'home' ? '/' : `/${initial}`;
-    const targetFullUrl = window.location.origin + cleanPath + window.location.search;
-    window.history.replaceState({ page: initial }, '', targetFullUrl);
+    try {
+      const cleanPath = initial === 'home' ? '/' : `/${initial}`;
+      window.history.replaceState({ page: initial }, '', cleanPath);
+    } catch (e) {
+      console.warn('History replaceState notice:', e);
+    }
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
@@ -583,9 +586,12 @@ function App() {
     const navigate = (nextPage) => {
       setPage((prevPage) => {
         if (prevPage !== nextPage) {
-          const cleanPath = nextPage === 'home' ? '/' : `/${nextPage}`;
-          const targetFullUrl = window.location.origin + cleanPath;
-          window.history.pushState({ page: nextPage }, '', targetFullUrl);
+          try {
+            const cleanPath = nextPage === 'home' ? '/' : `/${nextPage}`;
+            window.history.pushState({ page: nextPage }, '', cleanPath);
+          } catch (e) {
+            console.warn('History pushState notice:', e);
+          }
         }
         return nextPage;
       });

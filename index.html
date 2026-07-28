@@ -21,11 +21,6 @@
         } else {
           document.documentElement.removeAttribute('data-theme');
         }
-        if (window.location.hash && (window.location.hash === '#home' || window.location.hash.startsWith('#'))) {
-          var targetPage = window.location.hash.replace('#', '').split('/')[0].split('?')[0];
-          var cleanPath = (targetPage === 'home' || !targetPage) ? '/' : '/' + targetPage;
-          window.history.replaceState(null, '', window.location.origin + cleanPath + window.location.search);
-        }
       } catch (e) {}
     })();
   </script>
