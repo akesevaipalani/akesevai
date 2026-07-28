@@ -551,6 +551,9 @@ function App() {
           ...prev,
           [updated.phone]: updated
         }));
+        if (updated && updated.phone) {
+          saveCustomerProfileCloud(updated.phone, updated);
+        }
         return updated;
       });
     };
@@ -2067,16 +2070,13 @@ const getServiceVisual = (group, title = '') => {
                           🎁 Reward Points Balance: <span style={{ color: '#d97706' }}>{selected.rewardPoints ?? 50} Points</span> (Discount Value: ₹{Math.floor((selected.rewardPoints ?? 50) / 10)})
                         </strong>
                       </div>
-                      <button
-                        onClick={async () => {
-                          const addInput = window.prompt(`Enter bonus reward points to grant to ${selectedName} (+91 ${selected.phone}):`, '50');
-                          if (addInput) {
-                            const bonusPts = parseInt(addInput, 10);
-                            if (isNaN(bonusPts) || bonusPts <= 0) return;
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={async () => {
                             const cleanPhone = String(selected.phone).replace(/\D/g, '');
                             const updatedRecord = {
                               ...selected,
-                              rewardPoints: (selected.rewardPoints ?? 50) + bonusPts,
+                              rewardPoints: (selected.rewardPoints ?? 50) + 60,
                               updatedAt: new Date().toISOString()
                             };
                             await saveCustomerProfileCloud(cleanPhone, updatedRecord);
@@ -2087,19 +2087,80 @@ const getServiceVisual = (group, title = '') => {
                                 [selected.phone]: updatedRecord
                               }));
                             }
-                            notify(`🎉 Granted +${bonusPts} Bonus Reward Points to ${selectedName}!`);
-                          }
-                        }}
-                        style={{ background: '#d97706', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                      >
-                        <Sparkles size={14} /> ➕ Add Bonus Points (ரிவார்டு புள்ளிகள் வழங்கு)
-                      </button>
+                            notify(`🎉 Granted +60 Service Reward Points (₹6 Discount) to ${selectedName}!`);
+                          }}
+                          style={{ background: '#16a34a', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                        >
+                          🎁 Give +60 Points (சேவை நிறைவு ரிவார்டு)
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const addInput = window.prompt(`Enter bonus reward points to grant to ${selectedName} (+91 ${selected.phone}):`, '50');
+                            if (addInput) {
+                              const bonusPts = parseInt(addInput, 10);
+                              if (isNaN(bonusPts) || bonusPts <= 0) return;
+                              const cleanPhone = String(selected.phone).replace(/\D/g, '');
+                              const updatedRecord = {
+                                ...selected,
+                                rewardPoints: (selected.rewardPoints ?? 50) + bonusPts,
+                                updatedAt: new Date().toISOString()
+                              };
+                              await saveCustomerProfileCloud(cleanPhone, updatedRecord);
+                              if (setCustomerRecords) {
+                                setCustomerRecords((prev) => ({
+                                  ...prev,
+                                  [cleanPhone]: updatedRecord,
+                                  [selected.phone]: updatedRecord
+                                }));
+                              }
+                              notify(`🎉 Granted +${bonusPts} Bonus Reward Points to ${selectedName}!`);
+                            }
+                          }}
+                          style={{ background: '#d97706', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                        >
+                          <Sparkles size={14} /> ➕ Custom Points (வேறு புள்ளிகள்)
+                        </button>
+                      </div>
                     </div>
 
 
 
                     <h3 className="admin-section-title">Selected services</h3>
-                    {selectedApps.length ? selectedApps.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
+                    {selectedApps.length ? selectedApps.map((application) => (
+                      <div className="admin-service-row" key={application.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span className="doc-symbol"><FileText size={17} /></span>
+                          <span>
+                            <strong>{application.name}</strong>
+                            <small>{application.id} · Status: <span style={{ color: application.status === 'Completed' ? '#16a34a' : '#d97706', fontWeight: 700 }}>{application.status}</span> · {application.date}</small>
+                          </span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            const cleanPhone = String(selected.phone).replace(/\D/g, '');
+                            const updatedApps = selectedApps.map(a => a.id === application.id ? { ...a, status: 'Completed' } : a);
+                            const updatedRecord = {
+                              ...selected,
+                              applications: updatedApps,
+                              rewardPoints: (selected.rewardPoints ?? 50) + 60,
+                              updatedAt: new Date().toISOString()
+                            };
+                            await saveCustomerProfileCloud(cleanPhone, updatedRecord);
+                            if (setCustomerRecords) {
+                              setCustomerRecords((prev) => ({
+                                ...prev,
+                                [cleanPhone]: updatedRecord,
+                                [selected.phone]: updatedRecord
+                              }));
+                            }
+                            notify(`🎉 Service "${application.name}" marked COMPLETED! +60 Reward Points (₹6 Discount) credited to ${selectedName}!`);
+                          }}
+                          style={{ background: '#f0fdf4', color: '#15803d', border: '1.5px solid #86efac', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          ✅ Mark Completed & Credit +60 Pts (சேவை நிறைவு & ரிவார்டு)
+                        </button>
+                      </div>
+                    )) : <p className="empty-customer-state">No service selected.</p>}
                     <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
                     {selectedDocs.length ? selectedDocs.map((document, idx) => (
                       <div className="admin-service-row" key={document.id || idx} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
@@ -2348,8 +2409,15 @@ const getServiceVisual = (group, title = '') => {
 
   function ApplicationRow({ application }) { return <div className="application-row"><span className={`app-icon ${application.status === 'Completed' ? 'done' : ''}`}>{application.status === 'Completed' ? <Check size={19} /> : <Clock3 size={19} />}</span><span className="app-info"><strong>{application.name}</strong><small>{application.id} · Started {application.date}</small></span><span className={`status-text ${application.status.toLowerCase().replace(' ', '-')}`}>{application.status}</span><span className="row-arrow"><ChevronRight size={17} /></span></div>; }
   function DocumentsTab({ customer, updateCustomer, notify, cloudExpiryDocs = [] }) {
-    const [applicationId, setApplicationId] = useState(customer.applications[0]?.id || '');
-    const application = customer.applications.find((item) => item.id === applicationId);
+    const activeApps = customer.applications && customer.applications.length > 0 ? customer.applications : [{
+      id: `AK-${Date.now().toString().slice(-8)}`,
+      name: 'Income Certificate',
+      status: 'Submitted',
+      date: new Date().toLocaleDateString('en-IN'),
+      requirements: ['Aadhaar Card', 'Family Card', 'Applicant Photo', 'Salary Certificate']
+    }];
+    const [applicationId, setApplicationId] = useState(activeApps[0]?.id || '');
+    const application = activeApps.find((item) => item.id === applicationId) || activeApps[0];
 
     const uploadDocument = async (event, requirement) => {
       const file = event.target.files?.[0];
