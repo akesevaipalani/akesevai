@@ -1,0 +1,16 @@
+{
+  "short_name": "AkEsevai",
+  "name": "AkEsevai Digital Service Centre Palani",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#022c7a",
+  "theme_color": "#022c7a",
+  "display": "standalone",
+  "orientation": "portrait"
+}

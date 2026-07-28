@@ -1,0 +1,18 @@
+# Robots.txt for AkEsevai Digital Service Centre (https://www.akesevai.com/)
+User-agent: *
+Allow: /
+Allow: /services
+Allow: /status-track
+Allow: /token-generator
+Allow: /notifications
+Allow: /about
+Allow: /contact
+
+# Protect private admin panel from search crawlers
+Disallow: /admin
+Disallow: /weblink
+Disallow: /forms
+Disallow: /software
+Disallow: /photo-maker
+
+Sitemap: https://www.akesevai.com/sitemap.xml
