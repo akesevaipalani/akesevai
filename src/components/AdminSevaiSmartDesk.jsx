@@ -8,7 +8,7 @@ import { saveApplicationRecord, getStoredApplications, updateApplicationStage } 
 import { 
   subscribeExpiryDocuments, deleteExpiryDocumentCloud, 
   subscribeTokens, deleteTokenBookingCloud, 
-  subscribeCustomerProfiles 
+  subscribeCustomerProfiles, subscribeApplications 
 } from '../utils/firebaseService';
 import { printElement } from '../utils/printHelper';
 import AdminCounterVoiceAnnouncer from './AdminCounterVoiceAnnouncer';
@@ -46,6 +46,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
     let latestCloudDocs = [];
     let latestCloudTokens = [];
     let latestCustomerProfiles = {};
+    let latestCloudApps = {};
 
     const syncAllCloudData = () => {
       // 1. MERGE ALL DOCUMENTS (Ensures 4, 10, or 20 docs per customer all show up!)
@@ -90,7 +91,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
       mergedDocs.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
       setCustomerDocs(mergedDocs);
 
-      // 2. MERGE ALL TOKENS (Ensures all customer generated tokens show up!)
+      // 2. MERGE ALL TOKENS (Ensures all customer generated tokens & receipts show up!)
       const allTokensMap = new Map();
 
       if (Array.isArray(latestCloudTokens)) {
@@ -107,6 +108,31 @@ export default function AdminSevaiSmartDesk({ notify }) {
             const key = String(t.tokenNo || t.tokenId || t.id || '');
             if (key && !allTokensMap.has(key)) {
               allTokensMap.set(key, t);
+            }
+          }
+        });
+      }
+
+      if (latestCloudApps && typeof latestCloudApps === 'object') {
+        Object.values(latestCloudApps).forEach((app) => {
+          if (app && (app.tokenId || app.id)) {
+            const key = String(app.tokenId || app.id);
+            if (key && !allTokensMap.has(key)) {
+              allTokensMap.set(key, {
+                tokenNo: app.tokenId || app.id,
+                tokenId: app.tokenId || app.id,
+                id: app.id,
+                customerName: app.applicantName || 'Customer',
+                applicantName: app.applicantName || 'Customer',
+                phone: app.phone || '',
+                customerPhone: app.phone || '',
+                service: app.service || 'e-Sevai Application',
+                date: app.date || app.submittedDate || 'Today',
+                slot: 'Counter Desk',
+                paymentStatus: app.statusLabel || '✅ பதிவு செய்யப்பட்டது (Submitted)',
+                issuedAt: app.submittedDate || 'Recently',
+                updatedAt: app.updatedAt || new Date().toISOString()
+              });
             }
           }
         });
@@ -144,10 +170,16 @@ export default function AdminSevaiSmartDesk({ notify }) {
       syncAllCloudData();
     });
 
+    const unsubApps = subscribeApplications((apps) => {
+      latestCloudApps = apps && typeof apps === 'object' ? apps : {};
+      syncAllCloudData();
+    });
+
     return () => {
       if (typeof unsubDocs === 'function') unsubDocs();
       if (typeof unsubTokens === 'function') unsubTokens();
       if (typeof unsubProfiles === 'function') unsubProfiles();
+      if (typeof unsubApps === 'function') unsubApps();
     };
   }, []);
 
