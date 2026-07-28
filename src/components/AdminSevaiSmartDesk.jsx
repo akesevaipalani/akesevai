@@ -41,42 +41,107 @@ export default function AdminSevaiSmartDesk({ notify }) {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerForView, setSelectedCustomerForView] = useState(null);
 
-  // Real-time Cloud Subscriptions
+  // Real-time Cloud Subscriptions & Comprehensive Document/Token Merger
   useEffect(() => {
-    // 1. Subscribe to Documents
-    const loadMergedDocs = (cloudDocs = []) => {
-      const combined = Array.isArray(cloudDocs) ? cloudDocs : [];
-      const uniqueDocs = combined.reduce((acc, current) => {
-        const url = current.url || current.data;
-        const name = current.name;
-        if (!url && !name) return acc;
-        const exists = acc.find(item => (url && (item.url === url || item.data === url)) || (item.name === name && item.customerPhone === current.customerPhone));
-        if (!exists) {
-          acc.push({
-            ...current,
-            url: url || current.data,
-            data: url || current.data
+    let latestCloudDocs = [];
+    let latestCloudTokens = [];
+    let latestCustomerProfiles = {};
+
+    const syncAllCloudData = () => {
+      // 1. MERGE ALL DOCUMENTS (Ensures 4, 10, or 20 docs per customer all show up!)
+      const allDocsMap = new Map();
+
+      // Add from 'documents' collection
+      if (Array.isArray(latestCloudDocs)) {
+        latestCloudDocs.forEach((d) => {
+          if (d && (d.url || d.data || d.name)) {
+            const key = d.id || `${d.customerPhone}_${d.requirement || d.name}_${d.uploadedAt}`;
+            allDocsMap.set(key, {
+              ...d,
+              url: d.url || d.data || '',
+              data: d.url || d.data || ''
+            });
+          }
+        });
+      }
+
+      // Add from 'customers' collection (nested documents array)
+      if (latestCustomerProfiles && typeof latestCustomerProfiles === 'object') {
+        Object.values(latestCustomerProfiles).forEach((cust) => {
+          if (cust && Array.isArray(cust.documents)) {
+            cust.documents.forEach((docItem, idx) => {
+              if (docItem && (docItem.url || docItem.data || docItem.name)) {
+                const key = docItem.id || `${cust.phone}_${docItem.requirement || docItem.name}_${idx}`;
+                if (!allDocsMap.has(key)) {
+                  allDocsMap.set(key, {
+                    ...docItem,
+                    customerPhone: docItem.customerPhone || cust.phone || '',
+                    url: docItem.url || docItem.data || '',
+                    data: docItem.url || docItem.data || ''
+                  });
+                }
+              }
+            });
+          }
+        });
+      }
+
+      const mergedDocs = Array.from(allDocsMap.values());
+      mergedDocs.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
+      setCustomerDocs(mergedDocs);
+
+      // 2. MERGE ALL TOKENS (Ensures all customer generated tokens show up!)
+      const allTokensMap = new Map();
+
+      if (Array.isArray(latestCloudTokens)) {
+        latestCloudTokens.forEach((t) => {
+          const key = String(t.tokenNo || t.tokenId || t.id || '');
+          if (key) allTokensMap.set(key, t);
+        });
+      }
+
+      if (latestCustomerProfiles && typeof latestCustomerProfiles === 'object') {
+        Object.values(latestCustomerProfiles).forEach((cust) => {
+          if (cust && cust.lastToken) {
+            const t = cust.lastToken;
+            const key = String(t.tokenNo || t.tokenId || t.id || '');
+            if (key && !allTokensMap.has(key)) {
+              allTokensMap.set(key, t);
+            }
+          }
+        });
+      }
+
+      try {
+        const localToks = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
+        if (Array.isArray(localToks)) {
+          localToks.forEach((t) => {
+            const key = String(t.tokenNo || t.tokenId || t.id || '');
+            if (key && !allTokensMap.has(key)) {
+              allTokensMap.set(key, t);
+            }
           });
         }
-        return acc;
-      }, []);
-      setCustomerDocs(uniqueDocs);
+      } catch (e) {}
+
+      const mergedTokens = Array.from(allTokensMap.values());
+      mergedTokens.sort((a, b) => new Date(b.updatedAt || b.issuedDate || 0) - new Date(a.updatedAt || a.issuedDate || 0));
+      setCustomerTokens(mergedTokens);
     };
 
-    const unsubDocs = subscribeExpiryDocuments((docs) => loadMergedDocs(docs));
-
-    // 2. Subscribe to Tokens
-    const unsubTokens = subscribeTokens((tokens) => {
-      if (Array.isArray(tokens)) {
-        setCustomerTokens(tokens);
-      }
+    const unsubDocs = subscribeExpiryDocuments((docs) => {
+      latestCloudDocs = Array.isArray(docs) ? docs : [];
+      syncAllCloudData();
     });
 
-    // 3. Subscribe to Customer Profiles
+    const unsubTokens = subscribeTokens((tokens) => {
+      latestCloudTokens = Array.isArray(tokens) ? tokens : [];
+      syncAllCloudData();
+    });
+
     const unsubProfiles = subscribeCustomerProfiles((profiles) => {
-      if (profiles && typeof profiles === 'object') {
-        setCustomerProfiles(profiles);
-      }
+      latestCustomerProfiles = profiles && typeof profiles === 'object' ? profiles : {};
+      syncAllCloudData();
     });
 
     return () => {

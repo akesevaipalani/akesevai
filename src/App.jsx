@@ -2523,14 +2523,30 @@ const getServiceVisual = (group, title = '') => {
     const uploadDocument = async (event, requirement) => {
       const file = event.target.files?.[0];
       if (!file || !application) return;
-      if (file.size > 10 * 1024 * 1024) {
-        notify('❌ Please upload a document smaller than 10 MB.');
+
+      let targetMaxKb = 200;
+      const reqLower = String(requirement || '').toLowerCase();
+      if (reqLower.includes('photo') || reqLower.includes('signature') || reqLower.includes('thumb')) {
+        targetMaxKb = 100;
+      } else if (reqLower.includes('pdf') || reqLower.includes('certificate') || reqLower.includes('card') || reqLower.includes('aadhaar')) {
+        targetMaxKb = 200;
+      } else {
+        targetMaxKb = 300;
+      }
+
+      const rawKb = Math.round(file.size / 1024);
+      if (rawKb > 5 * 1024 && !file.type.startsWith('image/')) {
+        notify(`⚠️ Size High! (${rawKb} KB) — PDF file is too large! Please upload a file under 5 MB.`);
         return;
       }
 
-      notify(`⏳ Processing ${file.name}...`);
+      if (rawKb > targetMaxKb) {
+        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ${targetMaxKb} KB-க்குள் இருக்க வேண்டும். தானாக அமுக்கப்படுகிறது (Compressing)...`);
+      } else {
+        notify(`⏳ Processing ${file.name}...`);
+      }
 
-      // 1. Read file as Data URL INSTANTLY & Compress Images to ~50KB to fit Firestore limits!
+      // 1. Read file as Data URL INSTANTLY & Compress Images to target size!
       const rawDataUrl = await new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target?.result || '');
@@ -2549,19 +2565,29 @@ const getServiceVisual = (group, title = '') => {
           localDataUrl = await new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
-              const canvas = document.createElement('canvas');
+              let quality = 0.85;
               let w = img.width;
               let h = img.height;
-              const maxDim = 1000;
+              const maxDim = targetMaxKb <= 100 ? 800 : 1200;
               if (w > maxDim || h > maxDim) {
                 if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
                 else { w = Math.round((w * maxDim) / h); h = maxDim; }
               }
+              const canvas = document.createElement('canvas');
               canvas.width = w;
               canvas.height = h;
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0, w, h);
-              resolve(canvas.toDataURL('image/jpeg', 0.7));
+
+              let resUrl = canvas.toDataURL('image/jpeg', quality);
+              let kb = Math.round((resUrl.length * 3) / 4 / 1024);
+
+              while (kb > targetMaxKb && quality > 0.1) {
+                quality -= 0.08;
+                resUrl = canvas.toDataURL('image/jpeg', quality);
+                kb = Math.round((resUrl.length * 3) / 4 / 1024);
+              }
+              resolve(resUrl);
             };
             img.onerror = () => resolve(rawDataUrl);
             img.src = rawDataUrl;
@@ -2571,7 +2597,8 @@ const getServiceVisual = (group, title = '') => {
         }
       }
 
-      const docId = `${application.id}-${requirement}`;
+      // UNIQUE docId ensures EVERY document uploaded by a customer is saved separately!
+      const docId = `DOC-${(customer.phone || 'guest').replace(/\D/g, '')}-${requirement.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}`;
       const documentObj = {
         id: docId,
         applicationId: application.id,
@@ -2580,6 +2607,8 @@ const getServiceVisual = (group, title = '') => {
         type: file.type || 'File',
         uploadedAt: new Date().toLocaleDateString('en-IN'),
         data: localDataUrl,
+        url: localDataUrl,
+        customerPhone: customer.phone,
         storagePath: ''
       };
 
@@ -2591,7 +2620,7 @@ const getServiceVisual = (group, title = '') => {
         ]
       };
 
-      // 2. UPDATE REACT STATE & FIRESTORE CLOUD INSTANTLY — Syncs to Admin page live!
+      // 2. UPDATE REACT STATE & FIRESTORE CLOUD INSTANTLY — Syncs to Admin page live worldwide!
       updateCustomer(updatedCustomerObj);
 
       saveExpiryDocumentCloud({
