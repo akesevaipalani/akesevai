@@ -8,7 +8,7 @@ import { saveApplicationRecord, getStoredApplications, updateApplicationStage } 
 import { 
   subscribeExpiryDocuments, deleteExpiryDocumentCloud, 
   subscribeTokens, deleteTokenBookingCloud, 
-  subscribeCustomerProfiles, subscribeApplications 
+  subscribeCustomerProfiles, deleteCustomerProfileCloud, subscribeApplications 
 } from '../utils/firebaseService';
 import { printElement } from '../utils/printHelper';
 import AdminCounterVoiceAnnouncer from './AdminCounterVoiceAnnouncer';
@@ -49,31 +49,47 @@ export default function AdminSevaiSmartDesk({ notify }) {
     let latestCloudApps = {};
 
     const syncAllCloudData = () => {
-      // 1. MERGE ALL DOCUMENTS (Ensures 4, 10, or 20 docs per customer all show up!)
+      const deletedTokens = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
+      const deletedDocs = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-docs') || '[]'));
+      const deletedCustomers = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
+
+      // Filter profiles by blacklist
+      const filteredProfiles = {};
+      if (latestCustomerProfiles && typeof latestCustomerProfiles === 'object') {
+        Object.keys(latestCustomerProfiles).forEach((pKey) => {
+          const cleanP = pKey.replace(/\D/g, '');
+          if (!deletedCustomers.has(pKey) && !deletedCustomers.has(cleanP)) {
+            filteredProfiles[pKey] = latestCustomerProfiles[pKey];
+          }
+        });
+      }
+      setCustomerProfiles(filteredProfiles);
+
+      // 1. MERGE ALL DOCUMENTS (Excluding deleted docs)
       const allDocsMap = new Map();
 
-      // Add from 'documents' collection
       if (Array.isArray(latestCloudDocs)) {
         latestCloudDocs.forEach((d) => {
           if (d && (d.url || d.data || d.name)) {
             const key = d.id || `${d.customerPhone}_${d.requirement || d.name}_${d.uploadedAt}`;
-            allDocsMap.set(key, {
-              ...d,
-              url: d.url || d.data || '',
-              data: d.url || d.data || ''
-            });
+            if (!deletedDocs.has(key) && !deletedDocs.has(String(d.id))) {
+              allDocsMap.set(key, {
+                ...d,
+                url: d.url || d.data || '',
+                data: d.url || d.data || ''
+              });
+            }
           }
         });
       }
 
-      // Add from 'customers' collection (nested documents array)
-      if (latestCustomerProfiles && typeof latestCustomerProfiles === 'object') {
-        Object.values(latestCustomerProfiles).forEach((cust) => {
+      if (filteredProfiles && typeof filteredProfiles === 'object') {
+        Object.values(filteredProfiles).forEach((cust) => {
           if (cust && Array.isArray(cust.documents)) {
             cust.documents.forEach((docItem, idx) => {
               if (docItem && (docItem.url || docItem.data || docItem.name)) {
                 const key = docItem.id || `${cust.phone}_${docItem.requirement || docItem.name}_${idx}`;
-                if (!allDocsMap.has(key)) {
+                if (!deletedDocs.has(key) && !deletedDocs.has(String(docItem.id)) && !allDocsMap.has(key)) {
                   allDocsMap.set(key, {
                     ...docItem,
                     customerPhone: docItem.customerPhone || cust.phone || '',
@@ -91,19 +107,29 @@ export default function AdminSevaiSmartDesk({ notify }) {
       mergedDocs.sort((a, b) => new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0));
       setCustomerDocs(mergedDocs);
 
-      // 2. MERGE ALL TOKENS (Ensures all customer generated tokens & receipts show up!)
+      // 2. MERGE ALL TOKENS (Excluding deleted tokens)
       const allTokensMap = new Map();
+
+      const isTokenDeleted = (tok) => {
+        if (!tok) return true;
+        const keys = [
+          String(tok.tokenNo || ''),
+          String(tok.tokenId || ''),
+          String(tok.id || '')
+        ];
+        return keys.some((k) => k && deletedTokens.has(k));
+      };
 
       if (Array.isArray(latestCloudTokens)) {
         latestCloudTokens.forEach((t) => {
           const key = String(t.tokenNo || t.tokenId || t.id || '');
-          if (key) allTokensMap.set(key, t);
+          if (key && !isTokenDeleted(t)) allTokensMap.set(key, t);
         });
       }
 
-      if (latestCustomerProfiles && typeof latestCustomerProfiles === 'object') {
-        Object.values(latestCustomerProfiles).forEach((cust) => {
-          if (cust && cust.lastToken) {
+      if (filteredProfiles && typeof filteredProfiles === 'object') {
+        Object.values(filteredProfiles).forEach((cust) => {
+          if (cust && cust.lastToken && !isTokenDeleted(cust.lastToken)) {
             const t = cust.lastToken;
             const key = String(t.tokenNo || t.tokenId || t.id || '');
             if (key && !allTokensMap.has(key)) {
@@ -117,7 +143,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
         Object.values(latestCloudApps).forEach((app) => {
           if (app && (app.tokenId || app.id)) {
             const key = String(app.tokenId || app.id);
-            if (key && !allTokensMap.has(key)) {
+            if (key && !isTokenDeleted({ tokenNo: key, tokenId: key, id: key }) && !allTokensMap.has(key)) {
               allTokensMap.set(key, {
                 tokenNo: app.tokenId || app.id,
                 tokenId: app.tokenId || app.id,
@@ -143,7 +169,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
         if (Array.isArray(localToks)) {
           localToks.forEach((t) => {
             const key = String(t.tokenNo || t.tokenId || t.id || '');
-            if (key && !allTokensMap.has(key)) {
+            if (key && !isTokenDeleted(t) && !allTokensMap.has(key)) {
               allTokensMap.set(key, t);
             }
           });
@@ -154,6 +180,9 @@ export default function AdminSevaiSmartDesk({ notify }) {
       mergedTokens.sort((a, b) => new Date(b.updatedAt || b.issuedDate || 0) - new Date(a.updatedAt || a.issuedDate || 0));
       setCustomerTokens(mergedTokens);
     };
+
+    const handleSyncEvent = () => syncAllCloudData();
+    window.addEventListener('akesevai-data-changed', handleSyncEvent);
 
     const unsubDocs = subscribeExpiryDocuments((docs) => {
       latestCloudDocs = Array.isArray(docs) ? docs : [];
@@ -176,6 +205,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
     });
 
     return () => {
+      window.removeEventListener('akesevai-data-changed', handleSyncEvent);
       if (typeof unsubDocs === 'function') unsubDocs();
       if (typeof unsubTokens === 'function') unsubTokens();
       if (typeof unsubProfiles === 'function') unsubProfiles();
@@ -839,10 +869,10 @@ export default function AdminSevaiSmartDesk({ notify }) {
                           <button
                             type="button"
                             onClick={async () => {
-                              if (window.confirm(`Are you sure you want to delete Token ${tokenNum}?`)) {
-                                setCustomerTokens((prev) => prev.filter((t) => (t.tokenNo || t.id) !== tokenNum));
-                                await deleteTokenBookingCloud(tokenNum);
-                                if (notify) notify(`🗑️ Token ${tokenNum} deleted!`);
+                              if (window.confirm(`Are you sure you want to delete Token ${tokenNum}? This will delete the token across all pages & database.`)) {
+                                setCustomerTokens((prev) => prev.filter((t) => (t.tokenNo || t.id || t.tokenId) !== tokenNum));
+                                await deleteTokenBookingCloud(tokenNum, custPhone);
+                                if (notify) notify(`🗑️ Token ${tokenNum} deleted from all pages & database!`);
                               }
                             }}
                             style={{
@@ -855,6 +885,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
                               fontWeight: 800,
                               cursor: 'pointer'
                             }}
+                            title="Delete Token Slip Everywhere"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -985,11 +1016,11 @@ export default function AdminSevaiSmartDesk({ notify }) {
                         <button
                           onClick={async () => {
                             const reqName = docItem.requirement || docItem.name || 'Document';
-                            if (window.confirm(`Are you sure you want to delete "${reqName}"?`)) {
-                              const targetId = docItem.id || docItem.url;
-                              setCustomerDocs((prev) => prev.filter((d) => d.id !== targetId && d.url !== targetId));
+                            const targetId = docItem.id || docItem.url || docItem.data;
+                            if (window.confirm(`Are you sure you want to delete "${reqName}"? This will delete the document across all pages & database.`)) {
+                              setCustomerDocs((prev) => prev.filter((d) => String(d.id || d.url || d.data) !== String(targetId)));
                               await deleteExpiryDocumentCloud(targetId, docItem.customerPhone);
-                              if (notify) notify(`🗑️ Document "${reqName}" deleted!`);
+                              if (notify) notify(`🗑️ Document "${reqName}" deleted from all pages & database!`);
                             }
                           }}
                           style={{
@@ -1005,6 +1036,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
                             fontWeight: 800,
                             cursor: 'pointer'
                           }}
+                          title="Delete Document Everywhere"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -1128,6 +1160,52 @@ export default function AdminSevaiSmartDesk({ notify }) {
                         >
                           Call
                         </a>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const custName = cust.name || 'Customer';
+                            const custPhone = cust.phone || '';
+                            if (!custPhone) return;
+
+                            if (
+                              window.confirm(
+                                `Are you sure you want to delete customer profile for "${custName}" (+91 ${custPhone})?\n\n` +
+                                `This will delete customer records, uploaded documents, token slips, and applications everywhere across all pages and database!`
+                              )
+                            ) {
+                              setCustomerProfiles((prev) => {
+                                const copy = { ...prev };
+                                delete copy[custPhone];
+                                delete copy[`+91${custPhone}`];
+                                delete copy[`91${custPhone}`];
+                                return copy;
+                              });
+                              setCustomerDocs((prev) => prev.filter((d) => String(d.customerPhone || '').replace(/\D/g, '') !== String(custPhone).replace(/\D/g, '')));
+                              setCustomerTokens((prev) => prev.filter((t) => String(t.phone || t.customerPhone || '').replace(/\D/g, '') !== String(custPhone).replace(/\D/g, '')));
+
+                              await deleteCustomerProfileCloud(custPhone);
+
+                              if (notify) notify(`🗑️ Customer profile for ${custName} (+91 ${custPhone}) and all tokens/docs deleted everywhere!`);
+                            }
+                          }}
+                          style={{
+                            background: '#fef2f2',
+                            color: '#dc2626',
+                            border: '1px solid #fca5a5',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="Delete Customer Profile & All Data"
+                        >
+                          <Trash2 size={14} /> நீக்கு
+                        </button>
                       </div>
                     </div>
                   ))}

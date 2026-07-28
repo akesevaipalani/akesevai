@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage, isFirebaseConfigured } from '../config/firebase';
+import { deleteApplicationRecord } from './statusStore';
 
 const CUSTOMERS_COLLECTION = 'customers';
 const APPLICATIONS_COLLECTION = 'applications';
@@ -92,12 +93,84 @@ export const deleteCustomerProfileCloud = async (phone) => {
   const cleanPhone = strPhone.replace(/\D/g, '');
 
   const targets = new Set([strPhone, cleanPhone, `+91${cleanPhone}`, `91${cleanPhone}`]);
+
+  // 1. Delete customer doc from 'customers' collection
   for (const targetId of targets) {
     if (targetId) {
       try {
         await deleteDoc(doc(db, CUSTOMERS_COLLECTION, targetId));
       } catch (e) {}
     }
+  }
+
+  // 2. Cascade delete tokens from 'tokens' collection
+  try {
+    const qTokens = query(collection(db, TOKENS_COLLECTION), where('phone', '==', cleanPhone));
+    const snapTokens = await getDocs(qTokens);
+    snapTokens.forEach(async (dSnap) => {
+      try { await deleteDoc(dSnap.ref); } catch (e) {}
+    });
+  } catch (e) {}
+
+  // 3. Cascade delete documents from 'documents' collection
+  try {
+    const qDocs = query(collection(db, DOCUMENTS_COLLECTION), where('customerPhone', '==', cleanPhone));
+    const snapDocs = await getDocs(qDocs);
+    snapDocs.forEach(async (dSnap) => {
+      try { await deleteDoc(dSnap.ref); } catch (e) {}
+    });
+  } catch (e) {}
+
+  // 4. Cascade delete applications from 'applications' collection
+  try {
+    const qApps = query(collection(db, APPLICATIONS_COLLECTION), where('phone', '==', cleanPhone));
+    const snapApps = await getDocs(qApps);
+    snapApps.forEach(async (dSnap) => {
+      try { await deleteDoc(dSnap.ref); } catch (e) {}
+    });
+  } catch (e) {}
+
+  // 5. Clean up LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const recordsRaw = localStorage.getItem('akesevai-customer-records');
+      if (recordsRaw) {
+        const records = JSON.parse(recordsRaw);
+        delete records[cleanPhone];
+        delete records[strPhone];
+        delete records[`+91${cleanPhone}`];
+        localStorage.setItem('akesevai-customer-records', JSON.stringify(records));
+      }
+
+      const sessionPhone = sessionStorage.getItem('akesevai-customer-session') || localStorage.getItem('akesevai-customer-session');
+      if (sessionPhone && sessionPhone.replace(/\D/g, '') === cleanPhone) {
+        sessionStorage.removeItem('akesevai-customer-session');
+        localStorage.removeItem('akesevai-customer-session');
+      }
+
+      const tokensRaw = localStorage.getItem('akesevai-token-bookings');
+      if (tokensRaw) {
+        const tokensArr = JSON.parse(tokensRaw);
+        const filteredTokens = tokensArr.filter(t => String(t.phone || t.customerPhone || '').replace(/\D/g, '') !== cleanPhone);
+        localStorage.setItem('akesevai-token-bookings', JSON.stringify(filteredTokens));
+      }
+
+      const expDocsRaw = localStorage.getItem('akesevai_expiry_docs');
+      if (expDocsRaw) {
+        const expDocsArr = JSON.parse(expDocsRaw);
+        const filteredDocs = expDocsArr.filter(d => String(d.customerPhone || '').replace(/\D/g, '') !== cleanPhone);
+        localStorage.setItem('akesevai_expiry_docs', JSON.stringify(filteredDocs));
+      }
+      const delCustSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
+      delCustSet.add(cleanPhone);
+      delCustSet.add(strPhone);
+      delCustSet.add(`+91${cleanPhone}`);
+      localStorage.setItem('akesevai-deleted-customers', JSON.stringify(Array.from(delCustSet)));
+    } catch (e) {}
+
+    try {
+      window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'customer', phone: cleanPhone } }));
+    } catch (e) {}
   }
 };
 
@@ -196,14 +269,82 @@ export const saveTokenBookingCloud = async (tokenData) => {
   }
 };
 
-export const deleteTokenBookingCloud = async (tokenNo) => {
+export const deleteTokenBookingCloud = async (tokenNo, customerPhone = '') => {
   if (!tokenNo) return;
+  const strTokenNo = String(tokenNo);
 
+  // 1. Delete direct document ID from 'tokens' collection
   try {
-    const docRef = doc(db, TOKENS_COLLECTION, String(tokenNo));
+    const docRef = doc(db, TOKENS_COLLECTION, strTokenNo);
     await deleteDoc(docRef);
   } catch (err) {
     logFirebaseNotice('Token cloud delete', err);
+  }
+
+  // 2. Query 'tokens' collection by tokenNo/tokenId/id and delete
+  try {
+    const q1 = query(collection(db, TOKENS_COLLECTION), where('tokenNo', '==', strTokenNo));
+    const snap1 = await getDocs(q1);
+    snap1.forEach(async (dSnap) => {
+      try { await deleteDoc(dSnap.ref); } catch (e) {}
+    });
+  } catch (e) {}
+
+  // 3. Remove lastToken reference from customer profile in 'customers' collection
+  const cleanPhone = String(customerPhone).replace(/\D/g, '');
+  if (cleanPhone) {
+    try {
+      const custRef = doc(db, CUSTOMERS_COLLECTION, cleanPhone);
+      const custSnap = await getDoc(custRef);
+      if (custSnap.exists()) {
+        const custData = custSnap.data();
+        if (custData.lastToken && String(custData.lastToken.tokenNo || custData.lastToken.tokenId || custData.lastToken.id) === strTokenNo) {
+          await setDoc(custRef, { ...custData, lastToken: null, updatedAt: new Date().toISOString() }, { merge: true });
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 4. Delete matching application from 'applications' collection
+  try {
+    const qApp = query(collection(db, APPLICATIONS_COLLECTION), where('tokenId', '==', strTokenNo));
+    const snapApp = await getDocs(qApp);
+    snapApp.forEach(async (dSnap) => {
+      try { await deleteDoc(dSnap.ref); } catch (e) {}
+    });
+  } catch (e) {}
+
+  // 5. Clean up LocalStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const tokensRaw = localStorage.getItem('akesevai-token-bookings');
+      if (tokensRaw) {
+        const tokensArr = JSON.parse(tokensRaw);
+        const filtered = tokensArr.filter(t => String(t.tokenNo || t.tokenId || t.id) !== strTokenNo);
+        localStorage.setItem('akesevai-token-bookings', JSON.stringify(filtered));
+      }
+
+      const recordsRaw = localStorage.getItem('akesevai-customer-records');
+      if (recordsRaw) {
+        const records = JSON.parse(recordsRaw);
+        let modified = false;
+        Object.keys(records).forEach(k => {
+          if (records[k]?.lastToken && String(records[k].lastToken.tokenNo || records[k].lastToken.tokenId || records[k].lastToken.id) === strTokenNo) {
+            records[k].lastToken = null;
+            modified = true;
+          }
+        });
+        if (modified) localStorage.setItem('akesevai-customer-records', JSON.stringify(records));
+      }
+      deleteApplicationRecord(strTokenNo);
+      const delTokensSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
+      delTokensSet.add(strTokenNo);
+      localStorage.setItem('akesevai-deleted-tokens', JSON.stringify(Array.from(delTokensSet)));
+    } catch (e) {}
+
+    try {
+      window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'token', tokenNo: strTokenNo } }));
+    } catch (e) {}
   }
 };
 
@@ -330,6 +471,54 @@ export const deleteExpiryDocumentCloud = async (docId, customerPhone = '') => {
           );
           await setDoc(custRef, { ...custData, documents: updatedDocs, updatedAt: new Date().toISOString() }, { merge: true });
         }
+      } catch (e) {}
+    } else {
+      try {
+        const qCust = collection(db, CUSTOMERS_COLLECTION);
+        const snapCust = await getDocs(qCust);
+        snapCust.forEach(async (cSnap) => {
+          const custData = cSnap.data();
+          if (custData && Array.isArray(custData.documents)) {
+            const hasDoc = custData.documents.some((d) => String(d.id) === strId || String(d.url || d.data) === strId || d.requirement === docId);
+            if (hasDoc) {
+              const updatedDocs = custData.documents.filter((d) => String(d.id) !== strId && String(d.url || d.data) !== strId && d.requirement !== docId);
+              await setDoc(cSnap.ref, { ...custData, documents: updatedDocs, updatedAt: new Date().toISOString() }, { merge: true });
+            }
+          }
+        });
+      } catch (e) {}
+    }
+
+    // 4. Clean up LocalStorage
+    if (typeof window !== 'undefined') {
+      try {
+        const expDocsRaw = localStorage.getItem('akesevai_expiry_docs');
+        if (expDocsRaw) {
+          const expDocsArr = JSON.parse(expDocsRaw);
+          const filteredDocs = expDocsArr.filter(d => String(d.id) !== strId && String(d.url || d.data) !== strId && d.requirement !== docId);
+          localStorage.setItem('akesevai_expiry_docs', JSON.stringify(filteredDocs));
+        }
+
+        const recordsRaw = localStorage.getItem('akesevai-customer-records');
+        if (recordsRaw) {
+          const records = JSON.parse(recordsRaw);
+          let modified = false;
+          Object.keys(records).forEach(k => {
+            if (Array.isArray(records[k]?.documents)) {
+              const prevLen = records[k].documents.length;
+              records[k].documents = records[k].documents.filter(d => String(d.id) !== strId && String(d.url || d.data) !== strId && d.requirement !== docId);
+              if (records[k].documents.length !== prevLen) modified = true;
+            }
+          });
+          if (modified) localStorage.setItem('akesevai-customer-records', JSON.stringify(records));
+        }
+        const delDocsSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-docs') || '[]'));
+        delDocsSet.add(strId);
+        localStorage.setItem('akesevai-deleted-docs', JSON.stringify(Array.from(delDocsSet)));
+      } catch (e) {}
+
+      try {
+        window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'document', id: strId } }));
       } catch (e) {}
     }
   } catch (err) {

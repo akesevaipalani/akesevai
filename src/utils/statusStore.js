@@ -68,3 +68,15 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
   }
   return null;
 };
+
+export const deleteApplicationRecord = (targetId) => {
+  if (!targetId) return;
+  const strId = String(targetId);
+  Object.keys(inMemoryApplications).forEach((key) => {
+    const app = inMemoryApplications[key];
+    if (key === strId || app?.id === strId || app?.tokenId === strId) {
+      delete inMemoryApplications[key];
+    }
+  });
+};
+

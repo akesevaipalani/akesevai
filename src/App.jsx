@@ -531,12 +531,34 @@ function App() {
       }
     });
 
+    const handleDataChanged = () => {
+      const updatedRecords = readCustomerRecords();
+      const updatedTokens = readTokenBookings();
+      setCustomerRecords(updatedRecords);
+      setTokenBookings(updatedTokens);
+
+      const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
+      if (activePhone) {
+        const cleanActivePhone = String(activePhone).replace(/\D/g, '');
+        if (!updatedRecords[cleanActivePhone] && !updatedRecords[activePhone]) {
+          setCustomer(null);
+          sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
+          localStorage.removeItem(CUSTOMER_SESSION_KEY);
+        } else {
+          setCustomer(updatedRecords[cleanActivePhone] || updatedRecords[activePhone]);
+        }
+      }
+    };
+
+    window.addEventListener('akesevai-data-changed', handleDataChanged);
+
     return () => {
       unsubscribeTokens();
       unsubscribeProfiles();
       unsubscribeApps();
       unsubscribeDocs();
       unsubscribeVisitor();
+      window.removeEventListener('akesevai-data-changed', handleDataChanged);
     };
   }, []);
 

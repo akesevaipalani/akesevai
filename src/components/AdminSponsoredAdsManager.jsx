@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Megaphone, Plus, Trash2, Edit3, CheckCircle2, Phone, MessageCircle, 
   Sparkles, RefreshCw, ImagePlus, SlidersHorizontal, X, UploadCloud, 
-  Clock, Timer, Zap, Download, Wand2, Layers, Maximize2, Eye, ShieldCheck 
+  Clock, Timer, Zap, Download, Wand2, Layers, Maximize2, Eye, ShieldCheck, Settings, Bot, Lightbulb 
 } from 'lucide-react';
 import { subscribeSponsoredAds, saveSponsoredAdCloud, deleteSponsoredAdCloud } from '../utils/firebaseService';
 
@@ -45,6 +45,240 @@ const DEFAULT_ADS = [
   }
 ];
 
+// Helper NLP parser to convert ChatGPT-style text prompts into banner metadata
+export const parsePromptToAdContent = (promptText) => {
+  if (!promptText || !promptText.trim()) return null;
+  const p = promptText.trim();
+  const lower = p.toLowerCase();
+
+  // 1. Theme Detection
+  let theme = 'modern';
+  if (lower.includes('temple') || lower.includes('gold') || lower.includes('crimson') || lower.includes('பாரம்பரியம்') || lower.includes('கோவில்')) {
+    theme = 'traditional';
+  } else if (lower.includes('cyber') || lower.includes('neon') || lower.includes('mobile') || lower.includes('tech') || lower.includes('டிஜிட்டல்')) {
+    theme = 'neon';
+  } else if (lower.includes('luxury') || lower.includes('car') || lower.includes('travels') || lower.includes('emerald') || lower.includes('கார்')) {
+    theme = 'luxury';
+  } else if (lower.includes('food') || lower.includes('restaurant') || lower.includes('hotel') || lower.includes('உணவகம்') || lower.includes('ஸ்வீட்ஸ்')) {
+    theme = 'sunset';
+  } else if (lower.includes('festive') || lower.includes('diwali') || lower.includes('pongal') || lower.includes('சலுகை')) {
+    theme = 'festive';
+  } else if (lower.includes('black') || lower.includes('stealth')) {
+    theme = 'stealth';
+  }
+
+  // 2. Offer Extraction (e.g. 20%, 10%, free, ஆஃபர்)
+  let offer = '🎁 AkEsevai வாடிக்கையாளர்களுக்கு 15% தள்ளுபடி!';
+  const pctMatch = p.match(/(\d+%\s*(off|ஆஃபர்|தள்ளுபடி|discount)?)/i);
+  if (pctMatch) {
+    offer = `🎁 ${pctMatch[1].toUpperCase()} (Special Offer)`;
+  } else if (lower.includes('free') || lower.includes('இலவசம்')) {
+    offer = '🎁 இலவச பரிசுகள் & சிறப்பு சலுகைகள்!';
+  }
+
+  // 3. Title Extraction
+  let title = '🏛️ AkEsevai ஸ்பெஷல் பார்ட்னர் (Special Partner Banner)';
+  if (lower.includes('computer') || lower.includes('கம்ப்யூட்டர்') || lower.includes('laptop') || lower.includes('லேப்டாப்')) {
+    title = '💻 ஸ்ரீ பாலாஜி கம்ப்யூட்டர்ஸ் & லேப்டாப் சர்வீஸ் (Balaji Computers)';
+  } else if (lower.includes('print') || lower.includes('xerox') || lower.includes('பிரிண்டிங்') || lower.includes('ஜெராக்ஸ்')) {
+    title = '🏛️ ஸ்ரீ பாலமுருகன் பிரிண்டிங் & கலர் ஜெராக்ஸ் (Balamurugan Prints)';
+  } else if (lower.includes('travel') || lower.includes('cab') || lower.includes('ட்ராவல்ஸ்') || lower.includes('கார்')) {
+    title = '🚗 ஸ்ரீ விநாயகர் 24x7 ட்ராவல்ஸ் & கார் வாடகை (Vinayagar Travels)';
+  } else if (lower.includes('food') || lower.includes('hotel') || lower.includes('உணவகம்') || lower.includes('ஹோட்டல்')) {
+    title = '🍽️ அன்னபூர்ணா ஸ்ரீ ஹரி பவன் உயர்தர உணவகம் (Hari Bhavan)';
+  } else if (lower.includes('mobile') || lower.includes('மொபைல்')) {
+    title = '📱 ஸ்ரீ முருகன் மொபைல்ஸ் & கேஜெட்ஸ் (Murugan Mobiles)';
+  } else {
+    const firstLine = p.split('\n')[0].replace(/create|generate|banner|for|a|in|palani|உருவாக்கவும்|பானர்/gi, '').trim();
+    if (firstLine.length >= 4) {
+      title = `✨ ${firstLine.slice(0, 50)}`;
+    }
+  }
+
+  // 4. Tagline Synthesis
+  let tagline = p;
+  if (p.length > 90) {
+    tagline = p.slice(0, 85) + '...';
+  } else if (p.length < 15) {
+    tagline = `${p} — பழனியில் AkEsevai வாடிக்கையாளர்களுக்கு பிரத்யேக சலுகை!`;
+  }
+
+  return { title, tagline, offer, theme };
+};
+
+// Helper to synthesize custom-sized high quality advertisement banner images via Canvas
+export const generateBannerImageFromData = ({
+  title = '',
+  tagline = '',
+  offer = '',
+  address = '',
+  phone = '',
+  badge = '⭐ GOLD SPONSOR',
+  bannerSize = 'medium',
+  customW = 800,
+  customH = 500,
+  theme = 'modern'
+}) => {
+  let w = 800;
+  let h = 500;
+
+  if (bannerSize === 'custom') {
+    w = Math.max(200, Math.min(3000, Number(customW) || 800));
+    h = Math.max(100, Math.min(3000, Number(customH) || 500));
+  } else if (bannerSize === 'hero') { w = 1200; h = 400; }
+  else if (bannerSize === 'wide') { w = 1200; h = 200; }
+  else if (bannerSize === 'square') { w = 1080; h = 1080; }
+  else if (bannerSize === 'story') { w = 1080; h = 1920; }
+  else { w = 800; h = 500; } // medium
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+
+  // Background Gradient
+  let grad;
+  if (theme === 'traditional') {
+    grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#780c0c');
+    grad.addColorStop(0.5, '#b91c1c');
+    grad.addColorStop(1, '#450a0a');
+  } else if (theme === 'neon') {
+    grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#0f172a');
+    grad.addColorStop(0.5, '#581c87');
+    grad.addColorStop(1, '#0e7490');
+  } else if (theme === 'luxury') {
+    grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#064e3b');
+    grad.addColorStop(0.5, '#022c22');
+    grad.addColorStop(1, '#14532d');
+  } else if (theme === 'sunset') {
+    grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#7c2d12');
+    grad.addColorStop(0.5, '#c2410c');
+    grad.addColorStop(1, '#431407');
+  } else if (theme === 'festive') {
+    grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#581c87');
+    grad.addColorStop(0.5, '#831843');
+    grad.addColorStop(1, '#312e81');
+  } else if (theme === 'stealth') {
+    grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#09090b');
+    grad.addColorStop(0.5, '#18181b');
+    grad.addColorStop(1, '#27272a');
+  } else {
+    // modern (default)
+    grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#022c7a');
+    grad.addColorStop(0.5, '#1e1b4b');
+    grad.addColorStop(1, '#0f172a');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Decorative Ambient Light Orbs
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.beginPath();
+  ctx.arc(w * 0.85, h * 0.2, Math.min(w, h) * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+  ctx.beginPath();
+  ctx.arc(w * 0.15, h * 0.8, Math.min(w, h) * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Outer Border Frame
+  const isGoldTheme = theme === 'luxury' || theme === 'traditional' || theme === 'sunset';
+  const borderCol = isGoldTheme ? '#fbbf24' : theme === 'stealth' ? '#facc15' : '#38bdf8';
+  ctx.strokeStyle = borderCol;
+  ctx.lineWidth = Math.max(4, Math.round(Math.min(w, h) * 0.015));
+  ctx.strokeRect(12, 12, w - 24, h - 24);
+
+  // Inner Accent Frame
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = Math.max(1.5, Math.round(Math.min(w, h) * 0.005));
+  ctx.strokeRect(20, 20, w - 40, h - 40);
+
+  // 1. Top Badge / Header Kicker
+  ctx.fillStyle = borderCol;
+  const badgeStr = `✨ ${badge || 'OFFICIAL SPONSORED BANNER'} • AkEsevai 2026`;
+  const fontSizeBadge = Math.max(12, Math.round(h * 0.04));
+  ctx.font = `bold ${fontSizeBadge}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(badgeStr, w / 2, h * 0.16);
+
+  // 2. Business Title (Wrapped)
+  ctx.fillStyle = '#ffffff';
+  const fontSizeTitle = Math.max(20, Math.round(h * 0.08));
+  ctx.font = `900 ${fontSizeTitle}px Arial, sans-serif`;
+
+  const words = (title || 'Business Banner Title').split(' ');
+  let line = '';
+  let y = h * 0.33;
+  const maxWidth = w * 0.86;
+
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + words[n] + ' ';
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxWidth && n > 0) {
+      ctx.fillText(line, w / 2, y);
+      line = words[n] + ' ';
+      y += fontSizeTitle * 1.25;
+    } else {
+      line = testLine;
+    }
+  }
+  ctx.fillText(line, w / 2, y);
+
+  // 3. Tagline / Description
+  if (tagline) {
+    ctx.fillStyle = '#e2e8f0';
+    const fontSizeTag = Math.max(13, Math.round(h * 0.045));
+    ctx.font = `bold ${fontSizeTag}px Arial, sans-serif`;
+    y += fontSizeTag * 1.8;
+    ctx.fillText(tagline, w / 2, y);
+  }
+
+  // 4. Special Offer Pill
+  if (offer) {
+    y += h * 0.12;
+    const offerText = offer.toUpperCase();
+    const fontSizeOffer = Math.max(14, Math.round(h * 0.05));
+    ctx.font = `bold ${fontSizeOffer}px Arial, sans-serif`;
+    const textWidth = ctx.measureText(offerText).width;
+
+    const pillW = textWidth + 36;
+    const pillH = Math.max(32, Math.round(h * 0.085));
+    const pillX = (w - pillW) / 2;
+    const pillY = y - pillH * 0.65;
+
+    ctx.fillStyle = borderCol;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, pillH / 2);
+    ctx.fill();
+
+    ctx.fillStyle = theme === 'stealth' ? '#000000' : '#022c7a';
+    ctx.fillText(offerText, w / 2, pillY + pillH * 0.7);
+  }
+
+  // 5. Contact & Location Footer Pill
+  const contactText = [phone ? `📞 +91 ${phone}` : '', address ? `📍 ${address}` : ''].filter(Boolean).join(' | ');
+  if (contactText && h > 250) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.font = `bold ${Math.max(11, Math.round(h * 0.035))}px Arial, sans-serif`;
+    ctx.fillText(contactText, w / 2, h - 42);
+  }
+
+  // Watermark Footer
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.font = `${Math.max(9, Math.round(h * 0.026))}px Arial, sans-serif`;
+  ctx.fillText('POWERED BY AKESEVAI AI BANNER STUDIO', w / 2, h - 20);
+
+  return canvas.toDataURL('image/jpeg', 0.92);
+};
+
 export default function AdminSponsoredAdsManager({ notify }) {
   const [ads, setAds] = useState(DEFAULT_ADS);
   const [showForm, setShowForm] = useState(false);
@@ -60,21 +294,28 @@ export default function AdminSponsoredAdsManager({ notify }) {
     phone: '9342318844',
     whatsapp: '919342318844',
     image: '',
-    bannerSize: 'medium', // 'hero' (1200x400), 'wide' (728x90), 'square' (1080x1080), 'story' (1080x1920), 'medium' (400x250)
+    bannerSize: 'medium', // 'hero' (1200x400), 'wide' (1200x200), 'square' (1080x1080), 'story' (1080x1920), 'medium' (800x500), 'custom'
+    customWidth: 800,
+    customHeight: 500,
+    formTheme: 'modern',
     runDurationHours: 24, // Preset in hours (0 = Unlimited)
     startTime: new Date().toISOString()
   });
 
-  // AI Image Generator State
+  // ChatGPT AI Prompt Generator State
+  const [aiPromptText, setAiPromptText] = useState('');
+
+  // AI Image Generator Modal State
   const [showAiModal, setShowAiModal] = useState(false);
   const [aiTitle, setAiTitle] = useState('');
   const [aiTagline, setAiTagline] = useState('');
   const [aiOffer, setAiOffer] = useState('🎁 10% தள்ளுபடி (10% OFF)');
-  const [aiTheme, setAiTheme] = useState('modern'); // 'modern', 'traditional', 'neon', 'luxury', 'emerald'
+  const [aiTheme, setAiTheme] = useState('modern');
   const [aiBannerSize, setAiBannerSize] = useState('medium');
+  const [aiCustomWidth, setAiCustomWidth] = useState(800);
+  const [aiCustomHeight, setAiCustomHeight] = useState(500);
   const [generatedAiImage, setGeneratedAiImage] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const canvasRef = useRef(null);
 
   // Live timer tick for calculating remaining run time
   const [nowTime, setNowTime] = useState(Date.now());
@@ -116,9 +357,13 @@ export default function AdminSponsoredAdsManager({ notify }) {
       whatsapp: '919342318844',
       image: '',
       bannerSize: 'medium',
+      customWidth: 800,
+      customHeight: 500,
+      formTheme: 'modern',
       runDurationHours: 24,
       startTime: new Date().toISOString()
     });
+    setAiPromptText('');
     setShowForm(true);
   };
 
@@ -135,6 +380,9 @@ export default function AdminSponsoredAdsManager({ notify }) {
       whatsapp: ad.whatsapp || '',
       image: ad.image || '',
       bannerSize: ad.bannerSize || 'medium',
+      customWidth: ad.customWidth || 800,
+      customHeight: ad.customHeight || 500,
+      formTheme: ad.formTheme || 'modern',
       runDurationHours: ad.runDurationHours ?? 24,
       startTime: ad.startTime || new Date().toISOString()
     });
@@ -157,6 +405,71 @@ export default function AdminSponsoredAdsManager({ notify }) {
       if (notify) notify('🖼️ படம் பதிவேற்றப்பட்டது!');
     };
     reader.readAsDataURL(file);
+  };
+
+  // ChatGPT-style Prompt Generator Action
+  const handleGenerateViaAiPrompt = (promptString = '') => {
+    const targetPrompt = promptString || aiPromptText;
+    if (!targetPrompt.trim()) {
+      if (notify) notify('⚠️ தயவுசெய்து AI Prompt கட்டத்தில் விளம்பரக் குறிப்பை உள்ளிடவும்!');
+      return;
+    }
+
+    setIsGenerating(true);
+    const parsed = parsePromptToAdContent(targetPrompt);
+
+    setTimeout(() => {
+      if (parsed) {
+        const dataUrl = generateBannerImageFromData({
+          title: parsed.title,
+          tagline: parsed.tagline,
+          offer: parsed.offer,
+          address: formAdData.address,
+          phone: formAdData.phone,
+          badge: formAdData.badge,
+          bannerSize: formAdData.bannerSize,
+          customW: formAdData.customWidth,
+          customH: formAdData.customHeight,
+          theme: parsed.theme
+        });
+
+        setFormAdData((prev) => ({
+          ...prev,
+          title: parsed.title,
+          tagline: parsed.tagline,
+          offer: parsed.offer,
+          formTheme: parsed.theme,
+          image: dataUrl
+        }));
+
+        if (notify) notify('✨ ChatGPT AI Prompt மூலம் அழகிய விளம்பர படம் & விவரங்கள் நொடியில் உருவாக்கப்பட்டன!');
+      }
+      setIsGenerating(false);
+    }, 400);
+  };
+
+  // Instant AI Image Generation directly from Form Inputs
+  const handleGenerateImageFromForm = () => {
+    if (!formAdData.title.trim()) {
+      if (notify) notify('⚠️ தயவுசெய்து முதலில் கடை பெயர்/தலைப்பை உள்ளிடவும்!');
+      return;
+    }
+
+    const dataUrl = generateBannerImageFromData({
+      title: formAdData.title,
+      tagline: formAdData.tagline,
+      offer: formAdData.offer,
+      address: formAdData.address,
+      phone: formAdData.phone,
+      badge: formAdData.badge,
+      bannerSize: formAdData.bannerSize,
+      customW: formAdData.customWidth,
+      customH: formAdData.customHeight,
+      theme: formAdData.formTheme
+    });
+
+    setFormAdData((prev) => ({ ...prev, image: dataUrl }));
+    if (notify) notify('✨ படிவ விவரங்களிலிருந்து HD விளம்பரப் படம் நொடியில் உருவாக்கப்பட்டது!');
   };
 
   // Calculate End Time based on Duration
@@ -182,6 +495,23 @@ export default function AdminSponsoredAdsManager({ notify }) {
     const runDurationHours = Number(formAdData.runDurationHours);
     const endTime = computeEndTime(startTime, runDurationHours);
 
+    // Auto generate banner image if admin didn't upload or create one yet
+    let finalImage = formAdData.image;
+    if (!finalImage) {
+      finalImage = generateBannerImageFromData({
+        title: formAdData.title,
+        tagline: formAdData.tagline,
+        offer: formAdData.offer,
+        address: formAdData.address,
+        phone: formAdData.phone,
+        badge: formAdData.badge,
+        bannerSize: formAdData.bannerSize,
+        customW: formAdData.customWidth,
+        customH: formAdData.customHeight,
+        theme: formAdData.formTheme
+      });
+    }
+
     if (editingAdId) {
       // Edit existing ad
       const updated = ads.map((item) => {
@@ -197,8 +527,11 @@ export default function AdminSponsoredAdsManager({ notify }) {
             address: formAdData.address.trim(),
             phone: formAdData.phone.trim(),
             whatsapp: formAdData.whatsapp.trim().startsWith('91') ? formAdData.whatsapp.trim() : `91${formAdData.whatsapp.trim()}`,
-            image: formAdData.image,
+            image: finalImage,
             bannerSize: formAdData.bannerSize,
+            customWidth: formAdData.customWidth,
+            customHeight: formAdData.customHeight,
+            formTheme: formAdData.formTheme,
             runDurationHours,
             startTime,
             endTime
@@ -221,8 +554,11 @@ export default function AdminSponsoredAdsManager({ notify }) {
         address: formAdData.address.trim(),
         phone: formAdData.phone.trim(),
         whatsapp: formAdData.whatsapp.trim().startsWith('91') ? formAdData.whatsapp.trim() : `91${formAdData.whatsapp.trim()}`,
-        image: formAdData.image,
+        image: finalImage,
         bannerSize: formAdData.bannerSize,
+        customWidth: formAdData.customWidth,
+        customHeight: formAdData.customHeight,
+        formTheme: formAdData.formTheme,
         runDurationHours,
         startTime,
         endTime,
@@ -292,155 +628,35 @@ export default function AdminSponsoredAdsManager({ notify }) {
     return { status: 'active', label: `🟢 ${hours}h ${mins}m பாக்கி (Active)`, color: '#0052cc', bg: '#eff6ff' };
   };
 
-  // --- AI IMAGE GENERATOR ENGINE (CANVAS SYNTHESIS) ---
+  // Open AI Studio Modal
   const handleOpenAiModal = () => {
     setAiTitle(formAdData.title || 'ஸ்ரீ பாலமுருகன் பிரிண்டிங் & ஜெராக்ஸ்');
     setAiTagline(formAdData.tagline || 'அனைத்து டிஜிட்டல் பிரிண்டிங் & லேமினேஷன்!');
     setAiOffer(formAdData.offer || '🎁 AkEsevai வாடிக்கையாளர்களுக்கு 10% தள்ளுபடி!');
     setAiBannerSize(formAdData.bannerSize || 'medium');
+    setAiCustomWidth(formAdData.customWidth || 800);
+    setAiCustomHeight(formAdData.customHeight || 500);
     setShowAiModal(true);
   };
 
-  const generateAiBannerImage = () => {
+  const generateAiBannerImageInModal = () => {
     setIsGenerating(true);
-
     setTimeout(() => {
-      // Dimensions based on selected banner size
-      let w = 800;
-      let h = 500;
-      if (aiBannerSize === 'hero') { w = 1200; h = 400; }
-      else if (aiBannerSize === 'wide') { w = 1200; h = 200; }
-      else if (aiBannerSize === 'square') { w = 1000; h = 1000; }
-      else if (aiBannerSize === 'story') { w = 1080; h = 1920; }
-      else { w = 800; h = 500; } // medium
-
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-
-      // 1. Theme Gradient & Background Pattern
-      let grad;
-      if (aiTheme === 'traditional') {
-        grad = ctx.createLinearGradient(0, 0, w, h);
-        grad.addColorStop(0, '#780c0c');
-        grad.addColorStop(0.5, '#b91c1c');
-        grad.addColorStop(1, '#450a0a');
-      } else if (aiTheme === 'neon') {
-        grad = ctx.createLinearGradient(0, 0, w, h);
-        grad.addColorStop(0, '#0f172a');
-        grad.addColorStop(0.5, '#581c87');
-        grad.addColorStop(1, '#0e7490');
-      } else if (aiTheme === 'luxury') {
-        grad = ctx.createLinearGradient(0, 0, w, h);
-        grad.addColorStop(0, '#064e3b');
-        grad.addColorStop(0.5, '#022c22');
-        grad.addColorStop(1, '#14532d');
-      } else if (aiTheme === 'emerald') {
-        grad = ctx.createLinearGradient(0, 0, w, h);
-        grad.addColorStop(0, '#047857');
-        grad.addColorStop(1, '#065f46');
-      } else {
-        // Modern
-        grad = ctx.createLinearGradient(0, 0, w, h);
-        grad.addColorStop(0, '#022c7a');
-        grad.addColorStop(0.5, '#1e1b4b');
-        grad.addColorStop(1, '#0f172a');
-      }
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, w, h);
-
-      // Decorative Light Overlay Circles
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-      ctx.beginPath();
-      ctx.arc(w * 0.85, h * 0.2, h * 0.4, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-      ctx.beginPath();
-      ctx.arc(w * 0.15, h * 0.8, h * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Border Frame
-      ctx.strokeStyle = aiTheme === 'luxury' || aiTheme === 'traditional' ? '#fbbf24' : '#38bdf8';
-      ctx.lineWidth = Math.round(w * 0.01);
-      ctx.strokeRect(15, 15, w - 30, h - 30);
-
-      // Inner Corner Accents
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = Math.round(w * 0.005);
-      ctx.strokeRect(25, 25, w - 50, h - 50);
-
-      // 2. Top Kicker Badge
-      ctx.fillStyle = aiTheme === 'traditional' ? '#fbbf24' : '#38bdf8';
-      const badgeText = '✨ OFFICIAL SPONSORED BANNER • AkEsevai 2026';
-      const fontSizeBadge = Math.max(14, Math.round(h * 0.04));
-      ctx.font = `bold ${fontSizeBadge}px Arial, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText(badgeText, w / 2, h * 0.18);
-
-      // 3. Main Business Title
-      ctx.fillStyle = '#ffffff';
-      const fontSizeTitle = Math.max(22, Math.round(h * 0.085));
-      ctx.font = `900 ${fontSizeTitle}px Arial, sans-serif`;
-
-      // Word Wrap Title
-      const words = (aiTitle || 'Business Banner Title').split(' ');
-      let line = '';
-      let y = h * 0.35;
-      const maxWidth = w * 0.85;
-
-      for (let n = 0; n < words.length; n++) {
-        const testLine = line + words[n] + ' ';
-        const metrics = ctx.measureText(testLine);
-        if (metrics.width > maxWidth && n > 0) {
-          ctx.fillText(line, w / 2, y);
-          line = words[n] + ' ';
-          y += fontSizeTitle * 1.25;
-        } else {
-          line = testLine;
-        }
-      }
-      ctx.fillText(line, w / 2, y);
-
-      // 4. Tagline / Subtitle
-      ctx.fillStyle = '#e2e8f0';
-      const fontSizeTag = Math.max(14, Math.round(h * 0.048));
-      ctx.font = `bold ${fontSizeTag}px Arial, sans-serif`;
-      y += fontSizeTag * 2;
-
-      ctx.fillText(aiTagline || 'Quality Products and Services', w / 2, y);
-
-      // 5. Special Offer Pill Badge
-      if (aiOffer) {
-        y += h * 0.14;
-        const offerText = aiOffer.toUpperCase();
-        ctx.font = `bold ${Math.max(16, Math.round(h * 0.055))}px Arial, sans-serif`;
-        const textWidth = ctx.measureText(offerText).width;
-
-        const pillW = textWidth + 40;
-        const pillH = Math.max(36, Math.round(h * 0.09));
-        const pillX = (w - pillW) / 2;
-        const pillY = y - pillH * 0.7;
-
-        ctx.fillStyle = '#fbbf24';
-        ctx.beginPath();
-        ctx.roundRect(pillX, pillY, pillW, pillH, pillH / 2);
-        ctx.fill();
-
-        ctx.fillStyle = '#022c7a';
-        ctx.fillText(offerText, w / 2, pillY + pillH * 0.7);
-      }
-
-      // Watermark footer
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.font = `${Math.max(10, Math.round(h * 0.03))}px Arial, sans-serif`;
-      ctx.fillText('POWERED BY AKESEVAI AI BANNER STUDIO', w / 2, h - 30);
-
-      const resultDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-      setGeneratedAiImage(resultDataUrl);
+      const imgData = generateBannerImageFromData({
+        title: aiTitle,
+        tagline: aiTagline,
+        offer: aiOffer,
+        address: formAdData.address,
+        phone: formAdData.phone,
+        badge: formAdData.badge,
+        bannerSize: aiBannerSize,
+        customW: aiCustomWidth,
+        customH: aiCustomHeight,
+        theme: aiTheme
+      });
+      setGeneratedAiImage(imgData);
       setIsGenerating(false);
-    }, 400);
+    }, 300);
   };
 
   const handleApplyAiImageToAd = () => {
@@ -451,11 +667,22 @@ export default function AdminSponsoredAdsManager({ notify }) {
       title: aiTitle || prev.title,
       tagline: aiTagline || prev.tagline,
       offer: aiOffer || prev.offer,
-      bannerSize: aiBannerSize || prev.bannerSize
+      bannerSize: aiBannerSize || prev.bannerSize,
+      customWidth: aiCustomWidth || prev.customWidth,
+      customHeight: aiCustomHeight || prev.customHeight,
+      formTheme: aiTheme || prev.formTheme
     }));
     setShowAiModal(false);
     if (notify) notify('✨ AI மூலம் உருவாக்கப்பட்ட விளம்பர படம் படிவத்தில் சேர்க்கப்பட்டது!');
   };
+
+  const samplePrompts = [
+    'பழனியில் புதிதாக திறக்கப்பட்டுள்ள கம்ப்யூட்டர் சர்வீஸ் மையத்திற்கு 20% ஆஃபர் பானர்',
+    'Grand Opening Mobile & Laptop Accessories Store in Palani with Special Gifts',
+    'Palani Travels 24x7 Cab Service for Kodaikanal & Madurai with Lowest Fares',
+    'Digital Printing, Color Xerox & Lamination Centre 10% Off Coupon Banner',
+    'South Indian Hotel Special Family Dinner Combo Offer Banner'
+  ];
 
   return (
     <div className="admin-ad-manager-card" style={{ borderRadius: '20px', padding: '24px', border: '2px solid #022c7a', boxShadow: '0 10px 30px rgba(2,44,122,0.1)', margin: '24px 0', background: 'white' }}>
@@ -466,7 +693,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
             <Megaphone size={14} /> AD & BANNER STUDIO • 2026 விளம்பர கட்டுப்பாட்டு மையம்
           </span>
           <h3 className="ad-manager-title" style={{ fontSize: '20px', fontWeight: 900, margin: '6px 0 0', color: '#022c7a' }}>
-            Home Page <span>விளம்பர நேரக் மேலாண்மை & AI இமேஜ் ஜெனரேட்டர்</span>
+            Home Page <span>விளம்பர நேரக் மேலாண்மை & ChatGPT AI இமேஜ் ஜெனரேட்டர்</span>
           </h3>
         </div>
 
@@ -476,7 +703,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
             onClick={handleOpenAiModal}
             style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4338ca 100%)', color: 'white', border: 'none', borderRadius: '12px', padding: '10px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(124,58,237,0.3)' }}
           >
-            <Wand2 size={16} /> ✨ AI படம் உருவாக்கு (AI Image Generator)
+            <Wand2 size={16} /> ✨ AI Studio Modal
           </button>
 
           <button
@@ -506,6 +733,53 @@ export default function AdminSponsoredAdsManager({ notify }) {
             <Sparkles size={18} color="#16a34a" /> {editingAdId ? '✏️ விளம்பரத்தை மாற்று (Edit Advertisement):' : '➕ புதிய விளம்பரம் உருவாக்கு (Create Ad):'}
           </h4>
 
+          {/* CHATGPT PROMPT GENERATOR BOX */}
+          <div style={{ background: 'linear-gradient(135deg, #f3e8ff 0%, #e0e7ff 100%)', border: '2px solid #7c3aed', borderRadius: '14px', padding: '18px', marginBottom: '20px' }}>
+            <div style={{ fontSize: '14px', fontWeight: 900, color: '#4338ca', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Bot size={18} color="#7c3aed" /> 🤖 ChatGPT-Style AI Prompt Banner Generator (இயற்கை மொழியில் விளம்பரம் கேட்கவும்)
+            </div>
+            <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+              உங்களுக்குத் தேவையான விளம்பரத்தைப் பற்றி கீழே டைப் செய்து "AI Prompt மூலம் உருவாக்கு" பொத்தானைக் கிளிக் செய்யவும். AI தானே தலைப்பு, ஆஃபர் & பானர் படத்தை உருவாக்கும்:
+            </p>
+
+            <textarea
+              rows={2}
+              value={aiPromptText}
+              onChange={(e) => setAiPromptText(e.target.value)}
+              placeholder="எ.கா: பழனியில் புதிதாக திறக்கப்பட்டுள்ள கம்ப்யூட்டர் சர்வீஸ் மையத்திற்கு 20% சிறப்பு தள்ளுபடி விளம்பர பானர் உருவாக்கவும்..."
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #7c3aed', fontSize: '13px', fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}
+            />
+
+            {/* Quick Sample Prompt Chips */}
+            <div style={{ marginTop: '10px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#6b21a8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Lightbulb size={12} /> மாதிரி Prompts:
+              </span>
+              {samplePrompts.map((pText, pIdx) => (
+                <button
+                  type="button"
+                  key={pIdx}
+                  onClick={() => {
+                    setAiPromptText(pText);
+                    handleGenerateViaAiPrompt(pText);
+                  }}
+                  style={{ background: 'white', color: '#581c87', border: '1px solid #c084fc', borderRadius: '12px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  💡 {pText.slice(0, 32)}...
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleGenerateViaAiPrompt()}
+              disabled={isGenerating}
+              style={{ marginTop: '12px', background: 'linear-gradient(135deg, #7c3aed 0%, #4338ca 100%)', color: 'white', border: 'none', borderRadius: '10px', padding: '10px 20px', fontSize: '13px', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(124,58,237,0.3)' }}
+            >
+              <Wand2 size={16} /> {isGenerating ? '🎨 AI பானர் உருவாக்கப்படுகிறது...' : '🚀 ChatGPT AI Prompt மூலம் படம் உருவாக்கவும்'}
+            </button>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
             {/* Sponsor Badge */}
             <div>
@@ -522,10 +796,10 @@ export default function AdminSponsoredAdsManager({ notify }) {
               </select>
             </div>
 
-            {/* Banner Size Selector (REQUIREMENT PART 4) */}
+            {/* Banner Size Selector */}
             <div>
               <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
-                2. பானர் அளவு தேர்வு (Select Banner Size) *
+                2. பானர் அளவு தேர்வு (Select Banner Size / Dimensions) *
               </div>
               <select
                 value={formAdData.bannerSize}
@@ -533,14 +807,41 @@ export default function AdminSponsoredAdsManager({ notify }) {
                 style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1.5px solid #cbd5e1', fontWeight: 700, background: 'white' }}
               >
                 <option value="hero">📐 1200 x 400 (Hero Wide Showcase Banner)</option>
-                <option value="wide">📐 728 x 90 (Leaderboard Bar Banner)</option>
-                <option value="medium">📐 400 x 250 (Standard Box Banner)</option>
+                <option value="wide">📐 1200 x 200 (Leaderboard Bar Banner)</option>
+                <option value="medium">📐 800 x 500 (Standard Box Banner)</option>
                 <option value="square">📐 1080 x 1080 (Square Post Banner)</option>
                 <option value="story">📐 1080 x 1920 (Mobile Story Portrait Banner)</option>
+                <option value="custom">⚙️ Custom Pixels (சுயவிருப்ப அகலம் x உயரம்)</option>
               </select>
             </div>
 
-            {/* Running Time Setting (REQUIREMENT PART 2) */}
+            {/* Custom Pixel Dimensions Inputs */}
+            {formAdData.bannerSize === 'custom' && (
+              <div style={{ display: 'flex', gap: '10px', gridColumn: '1 / -1' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0052cc', marginBottom: '4px' }}>அகலம் / Width (px):</div>
+                  <input
+                    type="number"
+                    value={formAdData.customWidth}
+                    onChange={(e) => setFormAdData({ ...formAdData, customWidth: e.target.value })}
+                    placeholder="e.g. 800"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #0052cc', fontWeight: 700, background: 'white' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0052cc', marginBottom: '4px' }}>உயரம் / Height (px):</div>
+                  <input
+                    type="number"
+                    value={formAdData.customHeight}
+                    onChange={(e) => setFormAdData({ ...formAdData, customHeight: e.target.value })}
+                    placeholder="e.g. 500"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #0052cc', fontWeight: 700, background: 'white' }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Running Time Setting */}
             <div>
               <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <Timer size={14} color="#0052cc" /> 3. விளம்பர இயக்க நேரம் (Set Ad Running Duration) *
@@ -588,52 +889,27 @@ export default function AdminSponsoredAdsManager({ notify }) {
               />
             </div>
 
-            {/* IMAGE UPLOADER & AI GENERATOR LAUNCHER */}
-            <div style={{ gridColumn: '1 / -1', background: 'white', border: '2px dashed #022c7a', borderRadius: '14px', padding: '16px', textAlign: 'center' }}>
-              <div style={{ fontSize: '13px', fontWeight: 900, color: '#022c7a', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <ImagePlus size={18} color="#16a34a" /> 6. விளம்பரப் படம் சேர்க்க அல்லது AI மூலம் உருவாக்க:
-                <button
-                  type="button"
-                  onClick={handleOpenAiModal}
-                  style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: '8px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                >
-                  <Wand2 size={12} /> AI Banner Studio
-                </button>
-              </div>
-
-              {formAdData.image ? (
-                <div style={{ position: 'relative', display: 'inline-block', margin: '8px 0' }}>
-                  <img
-                    src={formAdData.image}
-                    alt="Ad Preview"
-                    style={{ maxHeight: '150px', maxWidth: '100%', borderRadius: '10px', border: '2px solid #16a34a', display: 'block' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setFormAdData({ ...formAdData, image: '' })}
-                    style={{ position: 'absolute', top: -10, right: -10, background: '#dc2626', color: 'white', border: 'none', borderRadius: '50%', width: 26, height: 26, cursor: 'pointer', fontWeight: 900 }}
-                    title="Remove Photo"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
-                  உங்கள் புகைப்படத்தைப் பதிவேற்றலாம் அல்லது மேலே உள்ள <strong>AI Banner Studio</strong> மூலம் நொடியில் உருவாக்கலாம்:
-                </div>
-              )}
-
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                style={{ display: 'block', margin: '0 auto', fontSize: '12px', fontWeight: 700 }}
-              />
+            {/* AI Design Theme Option Selection in Form */}
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>6. AI டிசைன் ஸ்டைல் (Image Design Theme)</div>
+              <select
+                value={formAdData.formTheme}
+                onChange={(e) => setFormAdData({ ...formAdData, formTheme: e.target.value })}
+                style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1.5px solid #7c3aed', fontWeight: 800, background: '#f3e8ff', color: '#581c87' }}
+              >
+                <option value="modern">🎨 Modern Tech (Navy Blue & Cyan Glow)</option>
+                <option value="traditional">🏛️ Royal South Indian (Crimson & Gold Foil)</option>
+                <option value="neon">⚡ Cyber Glow (Purple & Neon Cyan)</option>
+                <option value="luxury">👑 Luxury Emerald (Emerald Green & Gold)</option>
+                <option value="sunset">🌅 Sunset Gold (Amber & Warm Orange)</option>
+                <option value="festive">🏮 Festival Special (Deep Maroon & Purple)</option>
+                <option value="stealth">🖤 Matte Stealth (Dark Slate & Yellow)</option>
+              </select>
             </div>
 
             {/* Offer */}
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>7. சிறப்பு ஆஃபர் (Special Offer Badge)</div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>7. சிறப்பு ஆஃபர் (Special Offer Badge)</div>
               <input
                 type="text"
                 value={formAdData.offer}
@@ -643,9 +919,67 @@ export default function AdminSponsoredAdsManager({ notify }) {
               />
             </div>
 
+            {/* IMAGE GENERATOR TOOL & PHOTO UPLOADER */}
+            <div style={{ gridColumn: '1 / -1', background: 'white', border: '2px dashed #7c3aed', borderRadius: '16px', padding: '18px', textAlign: 'center' }}>
+              <div style={{ fontSize: '13px', fontWeight: 900, color: '#581c87', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <Wand2 size={20} color="#7c3aed" /> 8. AI இமேஜ் ஜெனரேட்டர் டூல் (Image Design Tool):
+              </div>
+
+              {/* Instant Form Content Image Generator Button */}
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleGenerateImageFromForm}
+                  style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #4338ca 100%)', color: 'white', border: 'none', borderRadius: '10px', padding: '10px 18px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(124,58,237,0.3)' }}
+                >
+                  <Wand2 size={16} /> ✨ மேலே உள்ள உள்ளீடுகளிலிருந்து AI விளம்பர படம் உருவாக்கு
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenAiModal}
+                  style={{ background: '#022c7a', color: 'white', border: 'none', borderRadius: '10px', padding: '10px 16px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Settings size={15} /> ⚙️ AI Studio Modal Tool
+                </button>
+              </div>
+
+              {formAdData.image ? (
+                <div style={{ position: 'relative', display: 'inline-block', margin: '8px 0' }}>
+                  <img
+                    src={formAdData.image}
+                    alt="Ad Preview"
+                    style={{ maxHeight: '180px', maxWidth: '100%', borderRadius: '12px', border: '2px solid #16a34a', display: 'block', boxShadow: '0 8px 20px rgba(0,0,0,0.15)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFormAdData({ ...formAdData, image: '' })}
+                    style={{ position: 'absolute', top: -10, right: -10, background: '#dc2626', color: 'white', border: 'none', borderRadius: '50%', width: 26, height: 26, cursor: 'pointer', fontWeight: 900 }}
+                    title="Remove Photo"
+                  >
+                    ✕
+                  </button>
+                  <div style={{ marginTop: '6px', fontSize: '11px', color: '#16a34a', fontWeight: 800 }}>
+                    ✅ விளம்பரப் படம் தயார் நிலையில் உள்ளது (Image Ready)
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
+                  உங்கள் சொந்த புகைப்படத்தைப் பதிவேற்றலாம் அல்லது <strong>AI Image Tool</strong> மூலம் நொடியில் உருவாக்கலாம்:
+                </div>
+              )}
+
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                style={{ display: 'block', margin: '8px auto 0', fontSize: '12px', fontWeight: 700 }}
+              />
+            </div>
+
             {/* Address */}
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>8. முகவரி (Location)</div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>9. முகவரி (Location)</div>
               <input
                 type="text"
                 value={formAdData.address}
@@ -657,7 +991,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
 
             {/* Phone */}
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>9. போன் எண் (Phone Number)</div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>10. போன் எண் (Phone Number)</div>
               <input
                 type="tel"
                 value={formAdData.phone}
@@ -669,7 +1003,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
 
             {/* WhatsApp */}
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>10. வாட்ஸ்அப் எண் (WhatsApp No)</div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>11. வாட்ஸ்அப் எண் (WhatsApp No)</div>
               <input
                 type="tel"
                 value={formAdData.whatsapp}
@@ -706,7 +1040,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
                   <img
                     src={ad.image}
                     alt={ad.title}
-                    style={{ width: 85, height: 65, objectFit: 'cover', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                    style={{ width: 95, height: 65, objectFit: 'cover', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   />
                 )}
 
@@ -718,10 +1052,10 @@ export default function AdminSponsoredAdsManager({ notify }) {
 
                     {/* Banner Size Tag */}
                     <span style={{ background: '#e2e8f0', color: '#334155', padding: '3px 8px', borderRadius: '8px', fontSize: '10px', fontWeight: 800 }}>
-                      📐 Size: {ad.bannerSize || 'medium'}
+                      📐 Size: {ad.bannerSize || 'medium'} {ad.bannerSize === 'custom' ? `(${ad.customWidth}x${ad.customHeight})` : ''}
                     </span>
 
-                    {/* Runtime Status Tag (REQUIREMENT PART 2) */}
+                    {/* Runtime Status Tag */}
                     <span style={{ background: timeInfo.bg, color: timeInfo.color, border: `1px solid ${timeInfo.color}40`, padding: '3px 9px', borderRadius: '8px', fontSize: '10px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                       <Clock size={11} /> {timeInfo.label}
                     </span>
@@ -768,10 +1102,10 @@ export default function AdminSponsoredAdsManager({ notify }) {
         </div>
       </div>
 
-      {/* --- AI BANNER / IMAGE GENERATOR MODAL (REQUIREMENT PART 3) --- */}
+      {/* --- AI BANNER / IMAGE GENERATOR MODAL --- */}
       {showAiModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.75)', backdropFilter: 'blur(6px)', display: 'grid', placeItems: 'center', zIndex: 9999, padding: '16px' }}>
-          <div style={{ background: 'white', borderRadius: '20px', padding: '26px', maxWidth: '750px', width: '100%', maxHeight: '90vh', overflowY: 'auto', border: '2px solid #7c3aed', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
+          <div style={{ background: 'white', borderRadius: '20px', padding: '26px', maxWidth: '780px', width: '100%', maxHeight: '90vh', overflowY: 'auto', border: '2px solid #7c3aed', boxShadow: '0 20px 50px rgba(0,0,0,0.3)' }}>
             
             {/* Modal Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', borderBottom: '1.5px solid #e2e8f0', paddingBottom: '12px' }}>
@@ -780,8 +1114,8 @@ export default function AdminSponsoredAdsManager({ notify }) {
                   <Wand2 size={20} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, font: '900 18px Manrope', color: '#1e1b4b' }}>✨ AI விளம்பர பானர் இமேஜ் ஜெனரேட்டர்</h3>
-                  <small style={{ color: '#64748b' }}>நிர்வாகி வழங்கும் விவரங்களைக் கொண்டு உடனடி HD விளம்பரப் படம் உருவாக்கலாம்.</small>
+                  <h3 style={{ margin: 0, font: '900 18px Manrope', color: '#1e1b4b' }}>✨ AI விளம்பர பானர் இமேஜ் ஜெனரேட்டர் (HD Image Tool)</h3>
+                  <small style={{ color: '#64748b' }}>விருப்பமான எந்த அளவிலும் (Dimensions & Custom Pixels) உயர்தர விளம்பரப் படம் உருவாக்கலாம்.</small>
                 </div>
               </div>
 
@@ -838,17 +1172,19 @@ export default function AdminSponsoredAdsManager({ notify }) {
                   onChange={(e) => setAiTheme(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 700 }}
                 >
-                  <option value="modern">🎨 Modern Tech (Blue & Ultra-Violet Glow)</option>
-                  <option value="traditional">🏛️ Royal South Indian (Gold & Crimson)</option>
-                  <option value="neon">⚡ Neon Cyber Offer (Purple & Cyan)</option>
-                  <option value="luxury">👑 Luxury Emerald Gold (Emerald Green)</option>
-                  <option value="emerald">🌿 Fresh Mint Eco (Fresh Emerald)</option>
+                  <option value="modern">🎨 Modern Tech (Navy Blue & Cyan Glow)</option>
+                  <option value="traditional">🏛️ Royal South Indian (Crimson & Gold Foil)</option>
+                  <option value="neon">⚡ Cyber Glow (Purple & Neon Cyan)</option>
+                  <option value="luxury">👑 Luxury Emerald (Emerald Green & Gold)</option>
+                  <option value="sunset">🌅 Sunset Gold (Amber & Warm Sunset)</option>
+                  <option value="festive">🏮 Festival Special (Deep Maroon & Purple)</option>
+                  <option value="stealth">🖤 Matte Stealth (Dark Slate & Yellow)</option>
                 </select>
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155', display: 'block', marginBottom: '4px' }}>
-                  5. பானர் அளவு தேர்வு (Banner Size Preset)
+                  5. பானர் அளவு தேர்வு (Select Dimensions & Sizes)
                 </label>
                 <select
                   value={aiBannerSize}
@@ -857,17 +1193,47 @@ export default function AdminSponsoredAdsManager({ notify }) {
                 >
                   <option value="hero">📐 1200 x 400 (Hero Wide Showcase Banner)</option>
                   <option value="wide">📐 1200 x 200 (Leaderboard Slim Banner)</option>
-                  <option value="medium">📐 800 x 500 (Standard Medium Banner)</option>
-                  <option value="square">📐 1000 x 1000 (Square Social Post Banner)</option>
+                  <option value="medium">📐 800 x 500 (Standard Medium Box Banner)</option>
+                  <option value="square">📐 1080 x 1080 (Square Social Post Banner)</option>
                   <option value="story">📐 1080 x 1920 (Full Mobile Story Banner)</option>
+                  <option value="custom">⚙️ Custom Pixels (சுயவிருப்ப அகலம் x உயரம்)</option>
                 </select>
               </div>
+
+              {aiBannerSize === 'custom' && (
+                <div style={{ display: 'flex', gap: '10px', gridColumn: '1 / -1' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#7c3aed', display: 'block', marginBottom: '2px' }}>
+                      அகலம் / Width (px):
+                    </label>
+                    <input
+                      type="number"
+                      value={aiCustomWidth}
+                      onChange={(e) => setAiCustomWidth(e.target.value)}
+                      placeholder="e.g. 800"
+                      style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #7c3aed', fontWeight: 700 }}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#7c3aed', display: 'block', marginBottom: '2px' }}>
+                      உயரம் / Height (px):
+                    </label>
+                    <input
+                      type="number"
+                      value={aiCustomHeight}
+                      onChange={(e) => setAiCustomHeight(e.target.value)}
+                      placeholder="e.g. 500"
+                      style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #7c3aed', fontWeight: 700 }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Generate Button */}
             <button
               type="button"
-              onClick={generateAiBannerImage}
+              onClick={generateAiBannerImageInModal}
               disabled={isGenerating}
               style={{ width: '100%', background: 'linear-gradient(135deg, #7c3aed 0%, #1e1b4b 100%)', color: 'white', border: 'none', borderRadius: '12px', padding: '13px', fontSize: '15px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}
             >
