@@ -2021,12 +2021,18 @@ const getServiceVisual = (group, title = '') => {
                 const profileRecord = liveCustomerMap[cleanSelectedPhone] || liveCustomerMap[selected.phone] || {};
                 const globalExpiryDocs = cloudExpiryDocs || [];
 
+                const selectedApps = Array.isArray(selected.applications) ? selected.applications : [];
+                const selectedAppIds = selectedApps.map(a => a.id).filter(Boolean);
+
                 const combinedDocs = [
                   ...(selected.documents || []),
                   ...(profileRecord.documents || []),
                   ...globalExpiryDocs.filter((d) => {
                     const docPhone = (d.customerPhone || '').replace(/\D/g, '');
-                    return cleanSelectedPhone && docPhone && (docPhone === cleanSelectedPhone || docPhone.includes(cleanSelectedPhone) || cleanSelectedPhone.includes(docPhone));
+                    const docAppId = d.applicationId || d.id || '';
+                    const matchesPhone = cleanSelectedPhone && docPhone && (docPhone === cleanSelectedPhone || docPhone.includes(cleanSelectedPhone) || cleanSelectedPhone.includes(docPhone));
+                    const matchesApp = selectedAppIds.some(appId => docAppId.includes(appId));
+                    return matchesPhone || matchesApp;
                   }).map(d => ({
                     id: d.id || d.url,
                     requirement: d.requirement || d.title || d.name,
@@ -2044,7 +2050,6 @@ const getServiceVisual = (group, title = '') => {
                 }, []);
 
                 const selectedName = selected.profile?.name || selected.name || 'Customer';
-                const selectedApps = Array.isArray(selected.applications) ? selected.applications : [];
 
                 return (
                   <>
@@ -2437,17 +2442,45 @@ const getServiceVisual = (group, title = '') => {
 
       notify(`⏳ Processing ${file.name}...`);
 
-      // 1. Read file as Data URL INSTANTLY (Zero wait time!)
-      const localDataUrl = await new Promise((resolve) => {
+      // 1. Read file as Data URL INSTANTLY & Compress Images to ~50KB to fit Firestore limits!
+      const rawDataUrl = await new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target?.result || '');
         reader.onerror = () => resolve('');
         reader.readAsDataURL(file);
       });
 
-      if (!localDataUrl) {
+      if (!rawDataUrl) {
         notify('❌ Failed to read file. Please try again.');
         return;
+      }
+
+      let localDataUrl = rawDataUrl;
+      if (file.type && file.type.startsWith('image/')) {
+        try {
+          localDataUrl = await new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let w = img.width;
+              let h = img.height;
+              const maxDim = 1000;
+              if (w > maxDim || h > maxDim) {
+                if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                else { w = Math.round((w * maxDim) / h); h = maxDim; }
+              }
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, w, h);
+              resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.onerror = () => resolve(rawDataUrl);
+            img.src = rawDataUrl;
+          });
+        } catch (e) {
+          localDataUrl = rawDataUrl;
+        }
       }
 
       const docId = `${application.id}-${requirement}`;
@@ -2498,9 +2531,11 @@ const getServiceVisual = (group, title = '') => {
 
           saveExpiryDocumentCloud({
             id: docId,
+            applicationId: application.id,
             name: file.name,
             requirement,
             url: finalUrl,
+            data: finalUrl,
             customerPhone: customer.phone,
             uploadedAt: new Date().toISOString()
           });
