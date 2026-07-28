@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle2, ShieldCheck, ArrowRight, Sparkles } from 'lucide-react';
+import { Users, Clock, ArrowRight } from 'lucide-react';
 import { subscribeLiveQueue } from '../utils/firebaseService';
 
 export default function LiveWaitTimeBanner({ lang = 'ta', navigate }) {
@@ -18,6 +18,8 @@ export default function LiveWaitTimeBanner({ lang = 'ta', navigate }) {
   }, []);
 
   const isClosed = queueData.status === 'closed';
+  const waitingCount = parseInt(queueData.queueCount || '3', 10);
+  const waitTime = queueData.waitTime || '5-10';
   const openTime = queueData.openTime || (lang === 'ta' ? 'திங்கள் - சனி காலை 10:00 - மாலை 5:00' : 'Mon - Sat 10:00 AM - 5:00 PM');
 
   const isTa = lang === 'ta';
@@ -39,7 +41,7 @@ export default function LiveWaitTimeBanner({ lang = 'ta', navigate }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
         
         {/* Left Side Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: '260px' }}>
           <div style={{
             width: '46px',
             height: '46px',
@@ -80,6 +82,53 @@ export default function LiveWaitTimeBanner({ lang = 'ta', navigate }) {
             </p>
           </div>
         </div>
+
+        {/* Center Live Badges: Waiting Count & Est Wait Time */}
+        {!isClosed && (
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.15)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '12px',
+              padding: '8px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <Users size={20} color="#86efac" />
+              <div>
+                <small style={{ color: '#bfdbfe', fontSize: '10px', display: 'block', fontWeight: 700 }}>
+                  {isTa ? 'காத்திருக்கும் நபர்கள்' : 'Waiting Customers'}
+                </small>
+                <strong style={{ fontSize: '14px', color: 'white', fontWeight: 900 }}>
+                  {waitingCount} {isTa ? 'நபர்கள்' : 'People'}
+                </strong>
+              </div>
+            </div>
+
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.15)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: '12px',
+              padding: '8px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <Clock size={20} color="#fbbf24" />
+              <div>
+                <small style={{ color: '#bfdbfe', fontSize: '10px', display: 'block', fontWeight: 700 }}>
+                  {isTa ? 'எதிர்பார்க்கப்படும் நேரம்' : 'Est. Wait Time'}
+                </small>
+                <strong style={{ fontSize: '14px', color: '#fbbf24', fontWeight: 900 }}>
+                  ~{waitTime} {isTa ? 'நிமிடங்கள்' : 'Mins'}
+                </strong>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Right Side Quick Action */}
         {navigate && (
