@@ -1,4 +1,6 @@
-# Robots.txt for AkEsevai Digital Service Centre (https://www.akesevai.com/)
+# Robots.txt for AkEsevai Digital Service Centre Palani (https://www.akesevai.com/)
+# Optimized for Google, Bing, Yahoo, ChatGPT, Gemini, Perplexity, and AI Search Engines
+
 User-agent: *
 Allow: /
 Allow: /services
@@ -8,7 +10,32 @@ Allow: /notifications
 Allow: /about
 Allow: /contact
 
-# Protect private admin panel from search crawlers
+# Explicitly Allow All Leading AI & Search Engine Crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+# Protect private admin panel from search indexation
 Disallow: /admin
 Disallow: /weblink
 Disallow: /forms

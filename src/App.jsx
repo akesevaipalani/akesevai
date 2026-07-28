@@ -42,6 +42,7 @@ import DocumentExpiryTracker from './components/DocumentExpiryTracker';
 import PremiumHomeAdShowcase from './components/PremiumHomeAdShowcase';
 import AkEsevaiOfficePhotoSlider from './components/AkEsevaiOfficePhotoSlider';
 import CustomerEasyGuide from './components/CustomerEasyGuide';
+import SEOHeadManager from './components/SEOHeadManager';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './components/SocialIcons';
 import {
   ArrowRight, Award, BadgeCheck, Bell, CalendarDays, Check, ChevronDown, Clock3,
@@ -699,6 +700,7 @@ function App() {
 
     return (
       <div className="app-shell">
+        <SEOHeadManager activeTab={page} />
         <WelcomeSplashIntro />
         <CustomerLogoutModal
           isOpen={showLogoutModal}
