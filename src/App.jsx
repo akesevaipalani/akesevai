@@ -163,17 +163,41 @@ import {
 } from './utils/firebaseService';
 import { setInStoreApplications } from './utils/statusStore';
 
-const readCustomerRecords = () => ({});
+const readCustomerRecords = () => {
+  try {
+    const raw = localStorage.getItem(CUSTOMER_RECORDS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+};
 
 const saveCustomerRecord = (record) => {
   if (!record || !record.phone) return;
+  try {
+    const current = readCustomerRecords();
+    current[record.phone] = record;
+    localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(current));
+  } catch (e) {}
   saveCustomerProfileCloud(record.phone, record);
 };
 
-const readTokenBookings = () => ([]);
+const readTokenBookings = () => {
+  try {
+    const raw = localStorage.getItem(TOKEN_BOOKINGS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
 
 const persistTokenBooking = (token) => {
   if (!token) return [];
+  try {
+    const current = readTokenBookings();
+    const updated = [token, ...current.filter(t => String(t.tokenNo || t.id) !== String(token.tokenNo || token.id))];
+    localStorage.setItem(TOKEN_BOOKINGS_KEY, JSON.stringify(updated));
+  } catch (e) {}
   saveTokenBookingCloud(token);
   return [token];
 };
@@ -369,8 +393,10 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [lang, setLang] = useState(() => localStorage.getItem('akesevai-lang') || 'ta');
   const [customer, setCustomer] = useState(() => {
-    const phone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
-    return phone ? readCustomerRecords()[phone] || null : null;
+    const phone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
+    if (!phone) return null;
+    const records = readCustomerRecords();
+    return records[phone] || { phone, profile: { name: 'Customer' }, applications: [], documents: [] };
   });
   const [adminLoggedIn, setAdminLoggedIn] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true');
   const [toast, setToast] = useState('');
@@ -477,12 +503,19 @@ function App() {
       unsubscribeDocs();
     };
   }, []);
-    const toggleLang = () => {
-      const nextLang = lang === 'ta' ? 'en' : 'ta';
-      setLang(nextLang);
-      localStorage.setItem('akesevai-lang', nextLang);
-      notify(nextLang === 'ta' ? 'தமிழ் மொழிக்கு மாற்றப்பட்டது' : 'Language switched to English');
-    };
+
+  useEffect(() => {
+    if (lang) {
+      localStorage.setItem('akesevai-lang', lang);
+    }
+  }, [lang]);
+
+  const toggleLang = () => {
+    const nextLang = lang === 'ta' ? 'en' : 'ta';
+    setLang(nextLang);
+    localStorage.setItem('akesevai-lang', nextLang);
+    notify(nextLang === 'ta' ? 'தமிழ் மொழிக்கு மாற்றப்பட்டது' : 'Language switched to English');
+  };
 
     const menuItems = [
       ['home', t.home],
@@ -537,6 +570,7 @@ function App() {
       };
       saveCustomerRecord(record);
       sessionStorage.setItem(CUSTOMER_SESSION_KEY, phone);
+      localStorage.setItem(CUSTOMER_SESSION_KEY, phone);
       setCustomer(record);
       setCustomerRecords((prev) => ({ ...prev, [phone]: record }));
 
@@ -569,6 +603,7 @@ function App() {
 
     const logoutCustomer = () => {
       sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
+      localStorage.removeItem(CUSTOMER_SESSION_KEY);
       setCustomer(null);
       setShowLogoutModal(true);
       navigate('home');

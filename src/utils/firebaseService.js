@@ -30,19 +30,26 @@ const logFirebaseNotice = (tag, err) => {
   console.info(`[AkEsevai Cloud Sync] ${tag}:`, msg);
 };
 
-// Purge all application local storage data to ensure 100% Firebase Cloud usage
+// Clear legacy application local storage while preserving active session & customer cache
 export const clearAllApplicationLocalStorage = () => {
   if (typeof window === 'undefined') return;
   try {
+    const keysToKeep = new Set([
+      'akesevai-customer-session',
+      'akesevai-customer-records',
+      'akesevai-token-bookings',
+      'akesevai-lang',
+      'akesevai-dark-mode',
+      'akesevai-admin-session'
+    ]);
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && (key.startsWith('akesevai') || key.startsWith('AKESEVAI'))) {
+      if (key && (key.startsWith('akesevai') || key.startsWith('AKESEVAI')) && !keysToKeep.has(key)) {
         keysToRemove.push(key);
       }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
-    console.info('🧹 Purged local storage application records. Running 100% on Firebase Cloud.');
   } catch (e) {
     console.warn('Error clearing local storage:', e);
   }

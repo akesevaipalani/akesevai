@@ -7,6 +7,18 @@
   <meta name="theme-color" content="#022c7a" />
   <title>AkEsevai Palani | Digital Service Centre | Official Website www.akesevai.com</title>
   
+  <!-- Instant Dark Mode Theme Pre-loader -->
+  <script>
+    (function() {
+      try {
+        var storedDark = localStorage.getItem('akesevai-dark-mode');
+        if (storedDark === 'true' || (storedDark === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- SEO Primary Meta Tags -->
   <meta name="title" content="AkEsevai Palani | Digital Service Centre | Official Website www.akesevai.com" />
   <meta name="description"
