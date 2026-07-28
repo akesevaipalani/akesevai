@@ -1,3 +1,5 @@
+import { saveApplicationCloud } from './firebaseService';
+
 export const syncWithCentralServer = async () => {};
 
 let inMemoryApplications = {};

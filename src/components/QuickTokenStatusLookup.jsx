@@ -202,7 +202,9 @@ export default function QuickTokenStatusLookup({ navigate }) {
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <small style={{ color: '#64748b', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}>APPLICANT NAME</small>
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>{searchResult.customerName} (+91 {searchResult.phone})</div>
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+                      {searchResult.customerName} (+91 {searchResult.phone ? `${String(searchResult.phone).replace(/\D/g, '').slice(0, 2)}******${String(searchResult.phone).replace(/\D/g, '').slice(-2)}` : ''})
+                    </div>
                   </div>
                 </div>
 

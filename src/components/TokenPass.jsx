@@ -79,26 +79,36 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
       status: 'Token Active'
     };
 
-    // Save locally
-    saveApplicationRecord({
-      id: appId,
-      tokenId: tokenNum,
-      applicantName: formData.name.trim(),
-      phone: cleanPhone,
-      service: formData.service,
-      fee: '₹60',
-      currentStage: 2,
-      statusLabel: 'டோக்கன் பதிவு செய்யப்பட்டு அனுமதி தயார் நிலையில் உள்ளது',
-      remarks: `டோக்கன் எண் ${tokenNum} (${formData.date} - ${formData.slot}) வெற்றிகரமாக உருவாக்கப்பட்டது.`
-    });
+    try {
+      saveApplicationRecord({
+        id: appId,
+        tokenId: tokenNum,
+        applicantName: formData.name.trim(),
+        phone: cleanPhone,
+        service: formData.service,
+        fee: '₹60',
+        currentStage: 2,
+        statusLabel: 'டோக்கன் பதிவு செய்யப்பட்டு அனுமதி தயார் நிலையில் உள்ளது',
+        remarks: `டோக்கன் எண் ${tokenNum} (${formData.date} - ${formData.slot}) வெற்றிகரமாக உருவாக்கப்பட்டது.`
+      });
+    } catch (err) {
+      console.warn('Local app save notice:', err);
+    }
 
-    // Save to Firebase Cloud Firestore
-    saveTokenBookingCloud(newTok);
+    try {
+      saveTokenBookingCloud(newTok);
+    } catch (err) {
+      console.warn('Cloud token save notice:', err);
+    }
 
     setGeneratedToken(newTok);
 
     if (typeof onTokenSaved === 'function') {
-      onTokenSaved(newTok);
+      try {
+        onTokenSaved(newTok);
+      } catch (err) {
+        console.warn('onTokenSaved callback notice:', err);
+      }
     }
   };
 

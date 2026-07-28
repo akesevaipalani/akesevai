@@ -173,7 +173,7 @@ export default function StatusTracker({ initialQuery = '' }) {
               <h3>{searchedApp.service}</h3>
               <p className="applicant-meta">
                 <span>Applicant: <strong>{searchedApp.name}</strong></span>
-                <span>Phone: <strong>+91 {searchedApp.phone}</strong></span>
+                <span>Phone: <strong>+91 {searchedApp.phone ? `${String(searchedApp.phone).replace(/\D/g, '').slice(0, 2)}******${String(searchedApp.phone).replace(/\D/g, '').slice(-2)}` : ''}</strong></span>
                 <span>Token: <strong>{searchedApp.tokenId}</strong></span>
               </p>
             </div>

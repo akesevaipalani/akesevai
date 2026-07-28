@@ -45,8 +45,8 @@ import AkEsevaiOfficePhotoSlider from './components/AkEsevaiOfficePhotoSlider';
 import CustomerEasyGuide from './components/CustomerEasyGuide';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './components/SocialIcons';
 import {
-  ArrowRight, BadgeCheck, Bell, CalendarDays, Check, ChevronDown, Clock3,
-  FileCheck2, FileText, Headphones, Home, IndianRupee, Landmark, LockKeyhole,
+  ArrowRight, Award, BadgeCheck, Bell, CalendarDays, Check, ChevronDown, Clock3,
+  FileCheck2, FileText, Gift, Headphones, Home, IndianRupee, Landmark, LockKeyhole,
   LogIn, Mail, Menu, MessageCircle, Phone, Plus, Search, ShieldCheck, Sparkles,
   UploadCloud, UserRound, Users, X, ClipboardCheck, MapPin, Send, ChevronRight,
   Camera, ExternalLink, FileCog, Megaphone, BriefcaseBusiness, GraduationCap,
@@ -518,12 +518,13 @@ function App() {
     const loginCustomer = (phone) => {
       const records = customerRecords || readCustomerRecords();
       const isNew = !records[phone];
-      const record = records[phone] || {
+      const record = records[phone] ? { ...records[phone], rewardPoints: records[phone].rewardPoints ?? 50 } : {
         phone,
         profile: { name: '', createdAt: new Date().toISOString(), complete: false },
         applications: [],
         documents: [],
         appointment: { date: '', time: '' },
+        rewardPoints: 50,
       };
       saveCustomerRecord(record);
       sessionStorage.setItem(CUSTOMER_SESSION_KEY, phone);
@@ -2060,12 +2061,44 @@ const getServiceVisual = (group, title = '') => {
                       </div>
                     </div>
 
-                    <AdminDocumentUploadCard
-                      customerPhone={selected.phone}
-                      customerName={selectedName}
-                      notify={notify}
-                      setCustomerRecords={setCustomerRecords}
-                    />
+                    {/* ADMIN LOYALTY REWARDS MANAGER CARD */}
+                    <div style={{ background: '#fffbeb', border: '1.5px solid #fcd34d', borderRadius: '12px', padding: '14px 18px', margin: '14px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase' }}>REGULAR CUSTOMER LOYALTY REWARDS</span>
+                        <strong style={{ display: 'block', fontSize: '16px', color: '#78350f', fontWeight: 900 }}>
+                          🎁 Reward Points Balance: <span style={{ color: '#d97706' }}>{selected.rewardPoints ?? 50} Points</span> (Discount Value: ₹{Math.floor((selected.rewardPoints ?? 50) / 10)})
+                        </strong>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const addInput = window.prompt(`Enter bonus reward points to grant to ${selectedName} (+91 ${selected.phone}):`, '50');
+                          if (addInput) {
+                            const bonusPts = parseInt(addInput, 10);
+                            if (isNaN(bonusPts) || bonusPts <= 0) return;
+                            const cleanPhone = String(selected.phone).replace(/\D/g, '');
+                            const updatedRecord = {
+                              ...selected,
+                              rewardPoints: (selected.rewardPoints ?? 50) + bonusPts,
+                              updatedAt: new Date().toISOString()
+                            };
+                            await saveCustomerProfileCloud(cleanPhone, updatedRecord);
+                            if (setCustomerRecords) {
+                              setCustomerRecords((prev) => ({
+                                ...prev,
+                                [cleanPhone]: updatedRecord,
+                                [selected.phone]: updatedRecord
+                              }));
+                            }
+                            notify(`🎉 Granted +${bonusPts} Bonus Reward Points to ${selectedName}!`);
+                          }
+                        }}
+                        style={{ background: '#d97706', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      >
+                        <Sparkles size={14} /> ➕ Add Bonus Points (ரிவார்டு புள்ளிகள் வழங்கு)
+                      </button>
+                    </div>
+
+
 
                     <h3 className="admin-section-title">Selected services</h3>
                     {selectedApps.length ? selectedApps.map((application) => <div className="admin-service-row" key={application.id}><span className="doc-symbol"><FileText size={17} /></span><span><strong>{application.name}</strong><small>{application.id} · {application.status} · {application.date}</small></span></div>) : <p className="empty-customer-state">No service selected.</p>}
@@ -2207,8 +2240,10 @@ const getServiceVisual = (group, title = '') => {
     if (!customer.profile.complete) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> Customer profile</span><h1>Welcome to<br /><em>AkEsevai.</em></h1><p>Please enter your name once. We will save it with your mobile number for your next login.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); const cleanedName = name.trim(); if (!cleanedName) return; updateCustomer((current) => ({ ...current, profile: { ...current.profile, name: cleanedName, complete: true } })); notify('Your name has been saved. Welcome to your dashboard.'); }}><div className="login-icon"><UserRound size={22} /></div><span className="section-kicker">YOUR DETAILS</span><h2>What is your name?</h2><p>This is visible only in your customer account and to AkEsevai administration.</p><label>Full name<input className="admin-password" autoFocus required value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your full name" /></label><button className="button button-primary button-wide" type="submit">Continue <ArrowRight size={17} /></button></form></section>;
     const tabs = [['overview', 'Overview'], ['documents', 'My documents'], ['token-slip', '🎫 Token Slip']];
     const applications = customer.applications;
-    const addApplication = (event) => { event.preventDefault(); if (!selectedService) return; const service = serviceCatalog.find(([, title]) => title === selectedService); const requirements = getRequiredDocuments(selectedService, service?.[2]); const application = { id: `AK-${Date.now().toString().slice(-8)}`, name: selectedService, status: 'Submitted', date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), progress: 22, requirements }; updateCustomer((current) => ({ ...current, applications: [application, ...current.applications] })); setSelectedService(''); setActiveTab('documents'); notify('Service selected. Upload only the required documents for this application.'); };
+    const addApplication = (event) => { event.preventDefault(); if (!selectedService) return; const service = serviceCatalog.find(([, title]) => title === selectedService); const requirements = getRequiredDocuments(selectedService, service?.[2]); const application = { id: `AK-${Date.now().toString().slice(-8)}`, name: selectedService, status: 'Submitted', date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), progress: 22, requirements }; updateCustomer((current) => ({ ...current, rewardPoints: (current.rewardPoints ?? 50) + 60, applications: [application, ...current.applications] })); setSelectedService(''); setActiveTab('documents'); notify('🎉 Service selected! You earned +60 AkEsevai Reward Points (Value: ₹6)!'); };
     const initials = customer.profile.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+    const currentRewardPoints = customer.rewardPoints ?? 50;
+    const pointsValueRupees = Math.floor(currentRewardPoints / 10);
     return (
       <section className="customer-dashboard page-width">
         <div className="dashboard-top">
@@ -2221,11 +2256,52 @@ const getServiceVisual = (group, title = '') => {
         </div>
         {activeTab === 'overview' && (
           <>
-            <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
               <div><span className="stat-icon yellow"><FileText /></span><span><strong>{applications.length}</strong><small>My services</small></span></div>
               <div><span className="stat-icon green"><Check /></span><span><strong>{customer.documents.length}</strong><small>My documents</small></span></div>
+              <div><span className="stat-icon" style={{ background: '#fef3c7', color: '#d97706' }}><Award /></span><span><strong>{currentRewardPoints} Pts</strong><small>Discount Value: ₹{pointsValueRupees}</small></span></div>
               <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><Ticket /></span><span><strong>{customer.lastToken?.tokenNo || 'Get Token'}</strong><small>Token Slip</small></span></div>
             </div>
+
+            {/* AK ESEVAI LOYALTY REWARDS CARD */}
+            <div style={{ background: 'linear-gradient(135deg, #022c7a 0%, #15803d 100%)', color: 'white', borderRadius: '14px', padding: '20px 24px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', boxShadow: '0 8px 24px rgba(2,44,122,0.18)' }}>
+              <div>
+                <span style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '1px', color: '#fbbf24', textTransform: 'uppercase' }}>AK ESEVAI LOYALTY REWARDS</span>
+                <h2 style={{ margin: '4px 0 0', fontSize: '20px', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🎁 உங்களின் AkEsevai ரிவார்டு புள்ளிகள்: <strong style={{ color: '#fbbf24' }}>{currentRewardPoints} Points</strong> (மதிப்பு: ₹{pointsValueRupees})
+                </h2>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#e2e8f0' }}>
+                  ₹10 சேவை கட்டணத்திற்கு 10 Reward Points (10 Points = ₹1 Discount Value). அடுத்த சேவையில் இந்நிதியைத் தள்ளுபடியாகப் பயன்படுத்தலாம்!
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (currentRewardPoints < 10) {
+                    notify('❌ தள்ளுபடி பெற குறைந்தபட்சம் 10 புள்ளிகள் (₹1 மதிப்பு) தேவை.');
+                    return;
+                  }
+                  const maxDiscountRs = Math.floor(currentRewardPoints / 10);
+                  const redeemInput = window.prompt(`உங்களிடம் ${currentRewardPoints} Reward Points உள்ளன (மதிப்பு: ₹${pointsValueRupees}). எத்தனை ரூபாய் (₹) தள்ளுபடி செய்ய விரும்புகிறீர்கள்? (Max: ₹${maxDiscountRs}):`, String(maxDiscountRs));
+                  if (redeemInput) {
+                    const rsDiscount = parseInt(redeemInput, 10);
+                    if (isNaN(rsDiscount) || rsDiscount <= 0 || rsDiscount > maxDiscountRs) {
+                      alert(`⚠️ ₹1 முதல் ₹${maxDiscountRs} வரையிலான தொகையை உள்ளிடவும்.`);
+                      return;
+                    }
+                    const ptsDeducted = rsDiscount * 10;
+                    updateCustomer((curr) => ({
+                      ...curr,
+                      rewardPoints: (curr.rewardPoints ?? 50) - ptsDeducted
+                    }));
+                    notify(`🎉 ₹${rsDiscount} தள்ளுபடி பெறப்பட்டது (${ptsDeducted} Points பயன்படுத்தப்பட்டது)! மீதமுள்ள புள்ளிகள்: ${(currentRewardPoints - ptsDeducted)} (₹${Math.floor((currentRewardPoints - ptsDeducted) / 10)})`);
+                  }
+                }}
+                style={{ background: '#fbbf24', color: '#022c7a', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(251,191,36,0.3)' }}
+              >
+                <Sparkles size={16} /> 🪙 புள்ளிகளைத் தள்ளுபடி செய் (Redeem ₹ Discount)
+              </button>
+            </div>
+
             <div className="dashboard-columns">
               <div className="application-panel">
                 <div className="panel-heading">
@@ -2285,41 +2361,113 @@ const getServiceVisual = (group, title = '') => {
         return;
       }
 
-      notify(`⏳ Uploading ${file.name} to Firebase Storage...`);
-      const docRecord = await uploadFileToFirebaseStorage(file, 'customer_documents', customer.phone || 'guest');
+      notify(`⏳ Processing ${file.name}...`);
 
-      if (docRecord) {
-        const documentObj = {
-          id: `${application.id}-${requirement}`,
-          applicationId: application.id,
-          requirement,
-          name: file.name,
-          type: file.type || 'File',
-          uploadedAt: new Date().toLocaleDateString('en-IN'),
-          data: docRecord.url || docRecord.data,
-          storagePath: docRecord.storagePath || ''
-        };
+      // 1. Read file as Data URL INSTANTLY (Zero wait time!)
+      const localDataUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result || '');
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+      });
 
-        updateCustomer((current) => {
-          const existingDocs = current.documents || [];
-          const filtered = existingDocs.filter((item) => item.requirement !== requirement && item.id !== documentObj.id);
-          return {
-            ...current,
-            documents: [...filtered, documentObj]
-          };
-        });
-
-        saveExpiryDocumentCloud({
-          id: documentObj.id,
-          name: file.name,
-          requirement,
-          url: docRecord.url || docRecord.data,
-          customerPhone: customer.phone,
-          uploadedAt: new Date().toISOString()
-        });
-
-        notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`);
+      if (!localDataUrl) {
+        notify('❌ Failed to read file. Please try again.');
+        return;
       }
+
+      const docId = `${application.id}-${requirement}`;
+      const documentObj = {
+        id: docId,
+        applicationId: application.id,
+        requirement,
+        name: file.name,
+        type: file.type || 'File',
+        uploadedAt: new Date().toLocaleDateString('en-IN'),
+        data: localDataUrl,
+        storagePath: ''
+      };
+
+      // 2. UPDATE REACT STATE INSTANTLY — Card turns green IMMEDIATELY next to requirement!
+      updateCustomer((current) => {
+        const existingDocs = current.documents || [];
+        const filtered = existingDocs.filter(
+          (item) => item.requirement !== requirement && item.id !== docId
+        );
+        return {
+          ...current,
+          documents: [...filtered, documentObj]
+        };
+      });
+
+      notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`);
+
+      // 3. Background Cloud Upload (Non-blocking async sync)
+      (async () => {
+        try {
+          const docRecord = await uploadFileToFirebaseStorage(file, 'customer_documents', customer.phone || 'guest');
+          const finalUrl = (docRecord && docRecord.url) ? docRecord.url : localDataUrl;
+          const storagePath = (docRecord && docRecord.storagePath) ? docRecord.storagePath : '';
+
+          if (docRecord && docRecord.url) {
+            updateCustomer((current) => {
+              const existingDocs = current.documents || [];
+              const updated = existingDocs.map((doc) => {
+                if (doc.id === docId) {
+                  return { ...doc, data: finalUrl, storagePath };
+                }
+                return doc;
+              });
+              return { ...current, documents: updated };
+            });
+          }
+
+          saveExpiryDocumentCloud({
+            id: docId,
+            name: file.name,
+            requirement,
+            url: finalUrl,
+            customerPhone: customer.phone,
+            uploadedAt: new Date().toISOString()
+          });
+        } catch (err) {
+          console.warn('Background cloud sync notice:', err);
+        }
+      })();
+    };
+
+    const deleteDocument = async (requirement, documentObj) => {
+      if (!documentObj) return;
+      const docName = documentObj.name || requirement;
+      const confirmDelete = window.confirm(`ஆவணம் "${docName}"-ஐ நிச்சயமாக நீக்க விரும்புகிறீர்களா? (Delete uploaded document permanently?)`);
+      if (!confirmDelete) return;
+
+      const targetId = documentObj.id || `${application.id}-${requirement}`;
+
+      // 1. Delete from local state instantly
+      updateCustomer((current) => {
+        const existingDocs = current.documents || [];
+        const filtered = existingDocs.filter(
+          (item) =>
+            item.requirement !== requirement &&
+            item.id !== targetId &&
+            item.data !== documentObj.data &&
+            item.name !== documentObj.name
+        );
+        return {
+          ...current,
+          documents: filtered
+        };
+      });
+
+      // 2. Delete from Cloud Firestore & Storage
+      try {
+        await deleteExpiryDocumentCloud(targetId, customer.phone);
+      } catch (err) {
+        console.warn('Cloud delete notice:', err);
+      }
+
+      notify(`🗑️ ஆவணம் வெற்றிகரமாக நீக்கப்பட்டது! (${docName} deleted permanently from everywhere)`);
     };
 
     if (!customer.applications.length) return <div className="tab-content"><div className="panel-heading"><div><span className="section-kicker">DOCUMENT VAULT</span><h2>My documents</h2><p>Select a service first. Its required document list will appear here.</p></div></div></div>;
@@ -2330,7 +2478,7 @@ const getServiceVisual = (group, title = '') => {
           <div>
             <span className="section-kicker">DOCUMENT VAULT</span>
             <h2>Required documents</h2>
-            <p>Only documents required for your selected service can be uploaded and viewed.</p>
+            <p>Only documents required for your selected service can be uploaded, viewed, or deleted.</p>
           </div>
         </div>
 
@@ -2343,24 +2491,29 @@ const getServiceVisual = (group, title = '') => {
 
         <div className="document-list">
           {application.requirements.map((requirement) => {
+            const customerDocs = customer.documents || [];
             const globalExpiryDocs = cloudExpiryDocs || [];
             const cleanPhone = (customer.phone || '').replace(/\D/g, '');
-            const allDocs = [
-              ...(customer.documents || []),
-              ...globalExpiryDocs.filter(d => {
-                const docPhone = (d.customerPhone || '').replace(/\D/g, '');
-                return cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
-              }).map(d => ({
-                id: d.id || d.url,
-                requirement: d.requirement || d.title || d.name,
-                name: d.name || 'Uploaded Document',
-                uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
-                data: d.url
-              }))
-            ];
 
-            const document = allDocs.find(
-              (item) => item.requirement === requirement || item.id === `${application.id}-${requirement}` || (item.requirement && requirement && item.requirement.toLowerCase() === requirement.toLowerCase())
+            const document = customerDocs.find(
+              (item) =>
+                item.requirement === requirement ||
+                item.id === `${application.id}-${requirement}` ||
+                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase())
+            ) || globalExpiryDocs.filter(d => {
+              const docPhone = (d.customerPhone || '').replace(/\D/g, '');
+              return cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
+            }).map(d => ({
+              id: d.id || d.url,
+              requirement: d.requirement || d.title || d.name,
+              name: d.name || 'Uploaded Document',
+              uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
+              data: d.url
+            })).find(
+              (item) =>
+                item.requirement === requirement ||
+                item.id === `${application.id}-${requirement}` ||
+                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase())
             );
 
             return (
@@ -2383,8 +2536,8 @@ const getServiceVisual = (group, title = '') => {
 
                 {document ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                    <span style={{ background: '#16a34a', color: 'white', padding: '4px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <Check size={13} /> UPLOAD SUCCESS
+                    <span style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '16px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 8px rgba(22,163,74,0.3)' }}>
+                      <Check size={13} /> UPLOAD SUCCESS (வெற்றி)
                     </span>
 
                     <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
@@ -2395,15 +2548,19 @@ const getServiceVisual = (group, title = '') => {
                       <Download size={14} /> Download (பதிவிறக்கு)
                     </button>
 
+                    <button onClick={() => deleteDocument(requirement, document)} title="Delete Document" style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <Trash2 size={14} /> Delete (நீக்குக)
+                    </button>
+
                     <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
                       Change
                       <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
                     </label>
                   </div>
                 ) : (
-                  <label className="document-upload" style={{ marginLeft: 'auto' }}>
-                    Upload PDF / JPG
-                    <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} />
+                  <label className="document-upload" style={{ marginLeft: 'auto', background: '#0052cc', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                    📤 Upload PDF / JPG
+                    <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
                   </label>
                 )}
               </div>
