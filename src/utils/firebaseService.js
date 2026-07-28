@@ -166,16 +166,23 @@ export const subscribeApplications = (callback) => {
 // --- TOKENS & QUEUE (FIREBASE CLOUD FIRESTORE) ---
 
 export const saveTokenBookingCloud = async (tokenData) => {
-  if (!tokenData || !tokenData.tokenNo) return;
+  if (!tokenData) return;
+  const tokenNo = tokenData.tokenNo || tokenData.tokenId || tokenData.id || `TOK-${Date.now()}`;
+  const cleanPhone = String(tokenData.phone || tokenData.customerPhone || '').replace(/\D/g, '');
 
   const dataToSave = {
     ...tokenData,
+    tokenNo: String(tokenNo),
+    id: String(tokenNo),
+    phone: cleanPhone,
+    customerPhone: cleanPhone,
     updatedAt: new Date().toISOString()
   };
 
   try {
-    const docRef = doc(db, TOKENS_COLLECTION, String(tokenData.tokenNo));
+    const docRef = doc(db, TOKENS_COLLECTION, String(tokenNo));
     await setDoc(docRef, { ...dataToSave, lastCloudSync: serverTimestamp() }, { merge: true });
+    console.info(`✅ Token booking ${tokenNo} successfully saved to Firebase Cloud Firestore!`);
   } catch (err) {
     logFirebaseNotice('Token cloud save', err);
   }

@@ -54,16 +54,26 @@ export default function PremiumHomeAdShowcase({ navigate }) {
     };
   }, []);
 
+  // Filter only active non-expired ads (or unlimited duration)
+  const isAdActive = (ad) => {
+    if (!ad.endTime || ad.runDurationHours === 0) return true;
+    const endMs = new Date(ad.endTime).getTime();
+    return endMs > Date.now();
+  };
+
+  const activeAdsList = adList.filter(isAdActive);
+  const displayAds = activeAdsList.length > 0 ? activeAdsList : adList;
+
   // Auto rotate ad banner every 6 seconds
   useEffect(() => {
-    if (adList.length === 0) return;
+    if (displayAds.length === 0) return;
     const timer = setInterval(() => {
-      setActiveAdIndex((prev) => (prev + 1) % adList.length);
+      setActiveAdIndex((prev) => (prev + 1) % displayAds.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, [adList]);
+  }, [displayAds]);
 
-  const activeAd = adList[activeAdIndex % adList.length] || MOCK_SPONSORED_ADS[0];
+  const activeAd = displayAds[activeAdIndex % displayAds.length] || MOCK_SPONSORED_ADS[0];
 
   const handleSendAdEnquiry = (e) => {
     e.preventDefault();

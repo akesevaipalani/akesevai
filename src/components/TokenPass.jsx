@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
-import { saveTokenBookingCloud } from '../utils/firebaseService';
+import { saveTokenBookingCloud, saveCustomerProfileCloud } from '../utils/firebaseService';
 import { printElement } from '../utils/printHelper';
 import { getNextDailyTokenNumber } from '../utils/tokenHelper';
 
@@ -47,7 +47,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
   };
 
   // Direct Instant Token Booking Handler
-  const handleGenerateToken = (e) => {
+  const handleGenerateToken = async (e) => {
     if (e) e.preventDefault();
 
     if (!formData.name.trim()) {
@@ -96,7 +96,15 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
     }
 
     try {
-      saveTokenBookingCloud(newTok);
+      await saveTokenBookingCloud(newTok);
+      if (cleanPhone) {
+        saveCustomerProfileCloud(cleanPhone, {
+          phone: cleanPhone,
+          name: formData.name.trim(),
+          lastToken: newTok,
+          updatedAt: new Date().toISOString()
+        });
+      }
     } catch (err) {
       console.warn('Cloud token save notice:', err);
     }

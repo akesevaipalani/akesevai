@@ -1679,13 +1679,66 @@ const getServiceVisual = (group, title = '') => {
     const totalApplications = Object.keys(applicationRecords || {}).length || customers.reduce((total, customer) => total + (Array.isArray(customer.applications) ? customer.applications.length : 0), 0);
     const totalDocuments = customers.reduce((total, customer) => total + (Array.isArray(customer.documents) ? customer.documents.length : 0), 0);
     
-    const filteredTokens = tokenBookings.filter((tok) => {
+    const combinedTokensList = [
+      ...(tokenBookings || []),
+      ...Object.values(customerRecords || {}).map(c => c.lastToken).filter(Boolean)
+    ].reduce((acc, current) => {
+      const tNo = current.tokenNo || current.id;
+      if (tNo && !acc.some(item => (item.tokenNo || item.id) === tNo)) {
+        acc.push(current);
+      }
+      return acc;
+    }, []);
+
+    const filteredTokens = combinedTokensList.filter((tok) => {
       const q = tokenSearch.trim().toLowerCase();
       if (!q) return true;
       return (tok.tokenNo || '').toLowerCase().includes(q) || (tok.phone || '').toLowerCase().includes(q) || (tok.customerName || '').toLowerCase().includes(q) || (tok.service || '').toLowerCase().includes(q) || (tok.date || '').toLowerCase().includes(q);
     });
 
-    const allAppsList = Object.values(applicationRecords || {});
+    const customerAppsList = [];
+    Object.values(customerRecords || {}).forEach((cust) => {
+      if (!cust) return;
+      const custName = cust.profile?.name || cust.name || 'வாடிக்கையாளர்';
+      const custPhone = cust.phone || '';
+      const apps = Array.isArray(cust.applications) ? cust.applications : [];
+      const docs = Array.isArray(cust.documents) ? cust.documents : [];
+
+      apps.forEach((app) => {
+        if (!app || !app.id) return;
+        const isCompleted = app.status === 'Completed' || app.progress === 100;
+        customerAppsList.push({
+          id: app.id,
+          ackNo: app.id,
+          applicantName: custName,
+          phone: custPhone,
+          service: app.name || 'e-Sevai Application',
+          submittedDate: app.date || new Date().toLocaleDateString('en-IN'),
+          currentStage: isCompleted ? 6 : (app.stage || 3),
+          statusLabel: isCompleted ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : (app.status || 'Submitted & In Progress'),
+          statusColor: isCompleted ? '#16a34a' : '#0052cc',
+          documentsCount: docs.length,
+          rewardPoints: cust.rewardPoints ?? 50,
+          customerRef: cust
+        });
+      });
+    });
+
+    const allAppsMap = {};
+    Object.values(applicationRecords || {}).forEach((app) => {
+      if (app && (app.id || app.ackNo)) {
+        const key = app.id || app.ackNo;
+        allAppsMap[key] = app;
+      }
+    });
+
+    customerAppsList.forEach((app) => {
+      if (app && app.id && !allAppsMap[app.id]) {
+        allAppsMap[app.id] = app;
+      }
+    });
+
+    const allAppsList = Object.values(allAppsMap);
     const filteredApps = allAppsList.filter((app) => {
       const q = appSearch.trim().toLowerCase();
       if (!q) return true;
@@ -2495,52 +2548,65 @@ const getServiceVisual = (group, title = '') => {
         storagePath: ''
       };
 
-      // 2. UPDATE REACT STATE INSTANTLY — Card turns green IMMEDIATELY next to requirement!
-      updateCustomer((current) => {
-        const existingDocs = current.documents || [];
-        const filtered = existingDocs.filter(
-          (item) => item.requirement !== requirement && item.id !== docId
-        );
-        return {
-          ...current,
-          documents: [...filtered, documentObj]
-        };
+      const updatedCustomerObj = {
+        ...customer,
+        documents: [
+          ...(customer.documents || []).filter((item) => item.requirement !== requirement && item.id !== docId),
+          documentObj
+        ]
+      };
+
+      // 2. UPDATE REACT STATE & FIRESTORE CLOUD INSTANTLY — Syncs to Admin page live!
+      updateCustomer(updatedCustomerObj);
+
+      saveExpiryDocumentCloud({
+        id: docId,
+        applicationId: application.id,
+        name: file.name,
+        requirement,
+        url: localDataUrl,
+        data: localDataUrl,
+        customerPhone: customer.phone,
+        uploadedAt: new Date().toISOString()
       });
+
+      saveCustomerProfileCloud(customer.phone, updatedCustomerObj);
 
       notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`);
 
-      // 3. Background Cloud Upload (Non-blocking async sync)
+      // 3. Background Cloud Storage Upload for permanent CDN URL
       (async () => {
         try {
           const docRecord = await uploadFileToFirebaseStorage(file, 'customer_documents', customer.phone || 'guest');
-          const finalUrl = (docRecord && docRecord.url) ? docRecord.url : localDataUrl;
-          const storagePath = (docRecord && docRecord.storagePath) ? docRecord.storagePath : '';
-
           if (docRecord && docRecord.url) {
-            updateCustomer((current) => {
-              const existingDocs = current.documents || [];
-              const updated = existingDocs.map((doc) => {
+            const finalUrl = docRecord.url;
+            const storagePath = docRecord.storagePath || '';
+
+            const cloudUpdated = {
+              ...customer,
+              documents: (customer.documents || []).map((doc) => {
                 if (doc.id === docId) {
-                  return { ...doc, data: finalUrl, storagePath };
+                  return { ...doc, data: finalUrl, url: finalUrl, storagePath };
                 }
                 return doc;
-              });
-              return { ...current, documents: updated };
+              })
+            };
+
+            updateCustomer(cloudUpdated);
+            saveCustomerProfileCloud(customer.phone, cloudUpdated);
+            saveExpiryDocumentCloud({
+              id: docId,
+              applicationId: application.id,
+              name: file.name,
+              requirement,
+              url: finalUrl,
+              data: finalUrl,
+              customerPhone: customer.phone,
+              uploadedAt: new Date().toISOString()
             });
           }
-
-          saveExpiryDocumentCloud({
-            id: docId,
-            applicationId: application.id,
-            name: file.name,
-            requirement,
-            url: finalUrl,
-            data: finalUrl,
-            customerPhone: customer.phone,
-            uploadedAt: new Date().toISOString()
-          });
         } catch (err) {
-          console.warn('Background cloud sync notice:', err);
+          console.warn('Background Cloud Storage upload notice:', err);
         }
       })();
     };
