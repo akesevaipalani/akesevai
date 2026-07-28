@@ -81,11 +81,11 @@ export const translations = {
     sendMessage: 'Send message',
 
     // Footer
-    tagline: 'உங்கள் நம்பிக்கைக்குரிய\nஇ-சேவை மையம்',
+    tagline: 'Your Trusted e-Sevai Centre',
     footerDesc: 'Making essential digital services simpler for every family in Palani.',
     footerRights: '© 2026 AkEsevai. All rights reserved.',
     footerAssistance: 'Private & secure assistance',
-    totalVisitors: 'மொத்த பார்வையாளர்கள் / Total Visitors'
+    totalVisitors: 'Total Visitors'
   },
   ta: {
     // Navigation
@@ -169,10 +169,10 @@ export const translations = {
     sendMessage: 'செய்தி அனுப்புக',
 
     // Footer
-    tagline: 'உங்கள் நம்பிக்கைக்குரிய\nஇ-சேவை மையம்',
+    tagline: 'உங்கள் நம்பிக்கைக்குரிய இ-சேவை மையம்',
     footerDesc: 'பழனியில் உள்ள ஒவ்வொரு குடும்பத்திற்கும் அத்தியாவசிய டிஜிட்டல் சேவைகளை எளிமையாக்குகிறது.',
     footerRights: '© 2026 AkEsevai. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.',
     footerAssistance: 'பாதுகாப்பான மற்றும் நம்பிக்கையான சேவை உதவி',
-    totalVisitors: 'மொத்த பார்வையாளர்கள் / Total Visitors'
+    totalVisitors: 'மொத்த பார்வையாளர்கள்'
   }
 };

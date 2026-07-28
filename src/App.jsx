@@ -15,7 +15,6 @@ import SoftwarePage from './pages/SoftwarePage';
 import HeroDocumentShowcase from './components/HeroDocumentShowcase';
 import HeroBannerSlider from './components/HeroBannerSlider';
 import ServicePhotoSlider from './components/ServicePhotoSlider';
-import QuickTokenStatusLookup from './components/QuickTokenStatusLookup';
 import CustomerTestimonials from './components/CustomerTestimonials';
 import FloatingQuickActions from './components/FloatingQuickActions';
 import AnimatedLiveStatsStrip from './components/AnimatedLiveStatsStrip';
@@ -158,6 +157,8 @@ import {
   fetchAllCloudRecords,
   deleteCustomerProfileCloud,
   deleteTokenBookingCloud,
+  recordVisitorHitCloud,
+  subscribeVisitorCounter,
   deleteApplicationCloud,
   deleteExpiryDocumentCloud
 } from './utils/firebaseService';
@@ -400,7 +401,15 @@ const getInitialPage = () => {
 function App() {
   const [page, setPage] = useState(getInitialPage);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [lang, setLang] = useState(() => localStorage.getItem('akesevai-lang') || 'ta');
+  const [lang, setLang] = useState(() => {
+    try {
+      const match = document.cookie.match(/akesevai-lang=(ta|en)/);
+      if (match && match[1]) return match[1];
+      const saved = localStorage.getItem('akesevai-lang');
+      if (saved === 'en' || saved === 'ta') return saved;
+    } catch (e) {}
+    return 'ta';
+  });
   const [customer, setCustomer] = useState(() => {
     const phone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
     if (!phone) return null;
@@ -417,6 +426,7 @@ function App() {
   const [showFirstLoginModal, setShowFirstLoginModal] = useState(false);
   const [isFirstTimeLogin, setIsFirstTimeLogin] = useState(true);
   const [isDark, setIsDark] = useDarkMode();
+  const [visitorCount, setVisitorCount] = useState(18472);
 
   const t = translations[lang] || translations.en;
 
@@ -442,8 +452,9 @@ function App() {
 
     window.addEventListener('popstate', handlePopState);
     const initial = getInitialPage();
-    const cleanUrl = initial === 'home' ? '/' : `/${initial}`;
-    window.history.replaceState({ page: initial }, '', cleanUrl);
+    const cleanPath = initial === 'home' ? '/' : `/${initial}`;
+    const targetFullUrl = window.location.origin + cleanPath + window.location.search;
+    window.history.replaceState({ page: initial }, '', targetFullUrl);
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
@@ -510,24 +521,38 @@ function App() {
       }
     });
 
+    recordVisitorHitCloud();
+    const unsubscribeVisitor = subscribeVisitorCounter((count) => {
+      if (typeof count === 'number' && count > 0) {
+        setVisitorCount(count);
+      }
+    });
+
     return () => {
       unsubscribeTokens();
       unsubscribeProfiles();
       unsubscribeApps();
       unsubscribeDocs();
+      unsubscribeVisitor();
     };
   }, []);
 
   useEffect(() => {
-    if (lang) {
-      localStorage.setItem('akesevai-lang', lang);
-    }
+    try {
+      if (lang) {
+        localStorage.setItem('akesevai-lang', lang);
+        document.cookie = `akesevai-lang=${lang}; path=/; max-age=31536000; SameSite=Lax`;
+      }
+    } catch (e) {}
   }, [lang]);
 
   const toggleLang = () => {
     const nextLang = lang === 'ta' ? 'en' : 'ta';
     setLang(nextLang);
-    localStorage.setItem('akesevai-lang', nextLang);
+    try {
+      localStorage.setItem('akesevai-lang', nextLang);
+      document.cookie = `akesevai-lang=${nextLang}; path=/; max-age=31536000; SameSite=Lax`;
+    } catch (e) {}
     notify(nextLang === 'ta' ? 'தமிழ் மொழிக்கு மாற்றப்பட்டது' : 'Language switched to English');
   };
 
@@ -558,8 +583,9 @@ function App() {
     const navigate = (nextPage) => {
       setPage((prevPage) => {
         if (prevPage !== nextPage) {
-          const targetUrl = nextPage === 'home' ? '/' : `/${nextPage}`;
-          window.history.pushState({ page: nextPage }, '', targetUrl);
+          const cleanPath = nextPage === 'home' ? '/' : `/${nextPage}`;
+          const targetFullUrl = window.location.origin + cleanPath;
+          window.history.pushState({ page: nextPage }, '', targetFullUrl);
         }
         return nextPage;
       });
@@ -575,13 +601,12 @@ function App() {
     const loginCustomer = (phone) => {
       const records = customerRecords || readCustomerRecords();
       const isNew = !records[phone];
-      const record = records[phone] ? { ...records[phone], rewardPoints: records[phone].rewardPoints ?? 50 } : {
+      const record = records[phone] ? { ...records[phone] } : {
         phone,
         profile: { name: '', createdAt: new Date().toISOString(), complete: false },
         applications: [],
         documents: [],
         appointment: { date: '', time: '' },
-        rewardPoints: 50,
       };
       saveCustomerRecord(record);
       sessionStorage.setItem(CUSTOMER_SESSION_KEY, phone);
@@ -664,7 +689,7 @@ function App() {
                   Ak <span className="brand-highlight">e-Sevai</span>
                 </strong>
                 <small className="brand-tagline">
-                  உங்கள் நம்பிக்கைக்குரிய இ-சேவை மையம்
+                  {t.tagline}
                 </small>
               </div>
             </button>
@@ -896,17 +921,14 @@ function HomePage({ navigate, notify, lang }) {
 
 
 
-        {/* QUICK TOKEN & STATUS LOOKUP TRACKER */}
-        <div className="page-width">
-          <QuickTokenStatusLookup navigate={navigate} />
-        </div>
+
 
         {/* SOCIAL MEDIA CHANNELS & FOLLOW WIDGET */}
         <div className="page-width">
           <SocialMediaFollowWidget />
         </div>
 
-        <section className="notifications-section page-width"><div className="section-heading"><div><span className="section-kicker">{t.notificationsKicker}</span><h2>{t.notificationsTitle}</h2></div><button className="text-button" onClick={() => navigate('notifications')}>{t.viewAllNotifications} <ArrowRight size={16} /></button></div><div className="notification-grid">{notifications.map((notification) => <NotificationCard key={notification.title} notification={notification} />)}</div><div className="visitor-counter"><Eye /> <span>{t.totalVisitors}</span><strong>18,472</strong></div></section>
+        <section className="notifications-section page-width"><div className="section-heading"><div><span className="section-kicker">{t.notificationsKicker}</span><h2>{t.notificationsTitle}</h2></div><button className="text-button" onClick={() => navigate('notifications')}>{t.viewAllNotifications} <ArrowRight size={16} /></button></div><div className="notification-grid">{notifications.map((notification) => <NotificationCard key={notification.title} notification={notification} />)}</div><div className="visitor-counter"><Eye /> <span>{t.totalVisitors}</span><strong>{visitorCount.toLocaleString('en-IN')}</strong></div></section>
 
 
         {/* CITIZEN REVIEWS & TESTIMONIALS AT THE BOTTOM OF HOMEPAGE */}
@@ -1768,7 +1790,6 @@ const getServiceVisual = (group, title = '') => {
           statusLabel: isCompleted ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : (app.status || 'Submitted & In Progress'),
           statusColor: isCompleted ? '#16a34a' : '#0052cc',
           documentsCount: docs.length,
-          rewardPoints: cust.rewardPoints ?? 50,
           customerRef: cust
         });
       });
@@ -2199,7 +2220,6 @@ const getServiceVisual = (group, title = '') => {
                             const updatedRecord = {
                               ...selected,
                               applications: updatedApps,
-                              rewardPoints: (selected.rewardPoints ?? 50) + 60,
                               updatedAt: new Date().toISOString()
                             };
                             await saveCustomerProfileCloud(cleanPhone, updatedRecord);

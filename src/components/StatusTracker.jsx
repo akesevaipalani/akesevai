@@ -101,7 +101,7 @@ export default function StatusTracker({ initialQuery = '' }) {
             statusLabel: isCompleted ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : 'In Progress (விண்ணப்பம் பரிசீலனையில் உள்ளது)',
             statusColor: isCompleted ? '#16a34a' : '#0052cc',
             remarks: `வாடிக்கையாளர் கணக்கில் ${custDocs.length} ஆவணங்கள் சரிபார்க்கப்பட்டு விண்ணப்பம் தொடரப்படுகிறது.`,
-            rewardPoints: cust.rewardPoints ?? 50,
+
             timeline: [
               { step: 1, title: 'Registered', tamil: 'விண்ணப்பம் பதிவு செய்யப்பட்டது', date: appObj.date || 'Today', done: true },
               { step: 2, title: 'Document Verified', tamil: `${custDocs.length} ஆவணங்கள் சரிபார்க்கப்பட்டது`, date: 'Today', done: true },

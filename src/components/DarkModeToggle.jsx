@@ -5,6 +5,9 @@ import { Moon, Sun } from 'lucide-react';
 export function useDarkMode() {
   const [isDark, setIsDark] = React.useState(() => {
     try {
+      const match = document.cookie.match(/akesevai-dark-mode=(true|false)/);
+      if (match && match[1]) return match[1] === 'true';
+
       const stored = localStorage.getItem('akesevai-dark-mode');
       if (stored !== null) return stored === 'true';
     } catch (e) {}
@@ -16,9 +19,11 @@ export function useDarkMode() {
       if (isDark) {
         document.documentElement.setAttribute('data-theme', 'dark');
         localStorage.setItem('akesevai-dark-mode', 'true');
+        document.cookie = "akesevai-dark-mode=true; path=/; max-age=31536000; SameSite=Lax";
       } else {
         document.documentElement.removeAttribute('data-theme');
         localStorage.setItem('akesevai-dark-mode', 'false');
+        document.cookie = "akesevai-dark-mode=false; path=/; max-age=31536000; SameSite=Lax";
       }
     } catch (e) {}
   }, [isDark]);

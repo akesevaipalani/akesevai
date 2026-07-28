@@ -10,7 +10,8 @@ import {
   query, 
   where,
   orderBy, 
-  serverTimestamp 
+  serverTimestamp,
+  increment
 } from 'firebase/firestore';
 import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
 import { db, storage, isFirebaseConfigured } from '../config/firebase';
@@ -672,5 +673,53 @@ export const purgeAllFirebaseCloudData = async () => {
     logFirebaseNotice('Purge all cloud data', err);
     return false;
   }
+};
+
+const BASE_VISITOR_COUNT = 18472;
+
+export const recordVisitorHitCloud = async () => {
+  if (typeof window === 'undefined' || !isFirebaseConfigured()) return;
+  try {
+    const hasCountedSession = sessionStorage.getItem('akesevai-session-counted');
+    const counterDocRef = doc(db, SETTINGS_COLLECTION, 'visitor_counter');
+
+    if (!hasCountedSession) {
+      sessionStorage.setItem('akesevai-session-counted', 'true');
+      const docSnap = await getDoc(counterDocRef);
+      if (!docSnap.exists()) {
+        await setDoc(counterDocRef, {
+          totalCount: BASE_VISITOR_COUNT + 1,
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        await updateDoc(counterDocRef, {
+          totalCount: increment(1),
+          updatedAt: serverTimestamp()
+        });
+      }
+    }
+  } catch (err) {
+    logFirebaseNotice('Record Visitor Hit', err);
+  }
+};
+
+export const subscribeVisitorCounter = (callback) => {
+  if (!isFirebaseConfigured() || typeof callback !== 'function') {
+    callback(BASE_VISITOR_COUNT);
+    return () => {};
+  }
+  const counterDocRef = doc(db, SETTINGS_COLLECTION, 'visitor_counter');
+  return onSnapshot(counterDocRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      const val = Number(data.totalCount);
+      callback(isNaN(val) || val < BASE_VISITOR_COUNT ? BASE_VISITOR_COUNT : val);
+    } else {
+      callback(BASE_VISITOR_COUNT);
+    }
+  }, (err) => {
+    logFirebaseNotice('Subscribe Visitor Counter', err);
+    callback(BASE_VISITOR_COUNT);
+  });
 };
 
