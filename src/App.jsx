@@ -1810,7 +1810,10 @@ const getServiceVisual = (group, title = '') => {
 
       apps.forEach((app) => {
         if (!app || !app.id) return;
-        const isCompleted = app.status === 'Completed' || app.progress === 100;
+        const storeRecord = applicationRecords && (applicationRecords[app.id] || applicationRecords[app.ackNo]);
+        const stageNum = storeRecord?.currentStage || app.currentStage || app.stage || (app.status === 'Completed' ? 6 : 3);
+        const isCompleted = stageNum === 6;
+
         customerAppsList.push({
           id: app.id,
           ackNo: app.id,
@@ -1818,9 +1821,9 @@ const getServiceVisual = (group, title = '') => {
           phone: custPhone,
           service: app.name || 'e-Sevai Application',
           submittedDate: app.date || new Date().toLocaleDateString('en-IN'),
-          currentStage: isCompleted ? 6 : (app.stage || 3),
-          statusLabel: isCompleted ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : (app.status || 'Submitted & In Progress'),
-          statusColor: isCompleted ? '#16a34a' : '#0052cc',
+          currentStage: stageNum,
+          statusLabel: storeRecord?.statusLabel || app.statusLabel || (isCompleted ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : (app.status || 'Submitted & In Progress')),
+          statusColor: storeRecord?.statusColor || app.statusColor || (isCompleted ? '#16a34a' : '#0052cc'),
           documentsCount: docs.length,
           customerRef: cust
         });
@@ -1828,16 +1831,20 @@ const getServiceVisual = (group, title = '') => {
     });
 
     const allAppsMap = {};
-    Object.values(applicationRecords || {}).forEach((app) => {
-      if (app && (app.id || app.ackNo)) {
-        const key = app.id || app.ackNo;
-        allAppsMap[key] = app;
+
+    customerAppsList.forEach((app) => {
+      if (app && app.id) {
+        allAppsMap[app.id] = app;
       }
     });
 
-    customerAppsList.forEach((app) => {
-      if (app && app.id && !allAppsMap[app.id]) {
-        allAppsMap[app.id] = app;
+    Object.values(applicationRecords || {}).forEach((app) => {
+      if (app && (app.id || app.ackNo)) {
+        const key = app.id || app.ackNo;
+        allAppsMap[key] = {
+          ...(allAppsMap[key] || {}),
+          ...app
+        };
       }
     });
 
@@ -1854,11 +1861,46 @@ const getServiceVisual = (group, title = '') => {
       );
     });
 
-    const handleUpdateAppStage = async (appId, newStage) => {
-      const updated = updateApplicationStage(appId, newStage);
+    const handleUpdateAppStage = async (appId, newStage, appObj) => {
+      const updated = updateApplicationStage(appId, newStage, null, null, appObj);
       if (updated && setApplicationRecords) {
         setApplicationRecords((prev) => ({ ...prev, [appId]: updated }));
       }
+
+      if (appObj && appObj.phone && customerRecords) {
+        const cleanPhone = String(appObj.phone).replace(/\D/g, '');
+        const custKey = Object.keys(customerRecords || {}).find(k => {
+          const c = customerRecords[k];
+          if (!c) return false;
+          const cPhone = String(c.phone || k).replace(/\D/g, '');
+          return cPhone === cleanPhone || (cleanPhone && cPhone.includes(cleanPhone));
+        });
+
+        const targetKey = custKey || cleanPhone;
+        const cust = customerRecords[targetKey];
+
+        if (cust && Array.isArray(cust.applications)) {
+          const updatedCustApps = cust.applications.map(a => {
+            if (a.id === appId || a.ackNo === appId || (a.name && appObj.service && a.name.toLowerCase() === appObj.service.toLowerCase())) {
+              return {
+                ...a,
+                stage: newStage,
+                currentStage: newStage,
+                progress: newStage === 6 ? 100 : Math.round((newStage / 6) * 100),
+                status: newStage === 6 ? 'Completed' : 'Processing',
+                statusLabel: updated?.statusLabel || (newStage === 6 ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : 'In Progress')
+              };
+            }
+            return a;
+          });
+          const updatedCust = { ...cust, applications: updatedCustApps };
+          saveCustomerProfileCloud(targetKey, updatedCust);
+          if (setCustomerRecords) {
+            setCustomerRecords(prev => ({ ...prev, [targetKey]: updatedCust }));
+          }
+        }
+      }
+
       notify(`✅ Application ${appId} updated to Stage ${newStage}!`);
     };
 
@@ -2070,7 +2112,7 @@ const getServiceVisual = (group, title = '') => {
                         <td>
                           <select
                             value={app.currentStage || 3}
-                            onChange={(e) => handleUpdateAppStage(app.id || app.ackNo, parseInt(e.target.value, 10))}
+                            onChange={(e) => handleUpdateAppStage(app.id || app.ackNo, parseInt(e.target.value, 10), app)}
                             style={{
                               padding: '4px 8px',
                               borderRadius: '6px',

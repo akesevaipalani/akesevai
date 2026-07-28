@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, CheckCircle2, Clock, FileCheck2, Send, AlertCircle, Printer, ArrowRight, ShieldCheck, MapPin, Phone, MessageCircle, QrCode, Award, Sparkles, Gift } from 'lucide-react';
 import { getStoredApplications } from '../utils/statusStore';
 import { printElement } from '../utils/printHelper';
-import { subscribeCustomerProfiles, subscribeTokens, fetchAllCloudRecords } from '../utils/firebaseService';
+import { subscribeCustomerProfiles, subscribeTokens, subscribeApplications, fetchAllCloudRecords } from '../utils/firebaseService';
 
 export default function StatusTracker({ initialQuery = '' }) {
   const [query, setQuery] = useState(initialQuery);
@@ -22,10 +22,14 @@ export default function StatusTracker({ initialQuery = '' }) {
     const unsubTok = subscribeTokens((toks) => {
       setCloudData((prev) => ({ ...prev, tokens: toks || [] }));
     });
+    const unsubApps = subscribeApplications((apps) => {
+      setCloudData((prev) => ({ ...prev, applications: apps || {} }));
+    });
 
     return () => {
       if (typeof unsubCust === 'function') unsubCust();
       if (typeof unsubTok === 'function') unsubTok();
+      if (typeof unsubApps === 'function') unsubApps();
     };
   }, []);
 
@@ -45,8 +49,12 @@ export default function StatusTracker({ initialQuery = '' }) {
 
     const cleanKey = key.replace(/\D/g, '');
 
-    // 1. Read stored receipts from admin statusStore
-    const storedApps = Object.values(getStoredApplications());
+    // 1. Read stored & cloud applications
+    const allStoredAppsMap = {
+      ...getStoredApplications(),
+      ...(cloudData.applications || {})
+    };
+    const storedAppsList = Object.values(allStoredAppsMap);
 
     // 2. Read customer records from sessionStorage & cloud
     let localCustRecords = {};
@@ -64,10 +72,15 @@ export default function StatusTracker({ initialQuery = '' }) {
 
     let found = null;
 
-    // Search 1: Match Application ID in stored receipts
-    found = storedApps.find(app => app.id && app.id.toUpperCase() === key);
+    // Search 1: Match Application ID in stored/cloud applications
+    found = storedAppsList.find(app => app && app.id && app.id.toUpperCase() === key);
 
-    // Search 2: Match Customer Mobile Number (cleanKey) or App ID in all Customer Profiles
+    // Search 2: Match Phone Number in stored/cloud applications
+    if (!found && cleanKey) {
+      found = storedAppsList.find(app => app && app.phone && String(app.phone).replace(/\D/g, '') === cleanKey);
+    }
+
+    // Search 3: Match Customer Mobile Number (cleanKey) or App ID in all Customer Profiles
     if (!found) {
       for (const phoneKey of Object.keys(allCustomers)) {
         const cust = allCustomers[phoneKey];
@@ -88,7 +101,22 @@ export default function StatusTracker({ initialQuery = '' }) {
             date: new Date().toLocaleDateString('en-IN')
           };
 
-          const isCompleted = appObj.status === 'Completed' || appObj.progress === 100;
+          if (appObj && appObj.id && allStoredAppsMap[appObj.id]) {
+            found = allStoredAppsMap[appObj.id];
+            break;
+          }
+
+          const stageNum = appObj.currentStage || appObj.stage || (appObj.status === 'Completed' || appObj.progress === 100 ? 6 : 3);
+          const stageInfoMap = {
+            1: { statusLabel: 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)', statusColor: '#3b82f6', remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பதிவு செய்யப்பட்டுள்ளது.' },
+            2: { statusLabel: 'Step 2: Documents Verified (ஆவணங்கள் சரிபார்க்கப்பட்டது)', statusColor: '#0284c7', remarks: `வாடிக்கையாளர் கணக்கில் ${custDocs.length || 2} ஆவணங்கள் சரிபார்க்கப்பட்டு விண்ணப்பம் தொடரப்படுகிறது.` },
+            3: { statusLabel: 'Step 3: Fee Confirmed (கட்டணம் பெறப்பட்டு செயலாக்கத்தில் உள்ளது)', statusColor: '#0052cc', remarks: `வாடிக்கையாளர் கணக்கில் ${custDocs.length || 2} ஆவணங்கள் சரிபார்க்கப்பட்டு விண்ணப்பம் தொடரப்படுகிறது.` },
+            4: { statusLabel: 'Step 4: Submitted to Govt (அரசு தளத்தில் தாக்கல் செய்யப்பட்டது)', statusColor: '#d97706', remarks: 'அரசு இ-சேவை இணையதளத்தில் விண்ணப்பம் தாக்கல் செய்யப்பட்டுள்ளது.' },
+            5: { statusLabel: 'Step 5: Officer Review (அதிகாரி பரிசீலனையில் உள்ளது)', statusColor: '#8b5cf6', remarks: 'அரசு அதிகாரி / VAO / RI பரிசீலனையில் உள்ளது.' },
+            6: { statusLabel: 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)', statusColor: '#16a34a', remarks: 'விண்ணப்பம் வெற்றிகரமாக ஒப்புதல் பெறப்பட்டு சான்றிதழ் தயாராக உள்ளது.' }
+          };
+          const curStage = stageInfoMap[stageNum] || stageInfoMap[3];
+
           found = {
             id: appObj.id,
             tokenId: `TOK-${cleanKey.slice(-3) || '101'}`,
@@ -97,18 +125,17 @@ export default function StatusTracker({ initialQuery = '' }) {
             service: appObj.name || 'General e-Sevai Service',
             submittedDate: appObj.date || 'Recently',
             estimatedDate: '3 முதல் 5 வேலை நாட்கள்',
-            currentStage: isCompleted ? 6 : 3,
-            statusLabel: isCompleted ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : 'In Progress (விண்ணப்பம் பரிசீலனையில் உள்ளது)',
-            statusColor: isCompleted ? '#16a34a' : '#0052cc',
-            remarks: `வாடிக்கையாளர் கணக்கில் ${custDocs.length} ஆவணங்கள் சரிபார்க்கப்பட்டு விண்ணப்பம் தொடரப்படுகிறது.`,
-
+            currentStage: stageNum,
+            statusLabel: appObj.statusLabel || curStage.statusLabel,
+            statusColor: appObj.statusColor || curStage.statusColor,
+            remarks: appObj.remarks || curStage.remarks,
             timeline: [
-              { step: 1, title: 'Registered', tamil: 'விண்ணப்பம் பதிவு செய்யப்பட்டது', date: appObj.date || 'Today', done: true },
-              { step: 2, title: 'Document Verified', tamil: `${custDocs.length} ஆவணங்கள் சரிபார்க்கப்பட்டது`, date: 'Today', done: true },
-              { step: 3, title: 'Fee Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: 'Today', done: true, active: !isCompleted },
-              { step: 4, title: 'Submitted to Portal', tamil: 'அரசு தளத்தில் தாக்கல் செய்யப்பட்டது', date: 'In Progress', done: isCompleted },
-              { step: 5, title: 'Officer Inspection', tamil: 'அதிகாரி பரிசீலனை', date: 'In Progress', done: isCompleted },
-              { step: 6, title: 'Approved & Completed', tamil: 'சான்றிதழ் தயார் / நிறைவடைந்தது', date: isCompleted ? 'Completed' : 'Pending', done: isCompleted, active: isCompleted }
+              { step: 1, title: 'Registered', tamil: 'விண்ணப்பம் பதிவு செய்யப்பட்டது', date: appObj.date || 'Today', done: stageNum >= 1, active: stageNum === 1 },
+              { step: 2, title: 'Document Verified', tamil: `${custDocs.length || 2} ஆவணங்கள் சரிபார்க்கப்பட்டது`, date: 'Today', done: stageNum >= 2, active: stageNum === 2 },
+              { step: 3, title: 'Fee Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: 'Today', done: stageNum >= 3, active: stageNum === 3 },
+              { step: 4, title: 'Submitted to Portal', tamil: 'அரசு தளத்தில் தாக்கல் செய்யப்பட்டது', date: stageNum >= 4 ? (stageNum === 6 ? 'Completed' : 'Just Now') : 'Pending', done: stageNum >= 4, active: stageNum === 4 },
+              { step: 5, title: 'Officer Inspection', tamil: 'அதிகாரி பரிசீலனை', date: stageNum >= 5 ? (stageNum === 6 ? 'Completed' : 'In Progress') : 'Pending', done: stageNum >= 5, active: stageNum === 5 },
+              { step: 6, title: 'Approved & Completed', tamil: 'சான்றிதழ் தயார் / நிறைவடைந்தது', date: stageNum === 6 ? 'Completed' : 'Pending', done: stageNum === 6, active: stageNum === 6 }
             ]
           };
           break;
@@ -116,7 +143,7 @@ export default function StatusTracker({ initialQuery = '' }) {
       }
     }
 
-    // Search 3: Match in Token Bookings
+    // Search 4: Match in Token Bookings
     if (!found && cleanKey) {
       const foundToken = allTokens.find(t => (t.phone || '').replace(/\D/g, '') === cleanKey || (t.tokenNo && t.tokenNo.toUpperCase() === key));
       if (foundToken) {
