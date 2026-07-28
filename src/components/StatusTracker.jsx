@@ -232,11 +232,7 @@ export default function StatusTracker({ initialQuery = '' }) {
           <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
             <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>📋 Service Request: {searchedApp.service}</strong>
             <p style={{ fontSize: '13px', color: '#475569', margin: '4px 0 0' }}>{searchedApp.remarks}</p>
-            {searchedApp.rewardPoints !== undefined && (
-              <div style={{ marginTop: '10px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '8px', padding: '8px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 800, color: '#78350f' }}>
-                <Gift size={15} style={{ color: '#d97706' }} /> Loyalty Rewards Balance: <span style={{ color: '#d97706' }}>{searchedApp.rewardPoints} Points</span> (Worth ₹{Math.floor(searchedApp.rewardPoints / 10)} Discount)
-              </div>
-            )}
+
           </div>
 
           {/* Timeline Steps */}

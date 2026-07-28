@@ -374,17 +374,26 @@ function toDownloadLink(link) {
   return link;
 }
 
+const validPages = [
+  'home', 'services', 'status-track', 'token-generator', 'notifications',
+  'about', 'contact', 'customer', 'admin', 'weblink', 'forms', 'software',
+  'photo-maker', 'whatsapp-poster'
+];
+
 const getInitialPage = () => {
+  const pathname = window.location.pathname.replace(/^\/+/, '').trim();
+  const mainPath = pathname.split('/')[0].split('?')[0];
+
+  if (validPages.includes(mainPath)) {
+    return mainPath;
+  }
+
   const hash = window.location.hash.replace('#', '').trim();
   if (hash) {
-    const validPages = [
-      'home', 'services', 'status-track', 'token-generator', 'notifications',
-      'about', 'contact', 'customer', 'admin', 'weblink', 'forms', 'software',
-      'photo-maker', 'whatsapp-poster'
-    ];
-    const mainPage = hash.split('/')[0].split('?')[0];
-    if (validPages.includes(mainPage)) return mainPage;
+    const mainHash = hash.split('/')[0].split('?')[0];
+    if (validPages.includes(mainHash)) return mainHash;
   }
+
   return 'home';
 };
 
@@ -417,9 +426,15 @@ function App() {
       if (event.state && event.state.page) {
         targetPage = event.state.page;
       } else {
-        const hash = window.location.hash.replace('#', '').trim();
-        const mainPage = hash.split('/')[0].split('?')[0];
-        if (mainPage) targetPage = mainPage;
+        const pathname = window.location.pathname.replace(/^\/+/, '').trim();
+        const mainPath = pathname.split('/')[0].split('?')[0];
+        if (validPages.includes(mainPath)) {
+          targetPage = mainPath;
+        } else {
+          const hash = window.location.hash.replace('#', '').trim();
+          const mainHash = hash.split('/')[0].split('?')[0];
+          if (validPages.includes(mainHash)) targetPage = mainHash;
+        }
       }
       setPage(targetPage);
       setMenuOpen(false);
@@ -427,7 +442,8 @@ function App() {
 
     window.addEventListener('popstate', handlePopState);
     const initial = getInitialPage();
-    window.history.replaceState({ page: initial }, '', `#${initial}`);
+    const cleanUrl = initial === 'home' ? '/' : `/${initial}`;
+    window.history.replaceState({ page: initial }, '', cleanUrl);
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
@@ -542,7 +558,8 @@ function App() {
     const navigate = (nextPage) => {
       setPage((prevPage) => {
         if (prevPage !== nextPage) {
-          window.history.pushState({ page: nextPage }, '', `#${nextPage}`);
+          const targetUrl = nextPage === 'home' ? '/' : `/${nextPage}`;
+          window.history.pushState({ page: nextPage }, '', targetUrl);
         }
         return nextPage;
       });
@@ -2193,11 +2210,11 @@ const getServiceVisual = (group, title = '') => {
                                 [selected.phone]: updatedRecord
                               }));
                             }
-                            notify(`🎉 Service "${application.name}" marked COMPLETED! +60 Reward Points (₹6 Discount) credited to ${selectedName}!`);
+                            notify(`🎉 Service "${application.name}" marked COMPLETED for ${selectedName}!`);
                           }}
                           style={{ background: '#f0fdf4', color: '#15803d', border: '1.5px solid #86efac', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
-                          ✅ Mark Completed & Credit +60 Pts (சேவை நிறைவு & ரிவார்டு)
+                          ✅ Mark Completed (சேவை நிறைவு)
                         </button>
                       </div>
                     )) : <p className="empty-customer-state">No service selected.</p>}
