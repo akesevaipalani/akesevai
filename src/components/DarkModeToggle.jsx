@@ -4,18 +4,23 @@ import { Moon, Sun } from 'lucide-react';
 // Dark mode toggle - stores in localStorage
 export function useDarkMode() {
   const [isDark, setIsDark] = React.useState(() => {
-    const stored = localStorage.getItem('akesevai-dark-mode');
-    if (stored !== null) return stored === 'true';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    try {
+      const stored = localStorage.getItem('akesevai-dark-mode');
+      if (stored !== null) return stored === 'true';
+    } catch (e) {}
+    return false;
   });
 
   React.useEffect(() => {
-    if (isDark) {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      document.documentElement.removeAttribute('data-theme');
-    }
-    localStorage.setItem('akesevai-dark-mode', isDark);
+    try {
+      if (isDark) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('akesevai-dark-mode', 'true');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('akesevai-dark-mode', 'false');
+      }
+    } catch (e) {}
   }, [isDark]);
 
   return [isDark, setIsDark];

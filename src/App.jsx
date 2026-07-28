@@ -454,8 +454,6 @@ function App() {
   }, [page]);
 
   useEffect(() => {
-    clearAllApplicationLocalStorage();
-
     fetchAllCloudRecords().then((cloudData) => {
       if (cloudData) {
         if (cloudData.customers) setCustomerRecords(cloudData.customers);
@@ -2163,66 +2161,7 @@ const getServiceVisual = (group, title = '') => {
                       </div>
                     </div>
 
-                    {/* ADMIN LOYALTY REWARDS MANAGER CARD */}
-                    <div style={{ background: '#fffbeb', border: '1.5px solid #fcd34d', borderRadius: '12px', padding: '14px 18px', margin: '14px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-                      <div>
-                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#b45309', textTransform: 'uppercase' }}>REGULAR CUSTOMER LOYALTY REWARDS</span>
-                        <strong style={{ display: 'block', fontSize: '16px', color: '#78350f', fontWeight: 900 }}>
-                          🎁 Reward Points Balance: <span style={{ color: '#d97706' }}>{selected.rewardPoints ?? 50} Points</span> (Discount Value: ₹{Math.floor((selected.rewardPoints ?? 50) / 10)})
-                        </strong>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <button
-                          onClick={async () => {
-                            const cleanPhone = String(selected.phone).replace(/\D/g, '');
-                            const updatedRecord = {
-                              ...selected,
-                              rewardPoints: (selected.rewardPoints ?? 50) + 60,
-                              updatedAt: new Date().toISOString()
-                            };
-                            await saveCustomerProfileCloud(cleanPhone, updatedRecord);
-                            if (setCustomerRecords) {
-                              setCustomerRecords((prev) => ({
-                                ...prev,
-                                [cleanPhone]: updatedRecord,
-                                [selected.phone]: updatedRecord
-                              }));
-                            }
-                            notify(`🎉 Granted +60 Service Reward Points (₹6 Discount) to ${selectedName}!`);
-                          }}
-                          style={{ background: '#16a34a', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                        >
-                          🎁 Give +60 Points (சேவை நிறைவு ரிவார்டு)
-                        </button>
-                        <button
-                          onClick={async () => {
-                            const addInput = window.prompt(`Enter bonus reward points to grant to ${selectedName} (+91 ${selected.phone}):`, '50');
-                            if (addInput) {
-                              const bonusPts = parseInt(addInput, 10);
-                              if (isNaN(bonusPts) || bonusPts <= 0) return;
-                              const cleanPhone = String(selected.phone).replace(/\D/g, '');
-                              const updatedRecord = {
-                                ...selected,
-                                rewardPoints: (selected.rewardPoints ?? 50) + bonusPts,
-                                updatedAt: new Date().toISOString()
-                              };
-                              await saveCustomerProfileCloud(cleanPhone, updatedRecord);
-                              if (setCustomerRecords) {
-                                setCustomerRecords((prev) => ({
-                                  ...prev,
-                                  [cleanPhone]: updatedRecord,
-                                  [selected.phone]: updatedRecord
-                                }));
-                              }
-                              notify(`🎉 Granted +${bonusPts} Bonus Reward Points to ${selectedName}!`);
-                            }
-                          }}
-                          style={{ background: '#d97706', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                        >
-                          <Sparkles size={14} /> ➕ Custom Points (வேறு புள்ளிகள்)
-                        </button>
-                      </div>
-                    </div>
+
 
 
 
@@ -2393,17 +2332,197 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
+  function CustomerImageCompressorWidget({ notify, customer, updateCustomer }) {
+    const [file, setFile] = useState(null);
+    const [originalKb, setOriginalKb] = useState(0);
+    const [targetKb, setTargetKb] = useState(100);
+    const [compressedUrl, setCompressedUrl] = useState(null);
+    const [compressedKb, setCompressedKb] = useState(0);
+    const [isProcessing, setIsProcessing] = useState(false);
+
+    const processImageCompression = (dataUrl, targetSizeKb) => {
+      setIsProcessing(true);
+      const img = new Image();
+      img.onload = () => {
+        let quality = 0.90;
+        let width = img.width;
+        let height = img.height;
+
+        const maxDim = targetSizeKb <= 100 ? 800 : 1200;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let resultUrl = canvas.toDataURL('image/jpeg', quality);
+        let kb = Math.round((resultUrl.length * 3) / 4 / 1024);
+
+        while (kb > targetSizeKb && quality > 0.08) {
+          quality -= 0.06;
+          resultUrl = canvas.toDataURL('image/jpeg', quality);
+          kb = Math.round((resultUrl.length * 3) / 4 / 1024);
+        }
+
+        setCompressedUrl(resultUrl);
+        setCompressedKb(kb);
+        setIsProcessing(false);
+      };
+      img.onerror = () => setIsProcessing(false);
+      img.src = dataUrl;
+    };
+
+    const handleFileSelect = (e) => {
+      const selectedFile = e.target.files?.[0];
+      if (!selectedFile) return;
+
+      setFile(selectedFile);
+      setOriginalKb(Math.round(selectedFile.size / 1024));
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        processImageCompression(ev.target.result, targetKb);
+      };
+      reader.readAsDataURL(selectedFile);
+    };
+
+    const handleTargetChange = (newTarget) => {
+      setTargetKb(newTarget);
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => processImageCompression(ev.target.result, newTarget);
+        reader.readAsDataURL(file);
+      }
+    };
+
+    return (
+      <div style={{ background: '#f8fafc', border: '2px solid #0052cc', borderRadius: '16px', padding: '24px', margin: '16px 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1.5px solid #cbd5e1', paddingBottom: '12px' }}>
+          <div>
+            <span style={{ background: '#eff6ff', color: '#0052cc', padding: '4px 12px', borderRadius: '16px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Camera size={14} /> CUSTOMER IMAGE & DOCUMENT COMPRESSOR
+            </span>
+            <h3 style={{ font: '900 20px Manrope', color: '#022c7a', margin: '6px 0 0' }}>
+              📸 ஸ்மார்ட் போட்டோ & ஆவண அமுக்கி <span>(Target Size Compressor)</span>
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+              அரசு இ-சேவை தளங்களுக்கு ஏற்றவாறு உங்கள் போட்டோ / ஆவணங்களின் அளவை (KB) 1-கிளிக்கில் சுருக்கவும்.
+            </p>
+          </div>
+        </div>
+
+        {/* Target Size Presets */}
+        <div style={{ marginBottom: '18px' }}>
+          <label style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', display: 'block', marginBottom: '8px' }}>
+            தேவையான அளவு வரம்பு (Target KB Limit Select):
+          </label>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {[
+              { kb: 50, label: '🎯 < 50 KB (கையொப்பம் / Signature)' },
+              { kb: 100, label: '🎯 < 100 KB (TNEGA / Passport Photo)' },
+              { kb: 200, label: '🎯 < 200 KB (சான்றிதழ் / Aadhaar Doc)' },
+              { kb: 500, label: '🎯 < 500 KB (பொது ஆவணம் / General)' }
+            ].map((item) => (
+              <button
+                key={item.kb}
+                type="button"
+                onClick={() => handleTargetChange(item.kb)}
+                style={{
+                  background: targetKb === item.kb ? '#0052cc' : 'white',
+                  color: targetKb === item.kb ? 'white' : '#1e293b',
+                  border: targetKb === item.kb ? '2px solid #0052cc' : '1.5px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: targetKb === item.kb ? '0 4px 12px rgba(0,82,204,0.25)' : 'none'
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Upload Input */}
+        <div style={{ background: 'white', border: '2px dashed #0052cc', borderRadius: '12px', padding: '24px', textAlign: 'center', marginBottom: '20px' }}>
+          <UploadCloud size={36} color="#0052cc" style={{ marginBottom: '8px' }} />
+          <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>
+            {file ? `தேர்ந்தெடுக்கப்பட்ட படம்: ${file.name}` : 'புகைப்படம் அல்லது ஆவணத்தைத் தேர்ந்தெடுக்கவும்'}
+          </h4>
+          <small style={{ color: '#64748b', fontSize: '11px', display: 'block', margin: '4px 0 12px' }}>
+            JPG, PNG அல்லது WebP படங்கள் (Up to 15 MB)
+          </small>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            style={{ display: 'inline-block', fontSize: '12px' }}
+          />
+        </div>
+
+        {/* Compression Result Preview */}
+        {compressedUrl && (
+          <div style={{ background: 'white', border: '2px solid #16a34a', borderRadius: '14px', padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <img src={compressedUrl} alt="Compressed Result" style={{ width: '80px', height: '80px', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '10px', background: '#f8fafc' }} />
+              <div>
+                <div style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '14px', fontSize: '12px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <Check size={14} /> வெற்றி! சுருக்கப்பட்டது ({compressedKb} KB)
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
+                  அசல் அளவு: <strong>{originalKb} KB</strong> • இலக்கு அளவு: <strong>&lt; {targetKb} KB</strong>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <a
+                href={compressedUrl}
+                download={`compressed_${file?.name || 'document.jpg'}`}
+                style={{
+                  background: '#16a34a',
+                  color: 'white',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  fontWeight: 900,
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(22,163,74,0.25)'
+                }}
+              >
+                <Download size={16} /> 📥 பதிவிறக்கு (Download JPG)
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function CustomerPage({ customer, updateCustomer, logout, notify, saveToken, cloudExpiryDocs = [] }) {
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedService, setSelectedService] = useState('');
     const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
     if (!customer.profile.complete) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> Customer profile</span><h1>Welcome to<br /><em>AkEsevai.</em></h1><p>Please enter your name once. We will save it with your mobile number for your next login.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); const cleanedName = name.trim(); if (!cleanedName) return; updateCustomer((current) => ({ ...current, profile: { ...current.profile, name: cleanedName, complete: true } })); notify('Your name has been saved. Welcome to your dashboard.'); }}><div className="login-icon"><UserRound size={22} /></div><span className="section-kicker">YOUR DETAILS</span><h2>What is your name?</h2><p>This is visible only in your customer account and to AkEsevai administration.</p><label>Full name<input className="admin-password" autoFocus required value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your full name" /></label><button className="button button-primary button-wide" type="submit">Continue <ArrowRight size={17} /></button></form></section>;
-    const tabs = [['overview', 'Overview'], ['documents', 'My documents'], ['token-slip', '🎫 Token Slip']];
+    const tabs = [['overview', 'Overview'], ['documents', 'My documents'], ['compressor', '📸 போட்டோ அமுக்கி (Compressor)'], ['token-slip', '🎫 Token Slip']];
     const applications = customer.applications;
-    const addApplication = (event) => { event.preventDefault(); if (!selectedService) return; const service = serviceCatalog.find(([, title]) => title === selectedService); const requirements = getRequiredDocuments(selectedService, service?.[2]); const application = { id: `AK-${Date.now().toString().slice(-8)}`, name: selectedService, status: 'Submitted', date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), progress: 22, requirements }; updateCustomer((current) => ({ ...current, rewardPoints: (current.rewardPoints ?? 50) + 60, applications: [application, ...current.applications] })); setSelectedService(''); setActiveTab('documents'); notify('🎉 Service selected! You earned +60 AkEsevai Reward Points (Value: ₹6)!'); };
+    const addApplication = (event) => { event.preventDefault(); if (!selectedService) return; const service = serviceCatalog.find(([, title]) => title === selectedService); const requirements = getRequiredDocuments(selectedService, service?.[2]); const application = { id: `AK-${Date.now().toString().slice(-8)}`, name: selectedService, status: 'Submitted', date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), progress: 22, requirements }; updateCustomer((current) => ({ ...current, applications: [application, ...current.applications] })); setSelectedService(''); setActiveTab('documents'); notify('🎉 Service selected!'); };
     const initials = customer.profile.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
-    const currentRewardPoints = customer.rewardPoints ?? 50;
-    const pointsValueRupees = Math.floor(currentRewardPoints / 10);
     return (
       <section className="customer-dashboard page-width">
         <div className="dashboard-top">
@@ -2416,49 +2535,28 @@ const getServiceVisual = (group, title = '') => {
         </div>
         {activeTab === 'overview' && (
           <>
-            <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
               <div><span className="stat-icon yellow"><FileText /></span><span><strong>{applications.length}</strong><small>My services</small></span></div>
               <div><span className="stat-icon green"><Check /></span><span><strong>{customer.documents.length}</strong><small>My documents</small></span></div>
-              <div><span className="stat-icon" style={{ background: '#fef3c7', color: '#d97706' }}><Award /></span><span><strong>{currentRewardPoints} Pts</strong><small>Discount Value: ₹{pointsValueRupees}</small></span></div>
               <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><Ticket /></span><span><strong>{customer.lastToken?.tokenNo || 'Get Token'}</strong><small>Token Slip</small></span></div>
             </div>
 
-            {/* AK ESEVAI LOYALTY REWARDS CARD */}
-            <div style={{ background: 'linear-gradient(135deg, #022c7a 0%, #15803d 100%)', color: 'white', borderRadius: '14px', padding: '20px 24px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', boxShadow: '0 8px 24px rgba(2,44,122,0.18)' }}>
+            {/* Quick Compressor Promo Card on Overview */}
+            <div style={{ background: 'linear-gradient(135deg, #022c7a 0%, #0052cc 100%)', color: 'white', borderRadius: '14px', padding: '18px 22px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px', boxShadow: '0 8px 20px rgba(2,44,122,0.15)' }}>
               <div>
-                <span style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '1px', color: '#fbbf24', textTransform: 'uppercase' }}>AK ESEVAI LOYALTY REWARDS</span>
-                <h2 style={{ margin: '4px 0 0', fontSize: '20px', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  🎁 உங்களின் AkEsevai ரிவார்டு புள்ளிகள்: <strong style={{ color: '#fbbf24' }}>{currentRewardPoints} Points</strong> (மதிப்பு: ₹{pointsValueRupees})
-                </h2>
-                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#e2e8f0' }}>
-                  ₹10 சேவை கட்டணத்திற்கு 10 Reward Points (10 Points = ₹1 Discount Value). அடுத்த சேவையில் இந்நிதியைத் தள்ளுபடியாகப் பயன்படுத்தலாம்!
+                <span style={{ fontSize: '11px', fontWeight: 900, color: '#bfdbfe', textTransform: 'uppercase' }}>CUSTOMER PHOTO & DOC TOOL</span>
+                <h3 style={{ margin: '2px 0 0', fontSize: '17px', color: 'white' }}>
+                  📸 போட்டோ & ஆவண அமுக்கி (Image & Doc Target Size Compressor)
+                </h3>
+                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#cbd5e1' }}>
+                  அரசு சேவைகளுக்கு ஏற்றவாறு படத்தை 50KB, 100KB, 200KB வரம்பிற்குள் சுருக்கலாம்!
                 </p>
               </div>
               <button
-                onClick={() => {
-                  if (currentRewardPoints < 10) {
-                    notify('❌ தள்ளுபடி பெற குறைந்தபட்சம் 10 புள்ளிகள் (₹1 மதிப்பு) தேவை.');
-                    return;
-                  }
-                  const maxDiscountRs = Math.floor(currentRewardPoints / 10);
-                  const redeemInput = window.prompt(`உங்களிடம் ${currentRewardPoints} Reward Points உள்ளன (மதிப்பு: ₹${pointsValueRupees}). எத்தனை ரூபாய் (₹) தள்ளுபடி செய்ய விரும்புகிறீர்கள்? (Max: ₹${maxDiscountRs}):`, String(maxDiscountRs));
-                  if (redeemInput) {
-                    const rsDiscount = parseInt(redeemInput, 10);
-                    if (isNaN(rsDiscount) || rsDiscount <= 0 || rsDiscount > maxDiscountRs) {
-                      alert(`⚠️ ₹1 முதல் ₹${maxDiscountRs} வரையிலான தொகையை உள்ளிடவும்.`);
-                      return;
-                    }
-                    const ptsDeducted = rsDiscount * 10;
-                    updateCustomer((curr) => ({
-                      ...curr,
-                      rewardPoints: (curr.rewardPoints ?? 50) - ptsDeducted
-                    }));
-                    notify(`🎉 ₹${rsDiscount} தள்ளுபடி பெறப்பட்டது (${ptsDeducted} Points பயன்படுத்தப்பட்டது)! மீதமுள்ள புள்ளிகள்: ${(currentRewardPoints - ptsDeducted)} (₹${Math.floor((currentRewardPoints - ptsDeducted) / 10)})`);
-                  }
-                }}
-                style={{ background: '#fbbf24', color: '#022c7a', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(251,191,36,0.3)' }}
+                onClick={() => setActiveTab('compressor')}
+                style={{ background: '#16a34a', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '13px', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(22,163,74,0.3)' }}
               >
-                <Sparkles size={16} /> 🪙 புள்ளிகளைத் தள்ளுபடி செய் (Redeem ₹ Discount)
+                <Camera size={16} /> அமுக்கி திறக்க (Open Compressor)
               </button>
             </div>
 
@@ -2484,6 +2582,11 @@ const getServiceVisual = (group, title = '') => {
           </>
         )}
         {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} cloudExpiryDocs={cloudExpiryDocs} />}
+        {activeTab === 'compressor' && (
+          <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
+            <CustomerImageCompressorWidget notify={notify} customer={customer} updateCustomer={updateCustomer} />
+          </div>
+        )}
         {activeTab === 'token-slip' && (
           <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
             <TokenPass

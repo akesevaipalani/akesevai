@@ -12,8 +12,10 @@
     (function() {
       try {
         var storedDark = localStorage.getItem('akesevai-dark-mode');
-        if (storedDark === 'true' || (storedDark === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        if (storedDark === 'true') {
           document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
         }
       } catch (e) {}
     })();
