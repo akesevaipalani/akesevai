@@ -35,7 +35,6 @@ import ServiceOfTheDayBanner from './components/ServiceOfTheDayBanner';
 import DocumentReadinessScore from './components/DocumentReadinessScore';
 import PhotoBackgroundRemover from './components/PhotoBackgroundRemover';
 import BrowserNotificationOptIn from './components/BrowserNotificationOptIn';
-import CustomerReferralCard from './components/CustomerReferralCard';
 import GoogleMapEmbed from './components/GoogleMapEmbed';
 import SocialMediaFollowWidget from './components/SocialMediaFollowWidget';
 import InstallPwaBanner from './components/InstallPwaBanner';
@@ -351,8 +350,22 @@ function toDownloadLink(link) {
   return link;
 }
 
+const getInitialPage = () => {
+  const hash = window.location.hash.replace('#', '').trim();
+  if (hash) {
+    const validPages = [
+      'home', 'services', 'status-track', 'token-generator', 'notifications',
+      'about', 'contact', 'customer', 'admin', 'weblink', 'forms', 'software',
+      'photo-maker', 'whatsapp-poster'
+    ];
+    const mainPage = hash.split('/')[0].split('?')[0];
+    if (validPages.includes(mainPage)) return mainPage;
+  }
+  return 'home';
+};
+
 function App() {
-  const [page, setPage] = useState('home');
+  const [page, setPage] = useState(getInitialPage);
   const [menuOpen, setMenuOpen] = useState(false);
   const [lang, setLang] = useState(() => localStorage.getItem('akesevai-lang') || 'ta');
   const [customer, setCustomer] = useState(() => {
@@ -371,6 +384,29 @@ function App() {
   const [isDark, setIsDark] = useDarkMode();
 
   const t = translations[lang] || translations.en;
+
+  useEffect(() => {
+    const handlePopState = (event) => {
+      let targetPage = 'home';
+      if (event.state && event.state.page) {
+        targetPage = event.state.page;
+      } else {
+        const hash = window.location.hash.replace('#', '').trim();
+        const mainPage = hash.split('/')[0].split('?')[0];
+        if (mainPage) targetPage = mainPage;
+      }
+      setPage(targetPage);
+      setMenuOpen(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    const initial = getInitialPage();
+    window.history.replaceState({ page: initial }, '', `#${initial}`);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   useEffect(() => {
     if ('scrollRestoration' in window.history) {
@@ -459,12 +495,17 @@ function App() {
     ];
 
     const saveToken = (token) => {
-      const updated = persistTokenBooking(token);
-      setTokenBookings(updated);
+      persistTokenBooking(token);
+      setTokenBookings((prev) => Array.isArray(prev) ? [token, ...prev.filter(t => String(t.tokenNo) !== String(token.tokenNo))] : [token]);
     };
 
     const navigate = (nextPage) => {
-      setPage(nextPage);
+      setPage((prevPage) => {
+        if (prevPage !== nextPage) {
+          window.history.pushState({ page: nextPage }, '', `#${nextPage}`);
+        }
+        return nextPage;
+      });
       setMenuOpen(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -657,8 +698,8 @@ function App() {
           {page === 'about' && <AboutPage navigate={navigate} lang={lang} />}
           {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
           {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} />}
-          {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} />}
-          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} notify={notify} />}
+          {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} />}
+          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} />}
         </main>
 
         <footer className="site-footer">
@@ -1598,7 +1639,7 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
-  function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], setTokenBookings, customerRecords = {}, setCustomerRecords, applicationRecords = {}, setApplicationRecords, notify }) {
+  function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], setTokenBookings, customerRecords = {}, setCustomerRecords, applicationRecords = {}, setApplicationRecords, cloudExpiryDocs = [], notify }) {
     const [password, setPassword] = useState('');
     const [query, setQuery] = useState('');
     const [tokenSearch, setTokenSearch] = useState('');
@@ -2159,7 +2200,7 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
-  function CustomerPage({ customer, updateCustomer, logout, notify, saveToken }) {
+  function CustomerPage({ customer, updateCustomer, logout, notify, saveToken, cloudExpiryDocs = [] }) {
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedService, setSelectedService] = useState('');
     const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
@@ -2206,7 +2247,7 @@ const getServiceVisual = (group, title = '') => {
             </div>
           </>
         )}
-        {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} />}
+        {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} cloudExpiryDocs={cloudExpiryDocs} />}
         {activeTab === 'token-slip' && (
           <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
             <TokenPass
@@ -2227,15 +2268,12 @@ const getServiceVisual = (group, title = '') => {
           <BrowserNotificationOptIn />
         </div>
 
-        {/* CUSTOMER REFERRAL CARD */}
-        <CustomerReferralCard customerName={customer.profile.name || ''} />
-
       </section>
     );
   }
 
   function ApplicationRow({ application }) { return <div className="application-row"><span className={`app-icon ${application.status === 'Completed' ? 'done' : ''}`}>{application.status === 'Completed' ? <Check size={19} /> : <Clock3 size={19} />}</span><span className="app-info"><strong>{application.name}</strong><small>{application.id} · Started {application.date}</small></span><span className={`status-text ${application.status.toLowerCase().replace(' ', '-')}`}>{application.status}</span><span className="row-arrow"><ChevronRight size={17} /></span></div>; }
-  function DocumentsTab({ customer, updateCustomer, notify }) {
+  function DocumentsTab({ customer, updateCustomer, notify, cloudExpiryDocs = [] }) {
     const [applicationId, setApplicationId] = useState(customer.applications[0]?.id || '');
     const application = customer.applications.find((item) => item.id === applicationId);
 

@@ -109,7 +109,7 @@ export default function AdminCounterVoiceAnnouncer() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'queueState', data: queueState })
       });
-    } catch (e) {}
+    } catch (e) { }
   };
 
   // Sync token queue with Firebase Cloud
@@ -140,7 +140,7 @@ export default function AdminCounterVoiceAnnouncer() {
         }));
         setTokenQueue(formatted);
       }
-    } catch (e) {}
+    } catch (e) { }
   };
 
 
@@ -209,7 +209,7 @@ export default function AdminCounterVoiceAnnouncer() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'token', data: newTok })
       });
-    } catch (err) {}
+    } catch (err) { }
 
     // Save to Firebase Cloud
     saveTokenBookingCloud({
@@ -321,7 +321,7 @@ export default function AdminCounterVoiceAnnouncer() {
 
     try {
       const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(textToSpeak)}&tl=ta&client=tw-ob`;
-      
+
       const audio = new Audio();
       audio.referrerPolicy = 'no-referrer';
       audio.crossOrigin = 'anonymous';
@@ -371,9 +371,9 @@ export default function AdminCounterVoiceAnnouncer() {
       }
 
       const voices = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices();
-      
+
       const taVoice = voices.find(v => v.lang.includes('ta') || v.name.toLowerCase().includes('tamil') || v.name.toLowerCase().includes('valluvar') || v.name.toLowerCase().includes('lotte'));
-      
+
       const isForbiddenMaleVoice = (vName) => {
         const lower = (vName || '').toLowerCase();
         return lower.includes('mark') || lower.includes('ravi') || lower.includes('david') || lower.includes('george') || lower.includes('male');
@@ -412,7 +412,7 @@ export default function AdminCounterVoiceAnnouncer() {
   const announceWithDetails = (tok, name) => {
     playChimeSound();
     const pureTamilText = buildPureTamilSpeechText(tok, name);
-    
+
     speak100PercentTamilFemaleVoice(pureTamilText);
 
     setLastAnnouncement({

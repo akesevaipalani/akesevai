@@ -54,7 +54,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
       alert('⚠️ தயவுசெய்து உங்கள் பெயரை உள்ளிடவும்!');
       return;
     }
-    const cleanPhone = formData.phone.replace(/\D/g, '');
+    const cleanPhone = String(formData.phone || '').replace(/\D/g, '');
     if (!cleanPhone || cleanPhone.length !== 10) {
       alert('⚠️ தயவுசெய்து 10 இலக்கச் சரியான மொபைல் எண்ணை உள்ளிடவும்!');
       return;
