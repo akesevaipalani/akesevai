@@ -56,13 +56,11 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
   if (!cleanPhone) return;
 
   const sanitizedDocs = (profileData.documents || []).map(doc => {
-    if (doc.data && doc.data.length > 50000 && doc.data.startsWith('data:')) {
-      return {
-        ...doc,
-        data: doc.url && !doc.url.startsWith('data:') ? doc.url : `LOCAL_DATA_URL_${doc.id || Date.now()}`
-      };
-    }
-    return doc;
+    return {
+      ...doc,
+      data: doc.data || doc.url || '',
+      url: doc.url || doc.data || ''
+    };
   });
 
   const dataToSave = {

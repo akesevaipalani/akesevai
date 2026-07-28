@@ -1,4 +1,4 @@
-// Robust Document Helper for View & Download — Supports PNG, JPG, PDF, SVG
+// Robust Document Helper for View & Download — Supports PNG, JPG, PDF, SVG, WEBP & Firebase Storage
 
 const getMimeType = (docObj, rawUrl = '') => {
   if (docObj?.type && docObj.type !== 'File') return docObj.type;
@@ -43,8 +43,8 @@ export const handleViewDocument = (docObj, notify) => {
   let rawUrl = typeof docObj === 'string' ? docObj : (docObj?.data || docObj?.url || docObj?.fileUrl || docObj?.dataUrl || '');
   const docName = docObj?.name || docObj?.requirement || 'Document';
 
-  // Fallback for missing/empty document data
-  if (!rawUrl || rawUrl === 'LOCAL_DATA_URL' || rawUrl.length < 10) {
+  // Fallback for missing/empty/LOCAL_DATA_URL document placeholders
+  if (!rawUrl || rawUrl.startsWith('LOCAL_DATA_URL') || rawUrl.length < 10) {
     const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
       <rect width="100%" height="100%" fill="#f8fafc"/>
       <rect x="40" y="40" width="720" height="920" rx="16" fill="white" stroke="#cbd5e1" stroke-width="2"/>
@@ -117,11 +117,11 @@ export const handleViewDocument = (docObj, notify) => {
   window.open(rawUrl, '_blank');
 };
 
-export const handleDownloadDocument = (docObj, notify) => {
+export const handleDownloadDocument = async (docObj, notify) => {
   let rawUrl = typeof docObj === 'string' ? docObj : (docObj?.data || docObj?.url || docObj?.fileUrl || docObj?.dataUrl || '');
   let fileName = docObj?.name || docObj?.requirement || 'document.png';
 
-  if (!rawUrl || rawUrl === 'LOCAL_DATA_URL' || rawUrl.length < 10) {
+  if (!rawUrl || rawUrl.startsWith('LOCAL_DATA_URL') || rawUrl.length < 10) {
     const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
       <rect width="100%" height="100%" fill="#f8fafc"/>
       <rect x="40" y="40" width="720" height="920" rx="16" fill="white" stroke="#cbd5e1" stroke-width="2"/>
@@ -146,7 +146,7 @@ export const handleDownloadDocument = (docObj, notify) => {
     else fileName += '.png';
   }
 
-  // Convert Base64 dataUrl to Blob URL for clean, uncorrupted downloading
+  // Handle Base64 Data URL
   if (rawUrl.startsWith('data:')) {
     const blob = createBlobFromDataUrl(rawUrl, mime);
     if (blob) {
@@ -163,17 +163,27 @@ export const handleDownloadDocument = (docObj, notify) => {
     }
   }
 
-  // Handle direct HTTP/HTTPS URL
-  try {
-    const link = document.createElement('a');
-    link.href = rawUrl;
-    link.target = '_blank';
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    if (typeof notify === 'function') notify(`✅ ${fileName} பதிவிறக்கம் செய்யப்படுகிறது!`);
-  } catch (err) {
-    window.open(rawUrl, '_blank');
+  // Handle HTTP / HTTPS / Firebase Storage URLs via fetch + blob download to prevent CORS format errors!
+  if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+    try {
+      if (typeof notify === 'function') notify(`⏳ ${fileName} பதிவிறக்கப்படுகிறது... (Downloading...)`);
+      const response = await fetch(rawUrl);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      if (typeof notify === 'function') notify(`✅ ${fileName} பதிவிறக்கம் முடிவடைந்தது!`);
+      return;
+    } catch (e) {
+      window.open(rawUrl, '_blank');
+      return;
+    }
   }
+
+  window.open(rawUrl, '_blank');
 };
