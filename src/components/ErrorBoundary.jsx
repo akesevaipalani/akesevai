@@ -16,7 +16,12 @@ export default class ErrorBoundary extends React.Component {
   }
 
   handleReload = () => {
-    window.location.reload();
+    try {
+      this.setState({ hasError: false, error: null });
+      window.location.href = '/';
+    } catch (e) {
+      window.location.reload();
+    }
   };
 
   render() {
@@ -39,7 +44,7 @@ export default class ErrorBoundary extends React.Component {
             padding: '32px',
             borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0,0,0,0.08)',
-            maxWidth: '460px',
+            maxWidth: '480px',
             width: '100%',
             border: '1px solid #e2e8f0'
           }}>
@@ -57,11 +62,29 @@ export default class ErrorBoundary extends React.Component {
             </div>
 
             <h2 style={{ fontSize: '20px', fontWeight: 900, margin: '0 0 8px', color: '#0f172a' }}>
-              தற்காலிகக் கோளாறு சரிசெய்யப்பட்டது
+              AkEsevai Digital Portal
             </h2>
-            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 20px', lineHeight: 1.6 }}>
-              ஆவணம் பதிவேற்றம் அல்லது பக்க புதுப்பிப்பின் போது சிறிய கோளாறு ஏற்பட்டது. உங்கள் விவரங்கள் பாதுகாப்பாக உள்ளன.
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px', lineHeight: 1.6 }}>
+              தளத்தைப் புதுப்பிக்க அல்லது முகப்புப் பக்கத்திற்குச் செல்ல கீழே உள்ள பொத்தானைக் கிளிக் செய்யவும்.
             </p>
+
+            {this.state.error && (
+              <div style={{
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '10px',
+                fontSize: '11px',
+                color: '#475569',
+                fontFamily: 'monospace',
+                marginBottom: '16px',
+                textAlign: 'left',
+                overflowX: 'auto',
+                maxHeight: '80px'
+              }}>
+                {String(this.state.error)}
+              </div>
+            )}
 
             <button
               onClick={this.handleReload}
@@ -80,7 +103,7 @@ export default class ErrorBoundary extends React.Component {
                 boxShadow: '0 4px 14px rgba(0,82,204,0.25)'
               }}
             >
-              <RefreshCw size={16} /> பக்கத்தை புதுப்பிக்கவும் (Reload)
+              <RefreshCw size={16} /> 🏠 முகப்புப் பக்கத்திற்குச் செல் (Go to Home)
             </button>
           </div>
         </div>
