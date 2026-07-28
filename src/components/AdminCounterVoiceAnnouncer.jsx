@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Mic, Bell, Sparkles, CheckCircle2, Play, User, RefreshCw, Volume1, SkipForward, SkipBack, ListOrdered, PlusCircle, Smartphone } from 'lucide-react';
 import { getStoredApplications, syncWithCentralServer } from '../utils/statusStore';
 import { saveLiveQueueCloud, saveTokenBookingCloud, subscribeTokens, fetchAllCloudRecords } from '../utils/firebaseService';
+import { getNextDailyTokenNumber } from '../utils/tokenHelper';
 
 const ENGLISH_TO_TAMIL_NAME_MAP = {
   'kandasamy': 'கந்தசாமி',
@@ -505,7 +506,12 @@ export default function AdminCounterVoiceAnnouncer() {
 
           <button
             type="button"
-            onClick={() => setShowAddMobileModal(!showAddMobileModal)}
+            onClick={() => {
+              if (!showAddMobileModal) {
+                setNewMobileTokenNo(getNextDailyTokenNumber(queueList));
+              }
+              setShowAddMobileModal(!showAddMobileModal);
+            }}
             style={{
               background: '#16a34a',
               color: 'white',

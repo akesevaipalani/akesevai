@@ -857,59 +857,57 @@ function HomePage({ navigate, notify, lang }) {
     }
 
 const getServiceVisual = (group, title = '') => {
-    const t = title.toLowerCase();
-    let bgGradient = 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)';
-    let icon = '📄';
-    let bannerImage = 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=400&q=80';
+  const t = title.toLowerCase();
+  let bgGradient = 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)';
+  let icon = '📄';
+  let bannerImage = '';
 
-    if (t.includes('aadhaar')) {
-      bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
-      icon = '🪪';
-      bannerImage = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('income') || t.includes('வருமான')) {
-      bgGradient = 'linear-gradient(135deg, #059669 0%, #047857 100%)';
-      icon = '💰';
-      bannerImage = 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('community') || t.includes('சாதி') || t.includes('nativity') || t.includes('residence') || t.includes('graduate')) {
-      bgGradient = 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)';
-      icon = '📜';
-      bannerImage = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('passport')) {
-      bgGradient = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
-      icon = '🛂';
-      bannerImage = 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('pan') || t.includes('பான்')) {
-      bgGradient = 'linear-gradient(135deg, #d97706 0%, #b45309 100%)';
-      icon = '💳';
-      bannerImage = 'https://images.unsplash.com/photo-1556742049-0a67daf4005a?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('smart card') || t.includes('குடும்ப அட்டை')) {
-      bgGradient = 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)';
-      icon = '🌾';
-      bannerImage = 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('voter') || t.includes('வாக்காளர்')) {
-      bgGradient = 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)';
-      icon = '🗳️';
-      bannerImage = 'https://images.unsplash.com/photo-1540910419892-4a36d2c3266c?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('employment') || t.includes('வேலைவாய்ப்பு') || t.includes('shram')) {
-      bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0f766e 100%)';
-      icon = '💼';
-      bannerImage = 'https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('pension') || t.includes('ஓய்வூதியம்') || t.includes('welfare') || t.includes('திருமண') || t.includes('sewing')) {
-      bgGradient = 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)';
-      icon = '🤝';
-      bannerImage = 'https://images.unsplash.com/photo-1532629345422-7515f3d16bb0?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('tnpsc') || t.includes('mark sheet') || t.includes('education') || t.includes('loan')) {
-      bgGradient = 'linear-gradient(135deg, #9333ea 0%, #7e22ce 100%)';
-      icon = '🎓';
-      bannerImage = 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80';
-    } else if (t.includes('fssai') || t.includes('msme') || t.includes('business')) {
-      bgGradient = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)';
-      icon = '🏬';
-      bannerImage = 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=400&q=80';
-    }
+  const cleanTitle = title.replace(/[^a-zA-Z0-9 ]/g, '');
 
-    return { bgGradient, icon, bannerImage };
-  };
+  if (t.includes('aadhaar') || t.includes('ஆதார்')) {
+    bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)';
+    icon = '🪪';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#ffffff" rx="10"/><rect x="0" y="0" width="400" height="38" fill="#e11d48"/><text x="15" y="24" fill="#ffffff" font-family="sans-serif" font-size="13" font-weight="bold">भारत सरकार · Government of India</text><rect x="20" y="52" width="75" height="90" fill="#f1f5f9" rx="6" stroke="#cbd5e1"/><circle cx="57" cy="85" r="22" fill="#94a3b8"/><path d="M37 125 c0-15 40-15 40 0" fill="#64748b"/><text x="110" y="72" fill="#0f172a" font-family="sans-serif" font-size="13" font-weight="bold">AADHAAR CARD · ஆதார்</text><text x="110" y="93" fill="#475569" font-family="sans-serif" font-size="11">DOB: 01/01/1990 · Male</text><text x="110" y="112" fill="#475569" font-family="sans-serif" font-size="11">Update & Correction Service</text><rect x="110" y="125" width="260" height="15" fill="#0f172a" opacity="0.1" rx="3"/><text x="200" y="182" fill="#e11d48" font-family="monospace" font-size="20" font-weight="bold" text-anchor="middle">5819 4012 8912</text><text x="200" y="205" fill="#0284c7" font-family="sans-serif" font-size="10" font-weight="bold" text-anchor="middle">Unique Identification Authority of India (UIDAI)</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } else if (t.includes('pan') || t.includes('பான்')) {
+    bgGradient = 'linear-gradient(135deg, #d97706 0%, #b45309 100%)';
+    icon = '💳';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#fffbeb" rx="10" stroke="#fcd34d"/><rect x="0" y="0" width="400" height="40" fill="#b45309"/><text x="15" y="25" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">INCOME TAX DEPARTMENT · வருமான வரித் துறை</text><rect x="20" y="55" width="70" height="85" fill="#fef3c7" rx="6" stroke="#fcd34d"/><circle cx="55" cy="90" r="20" fill="#d97706"/><text x="105" y="75" fill="#78350f" font-family="sans-serif" font-size="11" font-weight="bold">GOVT OF INDIA · PAN CARD</text><text x="105" y="100" fill="#b45309" font-family="monospace" font-size="18" font-weight="bold">ABCDE 1234 F</text><text x="105" y="122" fill="#451a03" font-family="sans-serif" font-size="11">NAME: CARD HOLDER NAME</text><rect x="20" y="155" width="360" height="48" fill="#ffffff" rx="6" stroke="#fcd34d"/><text x="200" y="184" fill="#d97706" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">💳 PERMANENT ACCOUNT NUMBER CARD</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } else if (t.includes('passport') || t.includes('பாஸ்போர்ட்')) {
+    bgGradient = 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)';
+    icon = '🛂';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#0f172a" rx="10"/><rect x="15" y="12" width="370" height="196" fill="#1e293b" rx="8" stroke="#fbbf24" stroke-dasharray="3"/><circle cx="200" cy="85" r="32" fill="none" stroke="#f59e0b" stroke-width="3"/><text x="200" y="93" fill="#f59e0b" font-family="serif" font-size="26" text-anchor="middle">🏛️</text><text x="200" y="140" fill="#f59e0b" font-family="serif" font-size="18" font-weight="bold" text-anchor="middle">PASSPORT</text><text x="200" y="162" fill="#fbbf24" font-family="serif" font-size="14" font-weight="bold" text-anchor="middle">REPUBLIC OF INDIA</text><text x="200" y="186" fill="#94a3b8" font-family="sans-serif" font-size="11" text-anchor="middle">Passport Seva Application Support</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } else if (t.includes('smart card') || t.includes('famil') || t.includes('குடும்ப அட்டை') || t.includes('ration')) {
+    bgGradient = 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)';
+    icon = '🌾';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#f0fdf4" rx="10" stroke="#16a34a"/><rect x="0" y="0" width="400" height="40" fill="#15803d"/><text x="15" y="25" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">TAMIL NADU PDS · SMART RATION CARD</text><rect x="20" y="55" width="75" height="90" fill="#dcfce7" rx="6" stroke="#86efac"/><circle cx="57" cy="90" r="22" fill="#16a34a"/><text x="110" y="75" fill="#14532d" font-family="sans-serif" font-size="13" font-weight="bold">தமிழ்நாடு அரசு உணவளிப்புத் துறை</text><text x="110" y="98" fill="#166534" font-family="sans-serif" font-size="11">Smart Card Type: NPHH / PHH</text><text x="110" y="118" fill="#166534" font-family="sans-serif" font-size="11">Family Head: Card Member Name</text><rect x="20" y="155" width="360" height="48" fill="#ffffff" rx="6" stroke="#86efac"/><text x="35" y="184" fill="#15803d" font-family="monospace" font-size="14" font-weight="bold">33/W/0123456</text><text x="365" y="184" fill="#16a34a" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="end">🌾 TNPDS SMART CARD</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } else if (t.includes('voter') || t.includes('வாக்காளர்')) {
+    bgGradient = 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)';
+    icon = '🗳️';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#fef2f2" rx="10" stroke="#dc2626"/><rect x="0" y="0" width="400" height="40" fill="#b91c1c"/><text x="15" y="25" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">ELECTION COMMISSION OF INDIA · வாக்காளர் அட்டை</text><rect x="20" y="55" width="75" height="90" fill="#fee2e2" rx="6" stroke="#fca5a5"/><circle cx="57" cy="90" r="22" fill="#dc2626"/><text x="110" y="78" fill="#991b1b" font-family="monospace" font-size="16" font-weight="bold">EPIC NO: TN/04/123456</text><text x="110" y="102" fill="#7f1d1d" font-family="sans-serif" font-size="12">ELECTOR NAME: VOTER NAME</text><text x="110" y="122" fill="#7f1d1d" font-family="sans-serif" font-size="11">Assembly Constituency: Tamil Nadu</text><rect x="20" y="155" width="360" height="48" fill="#ffffff" rx="6" stroke="#fca5a5"/><text x="200" y="184" fill="#dc2626" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">🗳️ VOTER ID CARD SERVICES</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } else if (t.includes('income') || t.includes('வருமான') || t.includes('community') || t.includes('சாதி') || t.includes('nativity') || t.includes('residence') || t.includes('graduate') || t.includes('heir') || t.includes('certif') || t.includes('சான்றிதழ்')) {
+    bgGradient = 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)';
+    icon = '📜';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#faf5ff" rx="10" stroke="#9333ea"/><rect x="0" y="0" width="400" height="38" fill="#7e22ce"/><text x="15" y="24" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">TNeGA · GOVERNMENT OF TAMIL NADU e-SEVAI</text><rect x="15" y="48" width="370" height="158" fill="#ffffff" rx="6" stroke="#e9d5ff"/><text x="200" y="75" fill="#6b21a8" font-family="serif" font-size="15" font-weight="bold" text-anchor="middle">OFFICIAL GOVERNMENT CERTIFICATE</text><text x="200" y="100" fill="#7e22ce" font-family="sans-serif" font-size="13" font-weight="bold" text-anchor="middle">${cleanTitle.slice(0, 32)}</text><text x="200" y="122" fill="#581c87" font-family="monospace" font-size="11" text-anchor="middle">TN-720260728101</text><line x1="40" y1="135" x2="360" y2="135" stroke="#f3e8ff" stroke-width="2"/><text x="200" y="158" fill="#16a34a" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">✅ Digitally Signed & Revenue Approved</text><text x="200" y="182" fill="#6b21a8" font-family="sans-serif" font-size="11" text-anchor="middle">AkEsevai Fast Processing Portal</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } else if (t.includes('employment') || t.includes('வேலைவாய்ப்பு') || t.includes('shram')) {
+    bgGradient = 'linear-gradient(135deg, #0284c7 0%, #0f766e 100%)';
+    icon = '💼';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#f0f9ff" rx="10" stroke="#0284c7"/><rect x="0" y="0" width="400" height="40" fill="#0369a1"/><text x="15" y="25" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">MINISTRY OF LABOUR & EMPLOYMENT · e-SHRAM</text><rect x="20" y="52" width="360" height="152" fill="#ffffff" rx="8" stroke="#bae6fd"/><circle cx="200" cy="95" r="28" fill="#e0f2fe"/><text x="200" y="103" fill="#0284c7" font-family="sans-serif" font-size="22" text-anchor="middle">💼</text><text x="200" y="148" fill="#0369a1" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">${cleanTitle.slice(0, 32)}</text><text x="200" y="174" fill="#0284c7" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">Employment Registration & Renewal Card</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  } else {
+    bgGradient = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)';
+    icon = '📄';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220" viewBox="0 0 400 220"><rect width="100%" height="100%" fill="#eff6ff" rx="10" stroke="#2563eb"/><rect x="0" y="0" width="400" height="40" fill="#1d4ed8"/><text x="15" y="25" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">AkEsevai OFFICIAL SERVICE CARD</text><rect x="20" y="52" width="360" height="152" fill="#ffffff" rx="8" stroke="#bfdbfe"/><circle cx="200" cy="95" r="28" fill="#dbeafe"/><text x="200" y="103" fill="#1d4ed8" font-family="sans-serif" font-size="22" text-anchor="middle">📋</text><text x="200" y="148" fill="#1e40af" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">${cleanTitle.slice(0, 32)}</text><text x="200" y="174" fill="#2563eb" font-family="sans-serif" font-size="11" font-weight="bold" text-anchor="middle">AkEsevai Verified Online Service</text></svg>`;
+    bannerImage = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
+  return { bgGradient, icon, bannerImage };
+};
 
   function ServicesPage({ navigate, lang }) {
     const t = translations[lang] || translations.en;

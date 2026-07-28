@@ -3,6 +3,7 @@ import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, Qr
 import { saveApplicationRecord } from '../utils/statusStore';
 import { saveTokenBookingCloud } from '../utils/firebaseService';
 import { printElement } from '../utils/printHelper';
+import { getNextDailyTokenNumber } from '../utils/tokenHelper';
 
 export default function TokenPass({ defaultToken = null, onTokenSaved, initialName = '', initialPhone = '' }) {
   const [time, setTime] = useState(new Date());
@@ -40,10 +41,9 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
   const timeString = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const dateString = time.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
-  // Continuous sequential token numbers (TOK-001, TOK-002, TOK-003...)
+  // Daily sequential token numbers (TOK-001, TOK-002, TOK-003...) resetting daily to 1
   const getNextSequentialTokenNo = () => {
-    const num = Math.floor(100 + Math.random() * 900);
-    return `TOK-${num}`;
+    return getNextDailyTokenNumber();
   };
 
   // Direct Instant Token Booking Handler
