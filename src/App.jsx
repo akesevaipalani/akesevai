@@ -497,6 +497,15 @@ function App() {
     const saveToken = (token) => {
       persistTokenBooking(token);
       setTokenBookings((prev) => Array.isArray(prev) ? [token, ...prev.filter(t => String(t.tokenNo) !== String(token.tokenNo))] : [token]);
+      saveTokenBookingCloud(token);
+
+      if ('BroadcastChannel' in window) {
+        try {
+          const channel = new BroadcastChannel('akesevai_token_sync_channel');
+          channel.postMessage({ type: 'NEW_TOKEN', data: token });
+          channel.close();
+        } catch (e) {}
+      }
     };
 
     const navigate = (nextPage) => {
@@ -2028,10 +2037,9 @@ const getServiceVisual = (group, title = '') => {
                 ];
 
                 const selectedDocs = combinedDocs.reduce((acc, current) => {
-                  const url = current.data || current.url;
-                  const name = current.name || current.requirement;
-                  const exists = acc.find(item => (url && (item.data === url || item.url === url)) || (item.name === name && item.name));
-                  if (!exists) return acc.concat([{ ...current, data: url || current.data }]);
+                  const docId = current.id || `${current.requirement}-${current.name}`;
+                  const exists = acc.find(item => (item.id && current.id && String(item.id) === String(current.id)) || (item.requirement && current.requirement && item.requirement.trim().toLowerCase() === current.requirement.trim().toLowerCase()));
+                  if (!exists) return acc.concat([current]);
                   return acc;
                 }, []);
 
