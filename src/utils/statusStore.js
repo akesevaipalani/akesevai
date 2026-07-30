@@ -50,11 +50,12 @@ export const saveApplicationRecord = (appRecord) => {
 
 export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemarks, appMeta = {}) => {
   const records = getStoredApplications();
-  let existing = records[appId];
+  const cleanId = String(appId || appMeta.id || appMeta.ackNo || '').trim();
+  let existing = records[cleanId] || records[appId] || Object.values(records).find(r => r && (r.id === cleanId || r.ackNo === cleanId || String(r.id).includes(cleanId)));
 
   if (!existing) {
     existing = {
-      id: appId,
+      id: cleanId || `TN-AK-2026-${Math.floor(10000 + Math.random() * 90000)}`,
       applicantName: appMeta.applicantName || appMeta.name || 'Applicant Customer',
       phone: (appMeta.phone || '').replace(/\D/g, ''),
       service: appMeta.service || appMeta.serviceName || 'Government e-Sevai Service',
@@ -138,8 +139,15 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
     };
   });
 
-  inMemoryApplications[appId] = existing;
-  saveApplicationCloud(appId, existing);
+  const targetId = existing.id || cleanId || appId;
+  inMemoryApplications[targetId] = existing;
+  if (cleanId && cleanId !== targetId) inMemoryApplications[cleanId] = existing;
+  if (appId && appId !== targetId) inMemoryApplications[appId] = existing;
+
+  saveApplicationCloud(targetId, existing);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('akesevai-data-changed'));
+  }
   return existing;
 };
 

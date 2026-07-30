@@ -121,24 +121,20 @@ export function printElement(elementOrId) {
 </html>`);
   doc.close();
 
-  // Wait for images/styles to load before printing
-  iframe.onload = () => {
+  // Instant print execution with clean fallback
+  const triggerPrint = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      console.error('[printHelper] Print failed:', e);
+    }
     setTimeout(() => {
       try {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-      } catch (e) {
-        console.error('[printHelper] Print failed:', e);
-      }
-      // Remove iframe after a delay
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 2000);
-    }, 500);
+        if (iframe.parentNode) document.body.removeChild(iframe);
+      } catch (e) {}
+    }, 1500);
   };
 
-  // Trigger load if not already triggered
-  if (doc.readyState === 'complete') {
-    iframe.onload();
-  }
+  setTimeout(triggerPrint, 100);
 }

@@ -89,13 +89,17 @@ export default function AdminSevaiSmartDesk({ notify }) {
             cust.documents.forEach((docItem, idx) => {
               if (docItem && (docItem.url || docItem.data || docItem.name)) {
                 const key = docItem.id || `${cust.phone}_${docItem.requirement || docItem.name}_${idx}`;
-                if (!deletedDocs.has(key) && !deletedDocs.has(String(docItem.id)) && !allDocsMap.has(key)) {
-                  allDocsMap.set(key, {
-                    ...docItem,
-                    customerPhone: docItem.customerPhone || cust.phone || '',
-                    url: docItem.url || docItem.data || '',
-                    data: docItem.url || docItem.data || ''
-                  });
+                if (!deletedDocs.has(key) && !deletedDocs.has(String(docItem.id))) {
+                  const existing = allDocsMap.get(key);
+                  const validUrl = docItem.url || docItem.data || (existing ? (existing.url || existing.data) : '');
+                  if (!existing || (!existing.url && !existing.data && validUrl)) {
+                    allDocsMap.set(key, {
+                      ...docItem,
+                      customerPhone: docItem.customerPhone || cust.phone || '',
+                      url: validUrl,
+                      data: validUrl
+                    });
+                  }
                 }
               }
             });

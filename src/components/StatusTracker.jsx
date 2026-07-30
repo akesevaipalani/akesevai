@@ -101,8 +101,13 @@ export default function StatusTracker({ initialQuery = '' }) {
             date: new Date().toLocaleDateString('en-IN')
           };
 
-          if (appObj && appObj.id && allStoredAppsMap[appObj.id]) {
-            found = allStoredAppsMap[appObj.id];
+          const matchedStoredApp = storedAppsList.find(a => a && (
+            (a.id && appObj.id && (a.id === appObj.id || a.id.includes(appObj.id) || appObj.id.includes(a.id))) ||
+            (a.phone && custPhone && String(a.phone).replace(/\D/g, '') === custPhone)
+          ));
+
+          if (matchedStoredApp) {
+            found = matchedStoredApp;
             break;
           }
 

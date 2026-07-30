@@ -46,8 +46,8 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
     return getNextDailyTokenNumber();
   };
 
-  // Direct Instant Token Booking Handler
-  const handleGenerateToken = async (e) => {
+  // Direct Instant Token Booking Handler — 0ms Instant Generation
+  const handleGenerateToken = (e) => {
     if (e) e.preventDefault();
 
     if (!formData.name.trim()) {
@@ -79,6 +79,18 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
       status: 'Token Active'
     };
 
+    // 1. INSTANTLY RENDER TOKEN SLIP ON SCREEN (0ms DELAY)!
+    setGeneratedToken(newTok);
+
+    if (typeof onTokenSaved === 'function') {
+      try {
+        onTokenSaved(newTok);
+      } catch (err) {
+        console.warn('onTokenSaved callback notice:', err);
+      }
+    }
+
+    // 2. SAVE TO LOCAL & CLOUD STORAGE ASYNCHRONOUSLY IN BACKGROUND
     try {
       saveApplicationRecord({
         id: appId,
@@ -95,29 +107,21 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
       console.warn('Local app save notice:', err);
     }
 
-    try {
-      await saveTokenBookingCloud(newTok);
-      if (cleanPhone) {
-        saveCustomerProfileCloud(cleanPhone, {
-          phone: cleanPhone,
-          name: formData.name.trim(),
-          lastToken: newTok,
-          updatedAt: new Date().toISOString()
-        });
-      }
-    } catch (err) {
-      console.warn('Cloud token save notice:', err);
-    }
-
-    setGeneratedToken(newTok);
-
-    if (typeof onTokenSaved === 'function') {
+    (async () => {
       try {
-        onTokenSaved(newTok);
+        await saveTokenBookingCloud(newTok);
+        if (cleanPhone) {
+          saveCustomerProfileCloud(cleanPhone, {
+            phone: cleanPhone,
+            name: formData.name.trim(),
+            lastToken: newTok,
+            updatedAt: new Date().toISOString()
+          });
+        }
       } catch (err) {
-        console.warn('onTokenSaved callback notice:', err);
+        console.warn('Cloud token save notice:', err);
       }
-    }
+    })();
   };
 
   // Send Direct WhatsApp Slip Notification

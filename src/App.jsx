@@ -1861,47 +1861,95 @@ const getServiceVisual = (group, title = '') => {
       );
     });
 
-    const handleUpdateAppStage = async (appId, newStage, appObj) => {
-      const updated = updateApplicationStage(appId, newStage, null, null, appObj);
+    const handleUpdateAppStage = async (appId, newStage, appObj = {}) => {
+      const targetAppId = appId || appObj.id || appObj.ackNo;
+      const updated = updateApplicationStage(targetAppId, newStage, null, null, appObj);
+
       if (updated && setApplicationRecords) {
-        setApplicationRecords((prev) => ({ ...prev, [appId]: updated }));
+        setApplicationRecords((prev) => ({
+          ...prev,
+          [targetAppId]: updated,
+          ...(appObj.id ? { [appObj.id]: updated } : {}),
+          ...(appObj.ackNo ? { [appObj.ackNo]: updated } : {})
+        }));
       }
 
-      if (appObj && appObj.phone && customerRecords) {
-        const cleanPhone = String(appObj.phone).replace(/\D/g, '');
-        const custKey = Object.keys(customerRecords || {}).find(k => {
-          const c = customerRecords[k];
-          if (!c) return false;
-          const cPhone = String(c.phone || k).replace(/\D/g, '');
-          return cPhone === cleanPhone || (cleanPhone && cPhone.includes(cleanPhone));
-        });
+      const rawPhone = appObj.phone || appObj.customerPhone || appObj.customerRef?.phone || '';
+      const cleanPhone = String(rawPhone).replace(/\D/g, '');
 
-        const targetKey = custKey || cleanPhone;
-        const cust = customerRecords[targetKey];
+      if (cleanPhone && setCustomerRecords) {
+        setCustomerRecords((prevRecords = {}) => {
+          const custKey = Object.keys(prevRecords).find(k => {
+            const c = prevRecords[k];
+            if (!c) return false;
+            const cPhone = String(c.phone || k).replace(/\D/g, '');
+            return cPhone === cleanPhone || (cleanPhone && cPhone.includes(cleanPhone));
+          }) || cleanPhone;
 
-        if (cust && Array.isArray(cust.applications)) {
-          const updatedCustApps = cust.applications.map(a => {
-            if (a.id === appId || a.ackNo === appId || (a.name && appObj.service && a.name.toLowerCase() === appObj.service.toLowerCase())) {
+          const existingCust = prevRecords[custKey] || {
+            phone: cleanPhone,
+            profile: { name: appObj.applicantName || appObj.name || 'Customer' },
+            applications: [],
+            documents: []
+          };
+
+          const existingApps = Array.isArray(existingCust.applications) ? existingCust.applications : [];
+          let matched = false;
+
+          const updatedApps = existingApps.map(a => {
+            const aId = String(a.id || a.ackNo || '');
+            const targetStr = String(targetAppId || '');
+            const isMatch = aId === targetStr || (aId && targetStr && (aId.includes(targetStr) || targetStr.includes(aId))) || (a.name && appObj.service && a.name.toLowerCase() === appObj.service.toLowerCase());
+            if (isMatch) {
+              matched = true;
               return {
                 ...a,
                 stage: newStage,
                 currentStage: newStage,
                 progress: newStage === 6 ? 100 : Math.round((newStage / 6) * 100),
                 status: newStage === 6 ? 'Completed' : 'Processing',
-                statusLabel: updated?.statusLabel || (newStage === 6 ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : 'In Progress')
+                statusLabel: updated?.statusLabel || (newStage === 6 ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : 'In Progress'),
+                remarks: updated?.remarks || a.remarks
               };
             }
             return a;
           });
-          const updatedCust = { ...cust, applications: updatedCustApps };
-          saveCustomerProfileCloud(targetKey, updatedCust);
-          if (setCustomerRecords) {
-            setCustomerRecords(prev => ({ ...prev, [targetKey]: updatedCust }));
+
+          if (!matched) {
+            updatedApps.push({
+              id: targetAppId,
+              name: appObj.service || appObj.name || 'e-Sevai Application',
+              stage: newStage,
+              currentStage: newStage,
+              progress: newStage === 6 ? 100 : Math.round((newStage / 6) * 100),
+              status: newStage === 6 ? 'Completed' : 'Processing',
+              statusLabel: updated?.statusLabel || 'In Progress',
+              date: appObj.submittedDate || appObj.date || new Date().toLocaleDateString('en-IN')
+            });
           }
-        }
+
+          const updatedCust = {
+            ...existingCust,
+            phone: cleanPhone,
+            applications: updatedApps,
+            updatedAt: new Date().toISOString()
+          };
+
+          saveCustomerProfileCloud(cleanPhone, updatedCust);
+
+          return {
+            ...prevRecords,
+            [cleanPhone]: updatedCust,
+            [custKey]: updatedCust
+          };
+        });
       }
 
-      notify(`✅ Application ${appId} updated to Stage ${newStage}!`);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('akesevai-data-changed'));
+      }
+
+      notify(`✅ Application ${targetAppId} updated to Stage ${newStage}!`);
     };
 
     const handleDeleteApp = async (appId) => {
@@ -2826,29 +2874,35 @@ const getServiceVisual = (group, title = '') => {
         storagePath: ''
       };
 
-      const updatedCustomerObj = {
-        ...customer,
-        documents: [
-          ...(customer.documents || []).filter((item) => item.requirement !== requirement && item.id !== docId),
-          documentObj
-        ]
-      };
+      // Avoid sending massive base64 payload to Firestore to prevent 1MB limit rejection
+      const cloudDataUrl = (localDataUrl.length > 250000) ? '' : localDataUrl;
 
-      // 2. UPDATE REACT STATE & FIRESTORE CLOUD INSTANTLY — Syncs to Admin page live worldwide!
-      updateCustomer(updatedCustomerObj);
+      // 2. UPDATE REACT STATE & FIRESTORE CLOUD INSTANTLY using FUNCTIONAL UPDATE to avoid stale closures
+      let latestUpdatedCustomer = null;
+      updateCustomer((prevCustomer) => {
+        const existingDocs = prevCustomer?.documents || [];
+        const filteredDocs = existingDocs.filter((item) => item.id !== docId && item.requirement !== requirement);
+        latestUpdatedCustomer = {
+          ...prevCustomer,
+          documents: [...filteredDocs, documentObj]
+        };
+        return latestUpdatedCustomer;
+      });
 
       saveExpiryDocumentCloud({
         id: docId,
         applicationId: application.id,
         name: file.name,
         requirement,
-        url: localDataUrl,
-        data: localDataUrl,
+        url: cloudDataUrl,
+        data: cloudDataUrl,
         customerPhone: customer.phone,
         uploadedAt: new Date().toISOString()
       });
 
-      saveCustomerProfileCloud(customer.phone, updatedCustomerObj);
+      if (latestUpdatedCustomer) {
+        saveCustomerProfileCloud(customer.phone, latestUpdatedCustomer);
+      }
 
       notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`);
 
@@ -2860,18 +2914,22 @@ const getServiceVisual = (group, title = '') => {
             const finalUrl = docRecord.url;
             const storagePath = docRecord.storagePath || '';
 
-            const cloudUpdated = {
-              ...customer,
-              documents: (customer.documents || []).map((doc) => {
+            updateCustomer((prevCustomer) => {
+              const prevDocs = prevCustomer?.documents || [];
+              const updatedDocs = prevDocs.map((doc) => {
                 if (doc.id === docId) {
                   return { ...doc, data: finalUrl, url: finalUrl, storagePath };
                 }
                 return doc;
-              })
-            };
+              });
+              const cloudUpdated = {
+                ...prevCustomer,
+                documents: updatedDocs
+              };
+              saveCustomerProfileCloud(prevCustomer?.phone || customer.phone, cloudUpdated);
+              return cloudUpdated;
+            });
 
-            updateCustomer(cloudUpdated);
-            saveCustomerProfileCloud(customer.phone, cloudUpdated);
             saveExpiryDocumentCloud({
               id: docId,
               applicationId: application.id,
@@ -2897,12 +2955,11 @@ const getServiceVisual = (group, title = '') => {
 
       const targetId = documentObj.id || `${application.id}-${requirement}`;
 
-      // 1. Delete from local state instantly
+      // 1. Delete from local state instantly without deleting unrelated requirement docs
       updateCustomer((current) => {
         const existingDocs = current.documents || [];
         const filtered = existingDocs.filter(
           (item) =>
-            item.requirement !== requirement &&
             item.id !== targetId &&
             item.data !== documentObj.data &&
             item.name !== documentObj.name
