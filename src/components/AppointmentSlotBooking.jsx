@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
-import { subscribeTokens, saveTokenBookingCloud } from '../utils/firebaseService';
+import { subscribeTokens, saveTokenBookingCloud } from '../utils/dataService';
 
 const TIME_SLOTS = [
   '10:00 AM - 10:30 AM',

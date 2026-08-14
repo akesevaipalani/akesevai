@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Image as ImageIcon, Crop, Download, RefreshCw, Sparkles, CheckCircle2, ShieldCheck, FileText, AlertCircle } from 'lucide-react';
+import { validatePhotoUpload } from '../utils/documentHelper';
 
 const PRESETS = [
   {
@@ -52,6 +53,13 @@ export default function GovernmentPhotoCropperTool() {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    const validation = validatePhotoUpload(file, 1);
+    if (!validation.valid) {
+      alert(validation.error);
+      e.target.value = '';
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -191,11 +199,11 @@ export default function GovernmentPhotoCropperTool() {
           {/* UPLOAD FILE */}
           <div>
             <label style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
-              2. போட்டோ அல்லது கையொப்பத்தைப் பதிவேற்றவும்:
+              2. போட்டோ அல்லது கையொப்பத்தைப் பதிவேற்றவும் (JPG format only, Max 1MB):
             </label>
             <input
               type="file"
-              accept="image/*"
+              accept="image/jpeg,.jpg,.jpeg"
               onChange={handleFileChange}
               style={{
                 width: '100%',

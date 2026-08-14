@@ -1,51 +1,39 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, ChevronLeft, ChevronRight, MapPin, Building } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const OFFICE_PHOTOS = [
-  {
-    src: '/office1.jpg',
-    title: '🏢 வாடிக்கையாளர் காத்திருப்பு அரங்கம்',
-    subtitle: 'Customer Lounge & Reception',
-    location: 'மில் ரோடு, சண்முகபுரம், பழனி'
-  },
-  {
-    src: '/office2.jpg',
-    title: '🖥️ நவீன கணினி & சேவை கவுண்டர்கள்',
-    subtitle: 'Modern Workstation Counters',
-    location: 'AkEsevai Digital Hub, Palani'
-  },
-  {
-    src: '/office3.jpg',
-    title: '👨‍💻 முதன்மை ஆபரேட்டர் சேவை மையம்',
-    subtitle: 'Main Operator Counter Desk',
-    location: 'AkEsevai Main Desk'
-  }
+  { id: 1, src: '/office1.jpg', anim: 'kenBurnsZoom' },
+  { id: 2, src: '/office2.jpg', anim: 'panRightZoom' },
+  { id: 3, src: '/office3.jpg', anim: 'gentleScale' }
 ];
 
 export default function AkEsevaiOfficePhotoSlider() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
-  const [fade, setFade] = useState(true);
+  const [slideKey, setSlideKey] = useState(0);
 
   useEffect(() => {
     if (!isAutoPlaying) return;
     const interval = setInterval(() => {
-      setFade(false);
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev + 1) % OFFICE_PHOTOS.length);
-        setFade(true);
-      }, 250);
+      handleNext();
     }, 4000);
     return () => clearInterval(interval);
-  }, [isAutoPlaying]);
+  }, [isAutoPlaying, currentIndex]);
 
-  const goTo = (idx) => {
-    setFade(false);
-    setTimeout(() => { setCurrentIndex(idx); setFade(true); }, 200);
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev + 1) % OFFICE_PHOTOS.length);
+    setSlideKey((prev) => prev + 1);
   };
 
-  const handleNext = () => goTo((currentIndex + 1) % OFFICE_PHOTOS.length);
-  const handlePrev = () => goTo((currentIndex - 1 + OFFICE_PHOTOS.length) % OFFICE_PHOTOS.length);
+  const handlePrev = () => {
+    setCurrentIndex((prev) => (prev - 1 + OFFICE_PHOTOS.length) % OFFICE_PHOTOS.length);
+    setSlideKey((prev) => prev + 1);
+  };
+
+  const goTo = (idx) => {
+    setCurrentIndex(idx);
+    setSlideKey((prev) => prev + 1);
+  };
 
   const current = OFFICE_PHOTOS[currentIndex];
 
@@ -54,169 +42,197 @@ export default function AkEsevaiOfficePhotoSlider() {
       onMouseEnter={() => setIsAutoPlaying(false)}
       onMouseLeave={() => setIsAutoPlaying(true)}
       style={{
-        borderRadius: '20px',
-        overflow: 'hidden',
-        boxShadow: '0 20px 50px rgba(2,44,122,0.28)',
         position: 'relative',
-        background: '#000',
         width: '100%',
+        margin: '24px 0',
+        borderRadius: '24px',
+        padding: '3px',
+        background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 50%, #fbbf24 100%)',
+        boxShadow: '0 20px 50px rgba(0, 82, 204, 0.25)',
+        overflow: 'hidden'
       }}
     >
-      {/* Top Label Bar */}
-      <div style={{
-        position: 'absolute',
-        top: 0, left: 0, right: 0,
-        zIndex: 3,
-        background: 'linear-gradient(to bottom, rgba(2,44,122,0.92) 0%, transparent 100%)',
-        padding: '14px 18px 28px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-      }}>
-        <span style={{
-          background: '#fbbf24',
-          color: '#022c7a',
-          padding: '4px 12px',
-          borderRadius: '20px',
-          fontSize: '10px',
-          fontWeight: 900,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          letterSpacing: '0.4px'
-        }}>
-          <Camera size={12} /> REAL OFFICE GALLERY
-        </span>
-        <span style={{
-          background: 'rgba(255,255,255,0.15)',
-          color: '#86efac',
-          padding: '4px 10px',
-          borderRadius: '10px',
-          fontSize: '10px',
-          fontWeight: 800,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '4px',
-          backdropFilter: 'blur(6px)'
-        }}>
-          <Building size={11} /> பழனி சண்முகபுரம்
-        </span>
-      </div>
+      <style>{`
+        @keyframes kenBurnsZoom {
+          0% { opacity: 0; transform: scale(1.15); }
+          15% { opacity: 1; }
+          100% { opacity: 1; transform: scale(1.0); }
+        }
 
-      {/* LANDSCAPE PHOTO — 16:9 aspect ratio */}
-      <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', overflow: 'hidden' }}>
+        @keyframes panRightZoom {
+          0% { opacity: 0; transform: scale(1.12) translateX(-20px); }
+          15% { opacity: 1; }
+          100% { opacity: 1; transform: scale(1.0) translateX(0); }
+        }
+
+        @keyframes gentleScale {
+          0% { opacity: 0; transform: scale(0.95); }
+          15% { opacity: 1; }
+          100% { opacity: 1; transform: scale(1.05); }
+        }
+
+        @keyframes timerBarFill {
+          0% { width: 0%; }
+          100% { width: 100%; }
+        }
+
+        .clean-slider-btn {
+          transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          opacity: 0.7;
+        }
+        .clean-slider-btn:hover {
+          opacity: 1;
+          background: rgba(0, 82, 204, 0.9) !important;
+          color: white !important;
+          transform: translateY(-50%) scale(1.15) !important;
+          boxShadow: 0 8px 20px rgba(0, 82, 204, 0.5) !important;
+        }
+
+        .dot-indicator {
+          transition: all 0.3s ease;
+        }
+        .dot-indicator:hover {
+          transform: scale(1.3);
+        }
+      `}</style>
+
+      <div
+        style={{
+          position: 'relative',
+          borderRadius: '22px',
+          overflow: 'hidden',
+          background: '#070a12',
+          aspectRatio: '16/9',
+          maxHeight: '480px'
+        }}
+      >
+        {/* CLEAN HIGH DEFINITION IMAGE WITH DYNAMIC CSS ANIMATIONS */}
         <img
+          key={slideKey}
           src={current.src}
-          alt={current.title}
+          alt={`AkEsevai Office Slide ${currentIndex + 1}`}
           style={{
             width: '100%',
             height: '100%',
             objectFit: 'cover',
             objectPosition: 'center',
             display: 'block',
-            opacity: fade ? 1 : 0,
-            transform: fade ? 'scale(1)' : 'scale(1.03)',
-            transition: 'opacity 0.4s ease, transform 0.5s ease',
-            filter: 'brightness(0.88)'
+            animation: `${current.anim} 4s cubic-bezier(0.25, 1, 0.5, 1) forwards`
           }}
         />
 
-        {/* Bottom info overlay */}
-        <div style={{
-          position: 'absolute',
-          bottom: 0, left: 0, right: 0,
-          background: 'linear-gradient(to top, rgba(2,12,30,0.96) 0%, rgba(2,12,30,0.5) 60%, transparent 100%)',
-          padding: '28px 18px 16px',
-          color: 'white'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <span style={{
-              background: '#16a34a', color: 'white',
-              padding: '2px 8px', borderRadius: '8px',
-              fontSize: '9px', fontWeight: 900
-            }}>
-              {currentIndex + 1} / {OFFICE_PHOTOS.length}
-            </span>
-            <span style={{ color: '#fbbf24', fontSize: '10px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <MapPin size={10} /> {current.location}
-            </span>
-          </div>
-          <div style={{ fontSize: '14px', fontWeight: 900, color: 'white', lineHeight: 1.3 }}>{current.title}</div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, marginTop: '2px' }}>{current.subtitle}</div>
-        </div>
-
-        {/* Prev Arrow */}
+        {/* LEFT NAV ARROW BUTTON */}
         <button
           type="button"
           onClick={handlePrev}
-          aria-label="Previous"
+          aria-label="Previous Photo"
+          className="clean-slider-btn"
           style={{
-            position: 'absolute', left: '12px', top: '50%',
+            position: 'absolute',
+            left: '16px',
+            top: '50%',
             transform: 'translateY(-50%)',
-            background: 'rgba(2,44,122,0.75)',
-            border: '1.5px solid rgba(255,255,255,0.25)',
+            background: 'rgba(15, 23, 42, 0.65)',
+            border: '1.5px solid rgba(255, 255, 255, 0.4)',
             borderRadius: '50%',
-            width: 38, height: 38,
-            color: 'white', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backdropFilter: 'blur(6px)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
-            transition: 'transform 0.2s ease',
-            zIndex: 4
+            width: 44,
+            height: 44,
+            color: 'white',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(8px)',
+            zIndex: 20
           }}
         >
-          <ChevronLeft size={20} />
+          <ChevronLeft size={24} />
         </button>
 
-        {/* Next Arrow */}
+        {/* RIGHT NAV ARROW BUTTON */}
         <button
           type="button"
           onClick={handleNext}
-          aria-label="Next"
+          aria-label="Next Photo"
+          className="clean-slider-btn"
           style={{
-            position: 'absolute', right: '12px', top: '50%',
+            position: 'absolute',
+            right: '16px',
+            top: '50%',
             transform: 'translateY(-50%)',
-            background: 'rgba(2,44,122,0.75)',
-            border: '1.5px solid rgba(255,255,255,0.25)',
+            background: 'rgba(15, 23, 42, 0.65)',
+            border: '1.5px solid rgba(255, 255, 255, 0.4)',
             borderRadius: '50%',
-            width: 38, height: 38,
-            color: 'white', cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            backdropFilter: 'blur(6px)',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
-            transition: 'transform 0.2s ease',
-            zIndex: 4
+            width: 44,
+            height: 44,
+            color: 'white',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(8px)',
+            zIndex: 20
           }}
         >
-          <ChevronRight size={20} />
+          <ChevronRight size={24} />
         </button>
-      </div>
 
-      {/* Dot indicators */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        gap: '8px',
-        padding: '10px 0',
-        background: 'linear-gradient(135deg, #022c7a 0%, #0f172a 100%)'
-      }}>
-        {OFFICE_PHOTOS.map((_, idx) => (
-          <button
-            key={idx}
-            onClick={() => goTo(idx)}
-            aria-label={`Go to photo ${idx + 1}`}
-            style={{
-              width: idx === currentIndex ? '28px' : '8px',
-              height: '8px',
-              borderRadius: '4px',
-              background: idx === currentIndex ? '#fbbf24' : 'rgba(255,255,255,0.3)',
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              padding: 0
-            }}
-          />
-        ))}
+        {/* CLEAN DOT INDICATORS AT BOTTOM CENTER */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'center',
+            zIndex: 20,
+            background: 'rgba(15, 23, 42, 0.6)',
+            backdropFilter: 'blur(8px)',
+            padding: '6px 14px',
+            borderRadius: '20px',
+            border: '1px solid rgba(255, 255, 255, 0.2)'
+          }}
+        >
+          {OFFICE_PHOTOS.map((photo, idx) => {
+            const isActive = idx === currentIndex;
+            return (
+              <button
+                key={photo.id}
+                type="button"
+                onClick={() => goTo(idx)}
+                aria-label={`Go to slide ${idx + 1}`}
+                className="dot-indicator"
+                style={{
+                  width: isActive ? '24px' : '8px',
+                  height: '8px',
+                  borderRadius: '4px',
+                  background: isActive
+                    ? 'linear-gradient(90deg, #4ade80 0%, #3b82f6 100%)'
+                    : 'rgba(255, 255, 255, 0.4)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0
+                }}
+              />
+            );
+          })}
+        </div>
+
+        {/* AUTO SLIDE PROGRESS BAR */}
+        {isAutoPlaying && (
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px', background: 'rgba(255,255,255,0.2)', zIndex: 25 }}>
+            <div
+              key={slideKey}
+              style={{
+                height: '100%',
+                background: 'linear-gradient(90deg, #16a34a 0%, #3b82f6 50%, #fbbf24 100%)',
+                animation: 'timerBarFill 4s linear forwards'
+              }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

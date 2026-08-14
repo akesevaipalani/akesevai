@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Share2, Copy, CheckCircle2, Gift } from 'lucide-react';
-import { saveReferralCloud } from '../utils/firebaseService';
+import { saveReferralCloud } from '../utils/dataService';
 
 function generateCode(name) {
   const base = name.trim().toUpperCase().replace(/\s+/g, '').slice(0, 4) || 'AKE';

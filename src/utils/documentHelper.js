@@ -1,5 +1,31 @@
 // Robust Document Helper for View & Download — Supports PNG, JPG, PDF, SVG, WEBP & Firebase Storage
 
+export const validatePhotoUpload = (file, customMaxMb = 1) => {
+  if (!file) return { valid: false, error: 'கோப்பு எதுவும் தேர்ந்தெடுக்கப்படவில்லை (No file selected).' };
+
+  // 1. Format check: Only JPG / JPEG allowed
+  const isJpg = file.type === 'image/jpeg' || /\.(jpg|jpeg)$/i.test(file.name || '');
+  if (!isJpg) {
+    return {
+      valid: false,
+      error: '⚠️ JPG / JPEG வடிவம் மட்டுமே அனுமதிக்கப்படும் (Only JPG/JPEG photo format supported)!'
+    };
+  }
+
+  // 2. Size check: Max 1MB (or customMaxMb)
+  const maxBytes = customMaxMb * 1024 * 1024;
+  if (file.size > maxBytes) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+    return {
+      valid: false,
+      error: `⚠️ போட்டோ அளவு 1 MB-க்கு மேல் இருக்கக்கூடாது (Photo size: ${sizeMb} MB. Max allowed: ${customMaxMb} MB)!`
+    };
+  }
+
+  return { valid: true };
+};
+
+
 const getMimeType = (docObj, rawUrl = '') => {
   if (docObj?.type && docObj.type !== 'File') return docObj.type;
 

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download } from 'lucide-react';
+import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download, Trash2 } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
-import { saveTokenBookingCloud, saveCustomerProfileCloud } from '../utils/firebaseService';
+import { saveTokenBookingCloud, saveCustomerProfileCloud, deleteTokenBookingCloud } from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
 import { getNextDailyTokenNumber } from '../utils/tokenHelper';
 
-export default function TokenPass({ defaultToken = null, onTokenSaved, initialName = '', initialPhone = '' }) {
+export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDeleted, initialName = '', initialPhone = '' }) {
   const [time, setTime] = useState(new Date());
   const [formData, setFormData] = useState({
     name: initialName,
@@ -38,12 +38,38 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, initialNa
     }
   }, [defaultToken]);
 
+  const handleDeleteToken = async () => {
+    if (!generatedToken || !generatedToken.tokenNo) return;
+    const tokenNum = generatedToken.tokenNo;
+    const confirmDelete = window.confirm(
+      `⚠️ உங்கள் டோக்கன் சீட்டை (${tokenNum}) நிச்சயமாக ரத்து செய்து நீக்க விரும்புகிறீர்களா?\n\n(Are you sure you want to cancel and delete your active token slip ${tokenNum}?)`
+    );
+    if (!confirmDelete) return;
+
+    if (typeof onTokenDeleted === 'function') {
+      try {
+        onTokenDeleted(tokenNum);
+      } catch (err) {}
+    } else {
+      try {
+        await deleteTokenBookingCloud(tokenNum, generatedToken.phone || formData.phone);
+      } catch (err) {}
+    }
+
+    setGeneratedToken(null);
+    alert(`🗑️ டோக்கன் எண் ${tokenNum} வெற்றிகரமாக ரத்து செய்யப்பட்டது. (Token ${tokenNum} cancelled & deleted)`);
+  };
+
   const timeString = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const dateString = time.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
   // Daily sequential token numbers (TOK-001, TOK-002, TOK-003...) resetting daily to 1
   const getNextSequentialTokenNo = () => {
-    return getNextDailyTokenNumber();
+    let stored = [];
+    try {
+      stored = JSON.parse(localStorage.getItem('akesevai-tokens') || '[]');
+    } catch (e) {}
+    return getNextDailyTokenNumber(stored);
   };
 
   // Direct Instant Token Booking Handler — 0ms Instant Generation
@@ -454,6 +480,30 @@ Mill Road, Sanmugapuram, Palani - 624601
                   }}
                 >
                   <MessageCircle size={16} /> 📲 WhatsApp-ல் அனுப்ப (Send WA)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDeleteToken}
+                  style={{
+                    flex: '1 1 100%',
+                    minWidth: '140px',
+                    background: '#fef2f2',
+                    color: '#dc2626',
+                    border: '1.5px solid #fca5a5',
+                    padding: '12px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'center',
+                    gap: '6px',
+                    marginTop: '4px'
+                  }}
+                >
+                  <Trash2 size={16} /> 🗑️ டோக்கனை ரத்து செய் (Cancel & Delete Token)
                 </button>
               </div>
             </div>

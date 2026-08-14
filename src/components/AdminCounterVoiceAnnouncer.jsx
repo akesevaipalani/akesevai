@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Mic, Bell, Sparkles, CheckCircle2, Play, User, RefreshCw, Volume1, SkipForward, SkipBack, ListOrdered, PlusCircle, Smartphone } from 'lucide-react';
 import { getStoredApplications, syncWithCentralServer } from '../utils/statusStore';
-import { saveLiveQueueCloud, saveTokenBookingCloud, subscribeTokens, fetchAllCloudRecords } from '../utils/firebaseService';
+import { saveLiveQueueCloud, saveTokenBookingCloud, subscribeTokens, fetchAllCloudRecords } from '../utils/dataService';
 import { getNextDailyTokenNumber } from '../utils/tokenHelper';
 
 const ENGLISH_TO_TAMIL_NAME_MAP = {

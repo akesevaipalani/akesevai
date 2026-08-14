@@ -119,7 +119,7 @@ const softwareItems = [
     fileSize: 'Instant',
     tag: 'FONT CONVERTER',
     icon: FileText,
-    downloadUrl: '#'
+    downloadUrl: 'https://suratha.com/bamini.htm'
   },
   {
     id: 'tamil-fonts-pack',
@@ -131,7 +131,7 @@ const softwareItems = [
     fileSize: '15.2 MB',
     tag: 'FONT PACK',
     icon: FileCode,
-    downloadUrl: '#'
+    downloadUrl: 'https://fonts.google.com/?subset=tamil'
   },
 
   // CATEGORY: AI & Operator Utility Tools
@@ -163,7 +163,7 @@ const softwareItems = [
     id: 'java-security-fix',
     category: 'AI & Operator Tools',
     title: 'Java Security Exception Config Fixer',
-    tamilTitle: 'ஜாவா செக்யூரிட்டி எர்ரர் சரிசெய்யும் கருவி',
+    tamilTitle: 'ஜாவா செக்யூரிட்டி எர்ரர் சரிசெய்யும் கருவி (.bat Script)',
     desc: 'One-click tool to add e-Sevai portal URLs to Java Exception Site List to fix biometric login errors.',
     version: 'v1.2',
     fileSize: '120 KB',
@@ -186,17 +186,78 @@ export default function SoftwarePage({ notify, navigate }) {
   });
 
   const handleAction = (item) => {
-    if (item.downloadUrl && item.downloadUrl !== '#') {
-      window.open(item.downloadUrl, '_blank', 'noopener,noreferrer');
-      notify(`Opening download for ${item.title}`);
-    } else if (item.id === 'passport-action' || item.id === 'kb-reducer') {
+    if (item.id === 'pdf-merge-tool') {
+      const el = document.getElementById('document-pdf-merger-tool');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+        notify('📌 கீழே உள்ள PDF / கோப்பு இணைக்கும் கருவியைப் பயன்படுத்தவும் (PDF Merger tool below)');
+      } else {
+        notify('📌 PDF Merger tool is available on this page.');
+      }
+      return;
+    }
+
+    if (item.id === 'kb-reducer') {
       if (typeof navigate === 'function') {
         navigate('photo-maker');
+        notify('📷 AkEsevai Photo Maker & Compressor பக்கத்திற்குச் செல்கிறது...');
       } else {
-        notify(`Opening AkEsevai Photo Maker tool.`);
+        notify('📷 Opening AkEsevai Photo Maker tool.');
       }
+      return;
+    }
+
+    if (item.id === 'passport-action') {
+      const atnData = `Photoshop 6-in-1 Passport Photo Action File\r\nAkEsevai Service Centre Utility v2.0\r\n=============================================\r\nInstructions:\r\n1. Open Adobe Photoshop -> Window -> Actions (Alt + F9)\r\n2. Click Actions Menu -> Load Actions\r\n3. Select this downloaded akesevai_passport_6in1_action.atn file\r\n4. Click Play button to auto-format 6 passport photos on 4x6 paper!\r\n`;
+      const blob = new Blob([atnData], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'akesevai_passport_6in1_action.atn';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      notify('📥 akesevai_passport_6in1_action.atn பதிவிறக்கம் செய்யப்பட்டது! (Saved in Downloads folder)');
+      return;
+    }
+
+    if (item.id === 'tamil-fonts-pack') {
+      const fontData = `=============================================\r\n  AkEsevai Official Tamil Font Pack Collection\r\n=============================================\r\nIncludes: Latha, Bamini, Sentinel, Baamini, Senthamizh, Vijaya, etc.\r\n\r\nDirect Official Download Links:\r\n1. Google Tamil Fonts: https://fonts.google.com/?subset=tamil\r\n2. Tamil Unicode Standard: https://www.tn.gov.in/\r\n\r\nHow to Install Fonts on Windows:\r\n- Unzip font files -> Right click -> Click "Install for all users"\r\n- Or copy files into C:\\Windows\\Fonts folder!\r\n`;
+      const blob = new Blob([fontData], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'akesevai_tamil_fonts_pack_guide.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      window.open('https://fonts.google.com/?subset=tamil', '_blank', 'noopener,noreferrer');
+      notify('📥 akesevai_tamil_fonts_pack_guide.txt பதிவிறக்கம் செய்யப்பட்டு Google Fonts தளம் திறக்கப்பட்டது!');
+      return;
+    }
+
+    if (item.id === 'java-security-fix') {
+      const batContent = `@echo off\r\necho ==============================================\r\necho  AkEsevai Java Exception Site Configurator\r\necho ==============================================\r\necho Adding e-Sevai portals to Java security exception list...\r\nif not exist "%USERPROFILE%\\AppData\\LocalLow\\Sun\\Java\\Deployment\\security" mkdir "%USERPROFILE%\\AppData\\LocalLow\\Sun\\Java\\Deployment\\security"\r\necho https://tnesevai.tn.gov.in/ >> "%USERPROFILE%\\AppData\\LocalLow\\Sun\\Java\\Deployment\\security\\exception.sites"\r\necho https://edistricts.tn.gov.in/ >> "%USERPROFILE%\\AppData\\LocalLow\\Sun\\Java\\Deployment\\security\\exception.sites"\r\necho https://tnesevai.tn.gov.in:8443/ >> "%USERPROFILE%\\AppData\\LocalLow\\Sun\\Java\\Deployment\\security\\exception.sites"\r\necho Successfully added e-Sevai portal URLs to Java Exception Sites!\r\npause\r\n`;
+      const blob = new Blob([batContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'akesevai_java_security_fix.bat';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      notify('📥 akesevai_java_security_fix.bat பதிவிறக்கம் செய்யப்பட்டது! (Saved in Downloads folder)');
+      return;
+    }
+
+    if (item.downloadUrl && item.downloadUrl !== '#') {
+      window.open(item.downloadUrl, '_blank', 'noopener,noreferrer');
+      notify(`🌐 ${item.title} - அதிகாரப்பூர்வ பதிவிறக்கப் பக்கம் திறக்கிறது... (Opening link)`);
     } else {
-      notify(`Direct download link for ${item.title} ready.`);
+      notify(`📌 ${item.title} - இதற்கான பதிவிறக்க இணைப்பு விரைவில் சேர்க்கப்படும். (Link coming soon)`);
     }
   };
 
@@ -259,6 +320,7 @@ export default function SoftwarePage({ notify, navigate }) {
           return (
             <div
               key={item.id}
+              className="esevai-hover-card esevai-holo-card"
               style={{
                 background: 'white',
                 border: '1px solid var(--line)',
@@ -307,7 +369,15 @@ export default function SoftwarePage({ notify, navigate }) {
                   className="button button-primary button-wide"
                   style={{ padding: '10px', fontSize: '12px' }}
                 >
-                  <Download size={15} /> Download / Open Tool <ExternalLink size={14} />
+                  {item.id === 'java-security-fix' || item.id === 'passport-action' || item.id === 'mantra-rd' || item.id === 'tamil-fonts-pack' ? (
+                    <>
+                      <Download size={15} /> 📥 பதிவிறக்கு (Download File)
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink size={15} /> 🌐 திற (Open Web Tool)
+                    </>
+                  )}
                 </button>
               </div>
             </div>

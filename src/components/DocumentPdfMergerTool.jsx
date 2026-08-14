@@ -116,7 +116,7 @@ export default function DocumentPdfMergerTool({ notify }) {
   };
 
   return (
-    <div style={{
+    <div id="document-pdf-merger-tool" className="pdf-merger-tool" style={{
       background: 'white',
       border: '1.5px solid #e2e8f0',
       borderRadius: '18px',

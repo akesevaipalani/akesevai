@@ -2048,7 +2048,7 @@
   padding: 20px;
   display: flex;
   flex-direction: column;
-  justify: space-between;
+  justify-content: space-between;
 }
 
 .calc-label {
@@ -2165,7 +2165,7 @@
   text-align: left;
   display: flex;
   flex-direction: column;
-  justify: space-between;
+  justify-content: space-between;
 }
 
 .checklist-title {
@@ -2475,7 +2475,7 @@
   text-align: left;
   display: flex;
   flex-direction: column;
-  justify: space-between;
+  justify-content: space-between;
   transition: transform 0.2s, border-color 0.2s;
 }
 
@@ -2651,7 +2651,7 @@
   text-align: left;
   display: flex;
   flex-direction: column;
-  justify: space-between;
+  justify-content: space-between;
 }
 
 /* 1. Aadhaar Card Card */
@@ -2672,7 +2672,7 @@
   gap: 10px;
   margin-top: 6px;
 }
-.emblem-placeholder { fontSize: 24px; }
+.emblem-placeholder { font-size: 24px; }
 .aadhaar-head-row strong { display: block; font-size: 11px; color: #9a3412; }
 .aadhaar-head-row small { display: block; font-size: 9px; color: #475569; }
 
@@ -2743,7 +2743,7 @@
 .gold-chip { width: 34px; height: 26px; background: linear-gradient(135deg, #fbbf24, #f59e0b); border-radius: 4px; border: 1px solid #fef08a; }
 .smart-details small { display: block; font-size: 9px; color: #bae6fd; }
 .smart-details strong { display: block; font-size: 12.5px; color: white; margin-bottom: 4px; }
-.smart-bottom-bar { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 800; border-top: 1px solid rgba(255,255,255,0.2); paddingTop: 6px; }
+.smart-bottom-bar { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 800; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 6px; }
 
 /* 4. Welfare Card */
 .welfare-style {
@@ -2921,6 +2921,7 @@
   margin: 0;
   line-height: 1.1;
   background: linear-gradient(135deg, #022c7a 0%, #15803d 100%);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -3215,7 +3216,7 @@
   text-align: left;
   display: flex;
   flex-direction: column;
-  justify: space-between;
+  justify-content: space-between;
 }
 
 .csc-metric-card.glow-border-blue { border-color: #93c5fd; }
@@ -3465,7 +3466,7 @@
   text-align: left;
   display: flex;
   flex-direction: column;
-  justify: space-between;
+  justify-content: space-between;
 }
 
 .detail-service-title {
@@ -3589,6 +3590,336 @@
   .smart-guide-card-container {
     padding: 20px;
   }
+}
+
+/* ANIMATED 3D SHOP ENTRANCE WELCOME INTRO STYLES */
+.shop-welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  perspective: 1200px;
+  opacity: 1;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  padding: 16px;
+}
+
+.shop-welcome-overlay.shop-fade-out {
+  opacity: 0;
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+.shop-building-viewport {
+  position: relative;
+  width: 100%;
+  max-width: 650px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: transform 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-style: preserve-3d;
+}
+
+.shop-building-viewport.camera-step-inside {
+  transform: scale(1.15) translateZ(120px);
+}
+
+/* SIGNBOARD */
+.shop-front-signboard {
+  position: relative;
+  background: linear-gradient(135deg, #064e3b 0%, #022c22 100%);
+  border: 2px solid #34d399;
+  border-radius: 18px;
+  padding: 16px 28px;
+  text-align: center;
+  box-shadow: 0 0 30px rgba(52, 211, 153, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  margin-bottom: 20px;
+  z-index: 10;
+  width: 92%;
+  animation: signboardDrop 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes signboardDrop {
+  0% { transform: translateY(-40px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.shop-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(245, 223, 158, 0.2);
+  color: #fef08a;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.shop-sign-title {
+  color: white;
+  font-size: 24px;
+  font-weight: 900;
+  font-family: 'Manrope', sans-serif;
+  margin: 6px 0 4px;
+}
+
+.gold-text {
+  color: #facc15;
+  text-shadow: 0 0 12px rgba(250, 204, 21, 0.6);
+}
+
+.shop-sign-location {
+  color: #a7f3d0;
+  font-size: 11px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+/* 3D DOOR FRAME */
+.shop-doorframe-3d {
+  position: relative;
+  width: 92%;
+  height: 360px;
+  background: #0f172a;
+  border: 10px solid #1e293b;
+  border-bottom: none;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7), inset 0 0 30px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  perspective: 1000px;
+  display: flex;
+}
+
+/* INTERIOR ROOM */
+.shop-interior-room {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #1e1b4b 0%, #065f46 50%, #0f172a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1;
+}
+
+.interior-ambient-light {
+  position: absolute;
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  background: #22c55e;
+  filter: blur(80px);
+  opacity: 0.35;
+  top: -50px;
+}
+
+.shop-interior-card {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  color: white;
+  max-width: 440px;
+}
+
+.interior-welcome-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.interior-greeting-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: white;
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.interior-subtitle {
+  color: #cbd5e1;
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+
+.interior-feature-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.interior-feature-chips span {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.shop-progress-wrap {
+  width: 100%;
+}
+
+.shop-progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.shop-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #eab308);
+  transition: width 0.15s linear;
+}
+
+.shop-loading-note {
+  color: #94a3b8;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+/* 3D GLASS DOORS */
+.glass-door {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 10;
+  transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1);
+  transform-style: preserve-3d;
+}
+
+.door-left {
+  left: 0;
+  transform-origin: left center;
+}
+
+.door-right {
+  right: 0;
+  transform-origin: right center;
+}
+
+.doors-open-left {
+  transform: rotateY(-105deg);
+}
+
+.doors-open-right {
+  transform: rotateY(105deg);
+}
+
+.door-glass-pane {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.door-reflection {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 50%);
+  pointer-events: none;
+}
+
+.door-handle {
+  position: absolute;
+  width: 8px;
+  height: 110px;
+  background: linear-gradient(180deg, #facc15 0%, #ca8a04 100%);
+  border-radius: 4px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.handle-left {
+  right: 16px;
+}
+
+.handle-right {
+  left: 16px;
+}
+
+.door-sticker {
+  background: rgba(2, 44, 34, 0.88);
+  border: 1.5px solid #34d399;
+  border-radius: 50%;
+  width: 65px;
+  height: 65px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.door-sticker span {
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #a7f3d0;
+  font-weight: 800;
+}
+
+.door-sticker strong {
+  font-size: 11px;
+  color: #fde047;
+}
+
+.enter-shop-btn {
+  margin-top: 18px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: white;
+  padding: 9px 20px;
+  border-radius: 25px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+.enter-shop-btn:hover {
+  background: #16a34a;
+  border-color: #22c55e;
+  transform: translateY(-2px);
 }
 
 /* ANIMATED WELCOME SPLASH INTRO SCREEN STYLES */
@@ -4081,6 +4412,7 @@
   color: #64748b;
   margin: 2px 0 0;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;

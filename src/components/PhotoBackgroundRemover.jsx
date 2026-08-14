@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, ImagePlus, Download, RefreshCw } from 'lucide-react';
+import { validatePhotoUpload } from '../utils/documentHelper';
 
 const BG_COLORS = [
   { label: '⬜ வெள்ளை (White)', value: '#FFFFFF', style: { background: '#FFFFFF', border: '1.5px solid #e2e8f0' } },
@@ -76,6 +77,14 @@ export default function PhotoBackgroundRemover() {
   const handleUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    const validation = validatePhotoUpload(file, 1);
+    if (!validation.valid) {
+      alert(validation.error);
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = ev => { setOriginal(ev.target.result); setResult(null); };
     reader.readAsDataURL(file);
@@ -138,7 +147,7 @@ export default function PhotoBackgroundRemover() {
 
       <div style={{ padding: '22px 24px' }}>
         {/* Upload */}
-        <input type="file" accept="image/*" ref={fileRef} onChange={handleUpload} style={{ display: 'none' }} />
+        <input type="file" accept="image/jpeg,.jpg,.jpeg" ref={fileRef} onChange={handleUpload} style={{ display: 'none' }} />
         <div
           onClick={() => fileRef.current?.click()}
           style={{
@@ -156,7 +165,7 @@ export default function PhotoBackgroundRemover() {
         >
           <Upload size={28} color="#7c3aed" style={{ margin: '0 auto 8px' }} />
           <div style={{ fontSize: '14px', fontWeight: 700, color: '#4c1d95' }}>புகைப்படம் தேர்ந்தெடுக்க இங்கே click பண்ணுங்கள்</div>
-          <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>JPG, PNG, WEBP ஆதரிக்கப்படுகிறது</div>
+          <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '4px' }}>JPG / JPEG வடிவம் மட்டுமே (Max 1 MB)</div>
         </div>
 
         {original && (

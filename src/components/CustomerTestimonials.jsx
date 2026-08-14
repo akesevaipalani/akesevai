@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Star, ShieldCheck, CheckCircle, PlusCircle, Send, X, ThumbsUp } from 'lucide-react';
-import { subscribeCustomerReviews, saveCustomerReviewCloud } from '../utils/firebaseService';
+import { subscribeCustomerReviews, saveCustomerReviewCloud } from '../utils/dataService';
 
 export default function CustomerTestimonials() {
   const [reviews, setReviews] = useState([]);

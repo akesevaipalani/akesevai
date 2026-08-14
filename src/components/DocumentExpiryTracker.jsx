@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Calendar, PlusCircle, Trash2, CheckCircle2, Clock, MessageCircle, AlertTriangle, Sparkles } from 'lucide-react';
-import { subscribeExpiryDocuments, saveExpiryDocumentCloud, deleteExpiryDocumentCloud } from '../utils/firebaseService';
+import { subscribeExpiryDocuments, saveExpiryDocumentCloud, deleteExpiryDocumentCloud } from '../utils/dataService';
 
 const DOC_TYPES = [
   'வருமானச் சான்றிதழ் (Income Certificate)',

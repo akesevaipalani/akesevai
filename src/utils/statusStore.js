@@ -1,8 +1,18 @@
-import { saveApplicationCloud } from './firebaseService';
+import { saveApplicationCloud } from './dataService';
 
 export const syncWithCentralServer = async () => {};
 
 let inMemoryApplications = {};
+
+export const getDeletedAppsSet = () => {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem('akesevai-deleted-apps');
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch (e) {
+    return new Set();
+  }
+};
 
 export const setInStoreApplications = (apps) => {
   if (apps && typeof apps === 'object') {
@@ -11,7 +21,21 @@ export const setInStoreApplications = (apps) => {
 };
 
 export const getStoredApplications = () => {
-  return inMemoryApplications || {};
+  let storedObj = {};
+  try {
+    const raw = localStorage.getItem('akesevai-application-records');
+    if (raw) storedObj = JSON.parse(raw);
+  } catch (e) {}
+  const merged = { ...storedObj, ...inMemoryApplications };
+  const delSet = getDeletedAppsSet();
+  if (delSet.size > 0) {
+    Object.keys(merged).forEach((k) => {
+      if (delSet.has(k) || delSet.has(merged[k]?.id) || delSet.has(merged[k]?.ackNo)) {
+        delete merged[k];
+      }
+    });
+  }
+  return merged;
 };
 
 export const saveApplicationRecord = (appRecord) => {
@@ -20,6 +44,7 @@ export const saveApplicationRecord = (appRecord) => {
 
   const completeRecord = {
     id,
+    ackNo: id,
     tokenId: appRecord.tokenId || `TOK-${Math.floor(100 + Math.random() * 900)}`,
     applicantName: appRecord.applicantName || 'Applicant Customer',
     phone: (appRecord.phone || '').replace(/\D/g, ''),
@@ -29,14 +54,16 @@ export const saveApplicationRecord = (appRecord) => {
     date: appRecord.date || dateToday,
     submittedDate: appRecord.submittedDate || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
     estimatedDate: appRecord.estimatedDate || 'Within 3 - 5 Working Days',
-    currentStage: appRecord.currentStage || 3,
-    statusLabel: appRecord.statusLabel || 'ஆவணங்கள் சரிபார்க்கப்பட்டு செயலாக்கத்தில் உள்ளது',
-    statusColor: appRecord.statusColor || '#0052cc',
-    remarks: appRecord.remarks || 'AkEsevai மையத்தில் விண்ணப்பம் பதிவு செய்யப்பட்டுள்ளது.',
+    currentStage: appRecord.currentStage || appRecord.stage || 1,
+    stage: appRecord.currentStage || appRecord.stage || 1,
+    status: (appRecord.currentStage || appRecord.stage || 1) === 6 ? 'Completed' : 'Processing',
+    statusLabel: appRecord.statusLabel || 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)',
+    statusColor: appRecord.statusColor || '#3b82f6',
+    remarks: appRecord.remarks || 'AkEsevai மையத்தில் விண்ணப்பம் பெறப்பட்டுள்ளது.',
     timeline: appRecord.timeline || [
-      { step: 1, title: 'Application Received', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: 'Today', done: true },
-      { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: 'Today', done: true },
-      { step: 3, title: 'Fee Payment Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: 'Today', done: true, active: true },
+      { step: 1, title: 'Application Received', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: 'Today', done: true, active: true },
+      { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: 'Pending', done: false },
+      { step: 3, title: 'Fee Payment Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: 'Pending', done: false },
       { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: 'Pending', done: false },
       { step: 5, title: 'Officer Verification', tamil: 'அதிகாரி பரிசீலனை', date: 'Pending', done: false },
       { step: 6, title: 'Approved & Completed', tamil: 'சான்றிதழ் வழங்கப்பட்டது', date: 'Pending', done: false }
@@ -44,6 +71,11 @@ export const saveApplicationRecord = (appRecord) => {
   };
 
   inMemoryApplications[id] = completeRecord;
+  try {
+    const current = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+    current[id] = completeRecord;
+    localStorage.setItem('akesevai-application-records', JSON.stringify(current));
+  } catch (e) {}
   saveApplicationCloud(id, completeRecord);
   return completeRecord;
 };
@@ -56,13 +88,16 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
   if (!existing) {
     existing = {
       id: cleanId || `TN-AK-2026-${Math.floor(10000 + Math.random() * 90000)}`,
+      ackNo: cleanId,
       applicantName: appMeta.applicantName || appMeta.name || 'Applicant Customer',
-      phone: (appMeta.phone || '').replace(/\D/g, ''),
-      service: appMeta.service || appMeta.serviceName || 'Government e-Sevai Service',
+      phone: (appMeta.phone || appMeta.customerPhone || '').replace(/\D/g, ''),
+      service: appMeta.service || appMeta.name || appMeta.serviceName || 'Government e-Sevai Service',
       fee: appMeta.fee || '₹60',
       submittedDate: appMeta.submittedDate || appMeta.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
       estimatedDate: appMeta.estimatedDate || 'Within 3 - 5 Working Days',
       currentStage: newStage,
+      stage: newStage,
+      status: newStage === 6 ? 'Completed' : 'Processing',
       statusLabel: '',
       statusColor: '#0052cc',
       remarks: '',
@@ -74,7 +109,7 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
     1: {
       statusLabel: 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)',
       statusColor: '#3b82f6',
-      remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பதிவு செய்யப்பட்டுள்ளது.'
+      remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பெறப்பட்டுள்ளது.'
     },
     2: {
       statusLabel: 'Step 2: Documents Verified (ஆவணங்கள் சரிபார்க்கப்பட்டது)',
@@ -103,9 +138,11 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
     }
   };
 
-  const defaultStage = stageInfoMap[newStage] || stageInfoMap[3];
+  const defaultStage = stageInfoMap[newStage] || stageInfoMap[1];
 
   existing.currentStage = newStage;
+  existing.stage = newStage;
+  existing.status = newStage === 6 ? 'Completed' : 'Processing';
   existing.statusLabel = newStatusLabel || defaultStage.statusLabel;
   existing.statusColor = defaultStage.statusColor;
   existing.remarks = newRemarks || defaultStage.remarks;
@@ -144,6 +181,49 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
   if (cleanId && cleanId !== targetId) inMemoryApplications[cleanId] = existing;
   if (appId && appId !== targetId) inMemoryApplications[appId] = existing;
 
+  try {
+    const current = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+    current[targetId] = existing;
+    if (cleanId) current[cleanId] = existing;
+    if (appId) current[appId] = existing;
+    localStorage.setItem('akesevai-application-records', JSON.stringify(current));
+  } catch (e) {}
+
+  // Update inside customer.applications as well
+  const rawPhone = existing.phone || appMeta.phone || appMeta.customerPhone || '';
+  const cleanPhone = String(rawPhone).replace(/\D/g, '');
+  if (cleanPhone) {
+    ['akesevai-customer-records', 'akesevai-customers'].forEach((storageKey) => {
+      try {
+        const raw = localStorage.getItem(storageKey);
+        if (raw) {
+          const custs = JSON.parse(raw);
+          const phoneKeys = Object.keys(custs).filter(k => String(k).replace(/\D/g, '') === cleanPhone);
+          phoneKeys.forEach(pk => {
+            if (custs[pk] && Array.isArray(custs[pk].applications)) {
+              custs[pk].applications = custs[pk].applications.map(a => {
+                const aId = String(a.id || a.ackNo || '');
+                if (aId === targetId || aId === cleanId || (a.name && existing.service && a.name.toLowerCase() === existing.service.toLowerCase())) {
+                  return {
+                    ...a,
+                    currentStage: newStage,
+                    stage: newStage,
+                    status: newStage === 6 ? 'Completed' : 'Processing',
+                    statusLabel: existing.statusLabel,
+                    statusColor: existing.statusColor,
+                    remarks: existing.remarks
+                  };
+                }
+                return a;
+              });
+            }
+          });
+          localStorage.setItem(storageKey, JSON.stringify(custs));
+        }
+      } catch (e) {}
+    });
+  }
+
   saveApplicationCloud(targetId, existing);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('akesevai-data-changed'));
@@ -153,12 +233,65 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
 
 export const deleteApplicationRecord = (targetId) => {
   if (!targetId) return;
-  const strId = String(targetId);
+  const strId = String(targetId).trim();
+
+  // 1. Add to blacklist set
+  try {
+    const delSet = getDeletedAppsSet();
+    delSet.add(strId);
+    localStorage.setItem('akesevai-deleted-apps', JSON.stringify(Array.from(delSet)));
+  } catch (e) {}
+
+  // 2. Remove from inMemoryApplications
   Object.keys(inMemoryApplications).forEach((key) => {
     const app = inMemoryApplications[key];
-    if (key === strId || app?.id === strId || app?.tokenId === strId) {
+    if (key === strId || app?.id === strId || app?.ackNo === strId || app?.tokenId === strId) {
       delete inMemoryApplications[key];
     }
   });
+
+  // 3. Remove from localStorage akesevai-application-records
+  try {
+    const raw = localStorage.getItem('akesevai-application-records');
+    if (raw) {
+      const records = JSON.parse(raw);
+      delete records[strId];
+      Object.keys(records).forEach(k => {
+        if (records[k]?.id === strId || records[k]?.ackNo === strId) {
+          delete records[k];
+        }
+      });
+      localStorage.setItem('akesevai-application-records', JSON.stringify(records));
+    }
+  } catch (e) {}
+
+  // 4. Remove from ALL customer records in localStorage (akesevai-customer-records and akesevai-customers)
+  ['akesevai-customer-records', 'akesevai-customers'].forEach((storageKey) => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const custs = JSON.parse(raw);
+        let updated = false;
+        Object.keys(custs).forEach((phone) => {
+          if (custs[phone] && Array.isArray(custs[phone].applications)) {
+            const initialLen = custs[phone].applications.length;
+            custs[phone].applications = custs[phone].applications.filter(
+              (a) => a && String(a.id || a.ackNo || '').trim() !== strId
+            );
+            if (custs[phone].applications.length !== initialLen) {
+              updated = true;
+            }
+          }
+        });
+        if (updated) {
+          localStorage.setItem(storageKey, JSON.stringify(custs));
+        }
+      }
+    } catch (e) {}
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('akesevai-data-changed'));
+  }
 };
 

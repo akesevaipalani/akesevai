@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { Search, CheckCircle2, Clock, FileCheck2, Send, AlertCircle, Printer, ArrowRight, ShieldCheck, MapPin, Phone, MessageCircle, QrCode, Award, Sparkles, Gift } from 'lucide-react';
 import { getStoredApplications } from '../utils/statusStore';
 import { printElement } from '../utils/printHelper';
-import { subscribeCustomerProfiles, subscribeTokens, subscribeApplications, fetchAllCloudRecords } from '../utils/firebaseService';
+import { subscribeCustomerProfiles, subscribeTokens, subscribeApplications, fetchAllCloudRecords } from '../utils/dataService';
 
 export default function StatusTracker({ initialQuery = '' }) {
   const [query, setQuery] = useState(initialQuery);
-  const [searchedApp, setSearchedApp] = useState(null);
+  const [searchedApps, setSearchedApps] = useState([]);
+  const [searchedTokens, setSearchedTokens] = useState([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [cloudData, setCloudData] = useState({ customers: {}, tokens: [], applications: {} });
 
@@ -16,6 +17,26 @@ export default function StatusTracker({ initialQuery = '' }) {
       if (res) setCloudData(res);
     });
 
+    // Re-search when admin updates application data
+    const handleDataChanged = () => {
+      const freshLocal = getStoredApplications() || {};
+      setCloudData((prev) => {
+        const merged = { ...(prev.applications || {}) };
+        Object.keys(freshLocal).forEach((k) => {
+          if (!freshLocal[k]) return;
+          const targetStage = Number(freshLocal[k]?.currentStage || freshLocal[k]?.stage || 1);
+          merged[k] = {
+            ...(merged[k] || {}),
+            ...freshLocal[k],
+            currentStage: targetStage,
+            stage: targetStage
+          };
+        });
+        return { ...prev, applications: merged };
+      });
+    };
+    window.addEventListener('akesevai-data-changed', handleDataChanged);
+
     const unsubCust = subscribeCustomerProfiles((custs) => {
       setCloudData((prev) => ({ ...prev, customers: custs || {} }));
     });
@@ -23,10 +44,23 @@ export default function StatusTracker({ initialQuery = '' }) {
       setCloudData((prev) => ({ ...prev, tokens: toks || [] }));
     });
     const unsubApps = subscribeApplications((apps) => {
-      setCloudData((prev) => ({ ...prev, applications: apps || {} }));
+      const localApps = getStoredApplications() || {};
+      const merged = { ...(apps || {}) };
+      Object.keys(localApps).forEach((k) => {
+        if (!localApps[k]) return;
+        const targetStage = Number(localApps[k]?.currentStage || localApps[k]?.stage || 1);
+        merged[k] = {
+          ...(apps?.[k] || {}),
+          ...localApps[k],
+          currentStage: targetStage,
+          stage: targetStage
+        };
+      });
+      setCloudData((prev) => ({ ...prev, applications: merged }));
     });
 
     return () => {
+      window.removeEventListener('akesevai-data-changed', handleDataChanged);
       if (typeof unsubCust === 'function') unsubCust();
       if (typeof unsubTok === 'function') unsubTok();
       if (typeof unsubApps === 'function') unsubApps();
@@ -34,158 +68,159 @@ export default function StatusTracker({ initialQuery = '' }) {
   }, []);
 
   useEffect(() => {
-    if (query.trim()) {
-      handleSearch(query);
+    const trimmed = query.trim();
+    const cleanDigits = trimmed.replace(/\D/g, '');
+    const isFullPhone = cleanDigits.length === 10;
+    const isFullAppId = trimmed.length >= 8;
+
+    if (isFullPhone || isFullAppId) {
+      handleSearch(trimmed);
+    } else if (!trimmed) {
+      setSearchedApps([]);
+      setSearchedTokens([]);
+      setErrorMsg('');
     }
-  }, [cloudData]);
+  }, [query, cloudData]);
 
   const handleSearch = (searchKey) => {
-    const key = (searchKey || query).trim().toUpperCase();
+    const key = (searchKey !== undefined ? searchKey : query).trim().toUpperCase();
     if (!key) {
       setErrorMsg('தயவுசெய்து அப்ளிகேஷன் எண் அல்லது 10 இலக்க மொபைல் எண்ணை உள்ளிடவும்.');
-      setSearchedApp(null);
+      setSearchedApps([]);
+      setSearchedTokens([]);
       return;
     }
 
     const cleanKey = key.replace(/\D/g, '');
 
-    // 1. Read stored & cloud applications
-    const allStoredAppsMap = {
-      ...getStoredApplications(),
-      ...(cloudData.applications || {})
-    };
+    // 1. Read stored & cloud applications — respect admin's explicit stage choice
+    const localStoredApps = getStoredApplications() || {};
+    const cloudApps = cloudData.applications || {};
+    const allStoredAppsMap = { ...cloudApps, ...localStoredApps };
+
+    Object.keys(cloudApps).forEach((k) => {
+      if (!cloudApps[k]) return;
+      const targetStage = Number(localStoredApps[k]?.currentStage || localStoredApps[k]?.stage || cloudApps[k]?.currentStage || cloudApps[k]?.stage || 1);
+      allStoredAppsMap[k] = {
+        ...(cloudApps[k] || {}),
+        ...(localStoredApps[k] || {}),
+        currentStage: targetStage,
+        stage: targetStage
+      };
+    });
     const storedAppsList = Object.values(allStoredAppsMap);
 
-    // 2. Read customer records from sessionStorage & cloud
-    let localCustRecords = {};
+    // 2. Read customer records from localStorage & cloud
+    let localCust1 = {};
+    let localCust2 = {};
     try {
-      localCustRecords = JSON.parse(sessionStorage.getItem('akesevai-customer-records') || '{}');
+      localCust1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+      localCust2 = JSON.parse(localStorage.getItem('akesevai-customers') || '{}');
     } catch (e) {}
-    const allCustomers = { ...localCustRecords, ...(cloudData.customers || {}) };
+    const allCustomers = { ...localCust2, ...localCust1, ...(cloudData.customers || {}) };
 
-    // 3. Read token bookings from sessionStorage & cloud
-    let localTokens = [];
-    try {
-      localTokens = JSON.parse(sessionStorage.getItem('akesevai-token-bookings') || '[]');
-    } catch (e) {}
-    const allTokens = [...localTokens, ...(cloudData.tokens || [])];
+    const matchedAppsMap = {};
 
-    let found = null;
+    // Helper to format application object with correct timeline & status
+    const formatApp = (appObj, defaultName = 'வாடிக்கையாளர்', defaultPhone = '') => {
+      const appId = appObj.id || appObj.ackNo || `AK-${cleanKey.slice(-6) || '2026-101'}`;
+      const stored = allStoredAppsMap[appId] || Object.values(allStoredAppsMap).find(a => a && (a.id === appId || a.ackNo === appId || (a.phone && appObj.phone && String(a.phone).replace(/\D/g, '') === String(appObj.phone).replace(/\D/g, '') && a.service === appObj.service)));
+      
+      const stageNum = Number(
+        stored?.currentStage || stored?.stage || appObj.currentStage || appObj.stage || (appObj.status === 'Completed' ? 6 : 1)
+      );
 
-    // Search 1: Match Application ID in stored/cloud applications
-    found = storedAppsList.find(app => app && app.id && app.id.toUpperCase() === key);
+      const stageInfoMap = {
+        1: { statusLabel: 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)', statusColor: '#3b82f6', remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பெறப்பட்டுள்ளது.' },
+        2: { statusLabel: 'Step 2: Documents Verified (ஆவணங்கள் சரிபார்க்கப்பட்டது)', statusColor: '#0284c7', remarks: 'வாடிக்கையாளரின் ஆவணங்கள் சரிபார்க்கப்பட்டு விண்ணப்பம் தொடரப்படுகிறது.' },
+        3: { statusLabel: 'Step 3: Fee Confirmed (கட்டணம் பெறப்பட்டு செயலாக்கத்தில் உள்ளது)', statusColor: '#0052cc', remarks: 'கட்டணம் பெறப்பட்டு அரசு இணையதளத் தாக்கல் நிலுவையில் உள்ளது.' },
+        4: { statusLabel: 'Step 4: Submitted to Govt (அரசு தளத்தில் தாக்கல் செய்யப்பட்டது)', statusColor: '#d97706', remarks: 'அரசு இ-சேவை இணையதளத்தில் விண்ணப்பம் தாக்கல் செய்யப்பட்டுள்ளது.' },
+        5: { statusLabel: 'Step 5: Officer Review (அதிகாரி பரிசீலனையில் உள்ளது)', statusColor: '#8b5cf6', remarks: 'அரசு அதிகாரி / VAO / RI பரிசீலனையில் உள்ளது.' },
+        6: { statusLabel: 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)', statusColor: '#16a34a', remarks: 'விண்ணப்பம் வெற்றிகரமாக ஒப்புதல் பெறப்பட்டு சான்றிதழ் தயாராக உள்ளது.' }
+      };
 
-    // Search 2: Match Phone Number in stored/cloud applications
-    if (!found && cleanKey) {
-      found = storedAppsList.find(app => app && app.phone && String(app.phone).replace(/\D/g, '') === cleanKey);
-    }
+      const curStage = stageInfoMap[stageNum] || stageInfoMap[1];
 
-    // Search 3: Match Customer Mobile Number (cleanKey) or App ID in all Customer Profiles
-    if (!found) {
-      for (const phoneKey of Object.keys(allCustomers)) {
-        const cust = allCustomers[phoneKey];
-        if (!cust) continue;
-        const custPhone = String(cust.phone || phoneKey).replace(/\D/g, '');
-        const custApps = Array.isArray(cust.applications) ? cust.applications : [];
-        const custDocs = Array.isArray(cust.documents) ? cust.documents : [];
-        const custName = cust.profile?.name || cust.name || 'வாடிக்கையாளர்';
+      return {
+        ...appObj,
+        ...stored,
+        id: appId,
+        applicantName: appObj.applicantName || appObj.name || stored?.applicantName || defaultName,
+        phone: (appObj.phone || stored?.phone || defaultPhone || cleanKey).replace(/\D/g, ''),
+        service: appObj.service || appObj.name || stored?.service || 'General e-Sevai Service',
+        submittedDate: appObj.submittedDate || appObj.date || stored?.submittedDate || 'Recently',
+        currentStage: stageNum,
+        statusLabel: curStage.statusLabel,
+        statusColor: curStage.statusColor,
+        remarks: curStage.remarks,
+        timeline: [
+          { step: 1, title: 'Registered', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: appObj.submittedDate || appObj.date || stored?.submittedDate || 'Today', done: stageNum >= 1, active: stageNum === 1 },
+          { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: stageNum >= 2 ? 'Completed' : 'Pending', done: stageNum >= 2, active: stageNum === 2 },
+          { step: 3, title: 'Fee Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: stageNum >= 3 ? 'Completed' : 'Pending', done: stageNum >= 3, active: stageNum === 3 },
+          { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: stageNum >= 4 ? (stageNum === 6 ? 'Completed' : 'Just Now') : 'Pending', done: stageNum >= 4, active: stageNum === 4 },
+          { step: 5, title: 'Officer Verification', tamil: 'அதிகாரி பரிசீலனை', date: stageNum >= 5 ? (stageNum === 6 ? 'Completed' : 'In Progress') : 'Pending', done: stageNum >= 5, active: stageNum === 5 },
+          { step: 6, title: 'Approved & Completed', tamil: 'சான்றிதழ் வழங்கப்பட்டது', date: stageNum === 6 ? 'Completed' : 'Pending', done: stageNum === 6, active: stageNum === 6 }
+        ]
+      };
+    };
 
-        // Match by phone number or application ID
-        const matchedApp = custApps.find(a => a.id && (a.id.toUpperCase() === key || key.includes(a.id.toUpperCase())));
+    // Match by Application ID in stored apps
+    storedAppsList.forEach((app) => {
+      if (!app) return;
+      const appId = String(app.id || app.ackNo || '').toUpperCase();
+      const appPhone = String(app.phone || '').replace(/\D/g, '');
 
-        if ((cleanKey && custPhone && (custPhone === cleanKey || custPhone.includes(cleanKey) || cleanKey.includes(custPhone))) || matchedApp) {
-          const appObj = matchedApp || custApps[0] || {
-            id: `AK-${cleanKey.slice(-6) || '2026-101'}`,
-            name: 'இ-சேவை விண்ணப்பம் (e-Sevai Application)',
-            status: 'Processing',
-            date: new Date().toLocaleDateString('en-IN')
-          };
+      const matchesId = appId && (appId === key || key.includes(appId));
+      const matchesPhone = cleanKey && cleanKey.length === 10 && appPhone && appPhone === cleanKey;
 
-          const matchedStoredApp = storedAppsList.find(a => a && (
-            (a.id && appObj.id && (a.id === appObj.id || a.id.includes(appObj.id) || appObj.id.includes(a.id))) ||
-            (a.phone && custPhone && String(a.phone).replace(/\D/g, '') === custPhone)
-          ));
+      if (matchesId || matchesPhone) {
+        const formatted = formatApp(app, app.applicantName, appPhone);
+        matchedAppsMap[formatted.id] = formatted;
+      }
+    });
 
-          if (matchedStoredApp) {
-            found = matchedStoredApp;
-            break;
-          }
+    // Match in customer records
+    Object.keys(allCustomers).forEach((phoneKey) => {
+      const cust = allCustomers[phoneKey];
+      if (!cust) return;
+      const custPhone = String(cust.phone || phoneKey).replace(/\D/g, '');
+      const custApps = Array.isArray(cust.applications) ? cust.applications : [];
+      const custName = cust.profile?.name || cust.name || 'வாடிக்கையாளர்';
 
-          const stageNum = appObj.currentStage || appObj.stage || (appObj.status === 'Completed' || appObj.progress === 100 ? 6 : 3);
-          const stageInfoMap = {
-            1: { statusLabel: 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)', statusColor: '#3b82f6', remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பதிவு செய்யப்பட்டுள்ளது.' },
-            2: { statusLabel: 'Step 2: Documents Verified (ஆவணங்கள் சரிபார்க்கப்பட்டது)', statusColor: '#0284c7', remarks: `வாடிக்கையாளர் கணக்கில் ${custDocs.length || 2} ஆவணங்கள் சரிபார்க்கப்பட்டு விண்ணப்பம் தொடரப்படுகிறது.` },
-            3: { statusLabel: 'Step 3: Fee Confirmed (கட்டணம் பெறப்பட்டு செயலாக்கத்தில் உள்ளது)', statusColor: '#0052cc', remarks: `வாடிக்கையாளர் கணக்கில் ${custDocs.length || 2} ஆவணங்கள் சரிபார்க்கப்பட்டு விண்ணப்பம் தொடரப்படுகிறது.` },
-            4: { statusLabel: 'Step 4: Submitted to Govt (அரசு தளத்தில் தாக்கல் செய்யப்பட்டது)', statusColor: '#d97706', remarks: 'அரசு இ-சேவை இணையதளத்தில் விண்ணப்பம் தாக்கல் செய்யப்பட்டுள்ளது.' },
-            5: { statusLabel: 'Step 5: Officer Review (அதிகாரி பரிசீலனையில் உள்ளது)', statusColor: '#8b5cf6', remarks: 'அரசு அதிகாரி / VAO / RI பரிசீலனையில் உள்ளது.' },
-            6: { statusLabel: 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)', statusColor: '#16a34a', remarks: 'விண்ணப்பம் வெற்றிகரமாக ஒப்புதல் பெறப்பட்டு சான்றிதழ் தயாராக உள்ளது.' }
-          };
-          const curStage = stageInfoMap[stageNum] || stageInfoMap[3];
+      custApps.forEach((appObj) => {
+        if (!appObj) return;
+        const appId = String(appObj.id || appObj.ackNo || '').toUpperCase();
 
-          found = {
-            id: appObj.id,
-            tokenId: `TOK-${cleanKey.slice(-3) || '101'}`,
-            applicantName: custName,
-            phone: custPhone || cleanKey,
-            service: appObj.name || 'General e-Sevai Service',
-            submittedDate: appObj.date || 'Recently',
-            estimatedDate: '3 முதல் 5 வேலை நாட்கள்',
-            currentStage: stageNum,
-            statusLabel: appObj.statusLabel || curStage.statusLabel,
-            statusColor: appObj.statusColor || curStage.statusColor,
-            remarks: appObj.remarks || curStage.remarks,
-            timeline: [
-              { step: 1, title: 'Registered', tamil: 'விண்ணப்பம் பதிவு செய்யப்பட்டது', date: appObj.date || 'Today', done: stageNum >= 1, active: stageNum === 1 },
-              { step: 2, title: 'Document Verified', tamil: `${custDocs.length || 2} ஆவணங்கள் சரிபார்க்கப்பட்டது`, date: 'Today', done: stageNum >= 2, active: stageNum === 2 },
-              { step: 3, title: 'Fee Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: 'Today', done: stageNum >= 3, active: stageNum === 3 },
-              { step: 4, title: 'Submitted to Portal', tamil: 'அரசு தளத்தில் தாக்கல் செய்யப்பட்டது', date: stageNum >= 4 ? (stageNum === 6 ? 'Completed' : 'Just Now') : 'Pending', done: stageNum >= 4, active: stageNum === 4 },
-              { step: 5, title: 'Officer Inspection', tamil: 'அதிகாரி பரிசீலனை', date: stageNum >= 5 ? (stageNum === 6 ? 'Completed' : 'In Progress') : 'Pending', done: stageNum >= 5, active: stageNum === 5 },
-              { step: 6, title: 'Approved & Completed', tamil: 'சான்றிதழ் தயார் / நிறைவடைந்தது', date: stageNum === 6 ? 'Completed' : 'Pending', done: stageNum === 6, active: stageNum === 6 }
-            ]
-          };
-          break;
+        const matchesId = appId && (appId === key || key.includes(appId));
+        const matchesPhone = cleanKey && cleanKey.length === 10 && custPhone && custPhone === cleanKey;
+
+        if (matchesId || matchesPhone) {
+          const formatted = formatApp(appObj, custName, custPhone);
+          matchedAppsMap[formatted.id] = formatted;
         }
-      }
-    }
-
-    // Search 4: Match in Token Bookings
-    if (!found && cleanKey) {
-      const foundToken = allTokens.find(t => (t.phone || '').replace(/\D/g, '') === cleanKey || (t.tokenNo && t.tokenNo.toUpperCase() === key));
-      if (foundToken) {
-        const isDone = (foundToken.status || '').includes('COMPLETED') || (foundToken.status || '').includes('SERVED');
-        found = {
-          id: foundToken.id || `TN-AK-2026-${cleanKey.slice(-5)}`,
-          tokenId: foundToken.tokenNo || 'TOK-001',
-          applicantName: foundToken.customerName || foundToken.name || 'வாடிக்கையாளர்',
-          phone: foundToken.phone || cleanKey,
-          service: foundToken.service || 'AkEsevai Token Service',
-          submittedDate: foundToken.date || 'Recently',
-          estimatedDate: '3 முதல் 5 வேலை நாட்கள்',
-          currentStage: isDone ? 6 : 2,
-          statusLabel: isDone ? 'COMPLETED / SERVED (நிறைவடைந்தது)' : 'Token Active (டோக்கன் பதிவு செய்யப்பட்டது)',
-          statusColor: isDone ? '#16a34a' : '#d97706',
-          remarks: `AkEsevai மையத்தில் டோக்கன் பதிவு செய்யப்பட்டுள்ளது (${foundToken.date || 'Today'} - ${foundToken.slot || 'Live Queue'}).`,
-          timeline: [
-            { step: 1, title: 'Token Booked', tamil: 'டோக்கன் பதிவு செய்யப்பட்டது', date: 'Today', done: true },
-            { step: 2, title: 'Counter Verification', tamil: 'கவுண்டர் சரிபார்ப்பு', date: 'Today', done: true, active: !isDone },
-            { step: 3, title: 'Fee Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: 'Today', done: isDone },
-            { step: 4, title: 'Submitted to Portal', tamil: 'அரசு தளத்தில் தாக்கல் செய்யப்பட்டது', date: 'Today', done: isDone },
-            { step: 5, title: 'Officer Inspection', tamil: 'அதிகாரி பரிசீலனை', date: 'Today', done: isDone },
-            { step: 6, title: 'Completed / Served', tamil: 'நிறைவடைந்தது', date: isDone ? 'Completed' : 'Pending', done: isDone, active: isDone }
-          ]
-        };
-      }
-    }
-
-    if (found) {
-      setSearchedApp({
-        ...found,
-        name: found.applicantName || found.name || 'வாடிக்கையாளர்'
       });
+    });
+
+    // Match tokens by tokenNo or phone
+    const matchedTokens = (cloudData.tokens || []).filter((t) => {
+      if (!t) return false;
+      const tokNo = String(t.tokenNo || t.tokenId || t.id || '').toUpperCase();
+      const tokPhone = String(t.phone || t.customerPhone || '').replace(/\D/g, '');
+      const matchesTokId = tokNo && (tokNo === key || key.includes(tokNo));
+      const matchesTokPhone = cleanKey && cleanKey.length === 10 && tokPhone && tokPhone === cleanKey;
+      return matchesTokId || matchesTokPhone;
+    });
+
+    setSearchedTokens(matchedTokens);
+
+    const finalResults = Object.values(matchedAppsMap);
+
+    if (finalResults.length > 0 || matchedTokens.length > 0) {
+      setSearchedApps(finalResults);
       setErrorMsg('');
     } else {
-      setSearchedApp(null);
-      setErrorMsg(`❌ பிழை: "${key}" என்ற மொபைல் எண் / விண்ணப்ப எண் நமது AkEsevai சிஸ்டத்தில் பதிவு செய்யப்படவில்லை! (Unregistered Customer)`);
+      setErrorMsg('இந்த எண் / விண்ணப்ப எண்ணில் எந்தவொரு சேவை விண்ணப்பமும் பதிவு செய்யப்படவில்லை. தயவுசெய்து உங்கள் 10 இலக்க மொபைல் எண் அல்லது விண்ணப்ப எண்ணைச் சரிபார்க்கவும்.');
+      setSearchedApps([]);
     }
   };
 
@@ -211,7 +246,15 @@ export default function StatusTracker({ initialQuery = '' }) {
             <input
               type="text"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setQuery(val);
+                if (!val.trim()) {
+                  setSearchedApps([]);
+                  setSearchedTokens([]);
+                  setErrorMsg('');
+                }
+              }}
               placeholder="🔍 Enter Application ID or Mobile Number..."
             />
           </div>
@@ -241,44 +284,112 @@ export default function StatusTracker({ initialQuery = '' }) {
         </div>
       )}
 
-      {/* Searched Application Status Display Card */}
-      {searchedApp && (
-        <div className="tracker-result-card" style={{ background: 'white', border: '1.5px solid #0052cc', borderRadius: '16px', padding: '24px', margin: '20px 0', boxShadow: '0 10px 25px rgba(0,82,204,0.1)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '16px' }}>
-            <div>
-              <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}>
-                APPLICATION ID: {searchedApp.id}
-              </span>
-              <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', margin: '8px 0 2px' }}>{searchedApp.applicantName}</h3>
-              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Mobile: +91 {searchedApp.phone}</p>
-            </div>
+      {/* Active Token Slips Display Cards */}
+      {searchedTokens.length > 0 && (
+        <div style={{ margin: '20px 0' }}>
+          {searchedTokens.map((tok) => {
+            const tokNum = tok.tokenNo || tok.tokenId || tok.id || 'TOK-101';
+            const tokStatus = tok.status || 'CHECKED-IN / VERIFIED';
+            const isDone = tokStatus.includes('COMPLETED') || tokStatus.includes('SERVED');
+            const isCancel = tokStatus.includes('NO-SHOW') || tokStatus.includes('CANCELLED');
+            const isAwait = tokStatus.includes('AWAITING') || tokStatus.includes('PENDING');
 
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ background: searchedApp.statusColor || '#16a34a', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                <CheckCircle2 size={15} /> {searchedApp.statusLabel}
-              </span>
-              <small style={{ display: 'block', fontSize: '11px', color: '#64748b', marginTop: '6px' }}>Date: {searchedApp.submittedDate}</small>
-            </div>
-          </div>
+            const statusBg = isDone ? '#f0fdf4' : isCancel ? '#fef2f2' : isAwait ? '#fffbebf' : '#eff6ff';
+            const statusColor = isDone ? '#16a34a' : isCancel ? '#dc2626' : isAwait ? '#d97706' : '#2563eb';
+            const statusBorder = isDone ? '#86efac' : isCancel ? '#fca5a5' : isAwait ? '#fde68a' : '#bfdbfe';
 
-          <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
-            <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>📋 Service Request: {searchedApp.service}</strong>
-            <p style={{ fontSize: '13px', color: '#475569', margin: '4px 0 0' }}>{searchedApp.remarks}</p>
+            return (
+              <div
+                key={tokNum}
+                style={{
+                  background: 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)',
+                  border: '2px solid #fdba74',
+                  borderRadius: '16px',
+                  padding: '22px 24px',
+                  boxShadow: '0 10px 25px rgba(251,146,60,0.15)',
+                  marginBottom: '20px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ width: '52px', height: '52px', borderRadius: '12px', background: '#c2410c', color: 'white', display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: '16px', boxShadow: '0 4px 10px rgba(194,65,12,0.3)' }}>
+                      {tokNum}
+                    </div>
+                    <div>
+                      <span style={{ background: '#ffedd5', color: '#9a3412', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}>
+                        🎫 ACTIVE OFFICE VISIT TOKEN SLIP
+                      </span>
+                      <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#9a3412', margin: '4px 0 2px' }}>
+                        {tok.customerName || tok.applicantName || 'Customer'}
+                      </h3>
+                      <small style={{ fontSize: '12px', color: '#c2410c', fontWeight: 700 }}>
+                        📅 Visit Date: <strong>{tok.date}</strong> ({tok.slot || 'Standard Counter'}) · Service: <strong>{tok.service}</strong>
+                      </small>
+                    </div>
+                  </div>
 
-          </div>
-
-          {/* Timeline Steps */}
-          <div className="tracker-timeline" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginTop: '16px' }}>
-            {searchedApp.timeline.map((step) => (
-              <div key={step.step} style={{ background: step.done ? '#f0fdf4' : step.active ? '#eff6ff' : '#f8fafc', border: step.done ? '1.5px solid #86efac' : step.active ? '1.5px solid #60a5fa' : '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
-                <span style={{ width: '26px', height: '26px', borderRadius: '50%', background: step.done ? '#16a34a' : step.active ? '#2563eb' : '#cbd5e1', color: 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 900, marginBottom: '6px' }}>
-                  {step.done ? '✓' : step.step}
-                </span>
-                <strong style={{ display: 'block', fontSize: '12px', color: step.done ? '#166534' : step.active ? '#1e40af' : '#64748b' }}>{step.tamil}</strong>
-                <small style={{ fontSize: '10px', color: '#64748b' }}>{step.date}</small>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ background: statusBg, color: statusColor, border: `1.5px solid ${statusBorder}`, padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={15} /> Status: {tokStatus}
+                    </div>
+                    <small style={{ display: 'block', fontSize: '11px', color: '#64748b', marginTop: '6px' }}>
+                      ⚡ Real-time status synced from AkEsevai Admin
+                    </small>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Searched Applications Display Cards */}
+      {searchedApps.length > 0 && (
+        <div style={{ margin: '20px 0' }}>
+          {searchedApps.length > 1 && (
+            <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: '10px', padding: '10px 16px', marginBottom: '16px', color: '#1e40af', fontSize: '13px', fontWeight: 800 }}>
+              📱 {searchedApps.length} சேவை விண்ணப்பங்கள் இந்த மொபைல் எண்ணில் கண்டறியப்பட்டது (Found {searchedApps.length} applications for this mobile number):
+            </div>
+          )}
+
+          {searchedApps.map((searchedApp) => (
+            <div key={searchedApp.id} className="tracker-result-card" style={{ background: 'white', border: '1.5px solid #0052cc', borderRadius: '16px', padding: '24px', marginBottom: '20px', boxShadow: '0 10px 25px rgba(0,82,204,0.1)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '16px' }}>
+                <div>
+                  <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}>
+                    APPLICATION ID: {searchedApp.id}
+                  </span>
+                  <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', margin: '8px 0 2px' }}>{searchedApp.applicantName}</h3>
+                  <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>Mobile: +91 {searchedApp.phone}</p>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ background: searchedApp.statusColor || '#16a34a', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <CheckCircle2 size={15} /> {searchedApp.statusLabel}
+                  </span>
+                  <small style={{ display: 'block', fontSize: '11px', color: '#64748b', marginTop: '6px' }}>Date: {searchedApp.submittedDate}</small>
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+                <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>📋 Service Request: {searchedApp.service}</strong>
+                <p style={{ fontSize: '13px', color: '#475569', margin: '4px 0 0' }}>{searchedApp.remarks}</p>
+              </div>
+
+              {/* Timeline Steps */}
+              <div className="tracker-timeline" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginTop: '16px' }}>
+                {(searchedApp.timeline || []).map((step) => (
+                  <div key={step.step} style={{ background: step.done ? '#f0fdf4' : step.active ? '#eff6ff' : '#f8fafc', border: step.done ? '1.5px solid #86efac' : step.active ? '1.5px solid #60a5fa' : '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', textAlign: 'center' }}>
+                    <span style={{ width: '26px', height: '26px', borderRadius: '50%', background: step.done ? '#16a34a' : step.active ? '#2563eb' : '#cbd5e1', color: 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 900, marginBottom: '6px' }}>
+                      {step.done ? '✓' : step.step}
+                    </span>
+                    <strong style={{ display: 'block', fontSize: '12px', color: step.done ? '#166534' : step.active ? '#1e40af' : '#64748b' }}>{step.tamil}</strong>
+                    <small style={{ fontSize: '10px', color: '#64748b' }}>{step.date}</small>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

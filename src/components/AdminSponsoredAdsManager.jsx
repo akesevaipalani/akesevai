@@ -4,7 +4,8 @@ import {
   Sparkles, RefreshCw, ImagePlus, SlidersHorizontal, X, UploadCloud, 
   Clock, Timer, Zap, Download, Wand2, Layers, Maximize2, Eye, ShieldCheck, Settings, Bot, Lightbulb 
 } from 'lucide-react';
-import { subscribeSponsoredAds, saveSponsoredAdCloud, deleteSponsoredAdCloud } from '../utils/firebaseService';
+import { subscribeSponsoredAds, saveSponsoredAdCloud, deleteSponsoredAdCloud } from '../utils/dataService';
+import { validatePhotoUpload } from '../utils/documentHelper';
 
 const DEFAULT_ADS = [
   {
@@ -107,7 +108,7 @@ export const parsePromptToAdContent = (promptText) => {
 };
 
 // Helper to synthesize custom-sized high quality advertisement banner images via Canvas
-export const generateBannerImageFromData = ({
+export const generateBannerImageFromData = async ({
   title = '',
   tagline = '',
   offer = '',
@@ -117,7 +118,8 @@ export const generateBannerImageFromData = ({
   bannerSize = 'medium',
   customW = 800,
   customH = 500,
-  theme = 'modern'
+  theme = 'modern',
+  logoImage = ''
 }) => {
   let w = 800;
   let h = 500;
@@ -200,6 +202,42 @@ export const generateBannerImageFromData = ({
   ctx.strokeStyle = 'rgba(255,255,255,0.4)';
   ctx.lineWidth = Math.max(1.5, Math.round(Math.min(w, h) * 0.005));
   ctx.strokeRect(20, 20, w - 40, h - 40);
+
+  // Draw Logo Image if provided
+  if (logoImage && typeof logoImage === 'string') {
+    try {
+      const loadedImg = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = logoImage;
+      });
+
+      if (loadedImg) {
+        const logoSize = Math.max(55, Math.round(Math.min(w, h) * 0.18));
+        const logoX = 35;
+        const logoY = 30;
+
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = borderCol;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = borderCol;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(loadedImg, logoX, logoY, logoSize, logoSize);
+        ctx.restore();
+      }
+    } catch (e) {}
+  }
 
   // 1. Top Badge / Header Kicker
   ctx.fillStyle = borderCol;
@@ -294,11 +332,12 @@ export default function AdminSponsoredAdsManager({ notify }) {
     phone: '9342318844',
     whatsapp: '919342318844',
     image: '',
-    bannerSize: 'medium', // 'hero' (1200x400), 'wide' (1200x200), 'square' (1080x1080), 'story' (1080x1920), 'medium' (800x500), 'custom'
+    logoImage: '',
+    bannerSize: 'medium',
     customWidth: 800,
     customHeight: 500,
     formTheme: 'modern',
-    runDurationHours: 24, // Preset in hours (0 = Unlimited)
+    runDurationHours: 24,
     startTime: new Date().toISOString()
   });
 
@@ -326,7 +365,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
 
   useEffect(() => {
     const unsubscribe = subscribeSponsoredAds((cloudAds) => {
-      if (Array.isArray(cloudAds) && cloudAds.length > 0) {
+      if (Array.isArray(cloudAds)) {
         setAds(cloudAds);
       } else {
         setAds(DEFAULT_ADS);
@@ -340,7 +379,10 @@ export default function AdminSponsoredAdsManager({ notify }) {
   // Save to central server
   const saveAdsToStorage = (updatedList) => {
     setAds(updatedList);
+    localStorage.setItem('akesevai-sponsored-ads', JSON.stringify(updatedList));
+    localStorage.setItem('akesevai-has-custom-sponsored-ads', 'true');
     updatedList.forEach((ad) => saveSponsoredAdCloud(ad));
+    window.dispatchEvent(new Event('akesevai-ads-changed'));
     window.dispatchEvent(new Event('storage'));
   };
 
@@ -356,6 +398,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
       phone: '9342318844',
       whatsapp: '919342318844',
       image: '',
+      logoImage: '',
       bannerSize: 'medium',
       customWidth: 800,
       customHeight: 500,
@@ -379,6 +422,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
       phone: ad.phone || '',
       whatsapp: ad.whatsapp || '',
       image: ad.image || '',
+      logoImage: ad.logoImage || '',
       bannerSize: ad.bannerSize || 'medium',
       customWidth: ad.customWidth || 800,
       customHeight: ad.customHeight || 500,
@@ -389,13 +433,56 @@ export default function AdminSponsoredAdsManager({ notify }) {
     setShowForm(true);
   };
 
-  // Handle Image Upload & Convert to Base64
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
+  // Handle Logo Upload & Convert to Base64
+  const handleLogoUpload = (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      if (notify) notify('⚠️ படத்தின் அளவு 5MB-க்குள் இருக்க வேண்டும்!');
+    const validation = validatePhotoUpload(file, 1);
+    if (!validation.valid) {
+      if (notify) notify(validation.error);
+      else alert(validation.error);
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const logoData = reader.result;
+      setFormAdData((prev) => ({ ...prev, logoImage: logoData }));
+      if (notify) notify('🖼️ கடை லோகோ சேர்க்கப்பட்டது!');
+
+      // Re-generate banner with newly uploaded logo
+      if (formAdData.title) {
+        const newImg = await generateBannerImageFromData({
+          title: formAdData.title,
+          tagline: formAdData.tagline,
+          offer: formAdData.offer,
+          address: formAdData.address,
+          phone: formAdData.phone,
+          badge: formAdData.badge,
+          bannerSize: formAdData.bannerSize,
+          customW: formAdData.customWidth,
+          customH: formAdData.customHeight,
+          theme: formAdData.formTheme,
+          logoImage: logoData
+        });
+        setFormAdData((prev) => ({ ...prev, image: newImg }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle Image Upload & Convert to Base64
+  const handleImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validation = validatePhotoUpload(file, 1);
+    if (!validation.valid) {
+      if (notify) notify(validation.error);
+      else alert(validation.error);
+      e.target.value = '';
       return;
     }
 
@@ -408,7 +495,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
   };
 
   // ChatGPT-style Prompt Generator Action
-  const handleGenerateViaAiPrompt = (promptString = '') => {
+  const handleGenerateViaAiPrompt = async (promptString = '') => {
     const targetPrompt = promptString || aiPromptText;
     if (!targetPrompt.trim()) {
       if (notify) notify('⚠️ தயவுசெய்து AI Prompt கட்டத்தில் விளம்பரக் குறிப்பை உள்ளிடவும்!');
@@ -418,44 +505,44 @@ export default function AdminSponsoredAdsManager({ notify }) {
     setIsGenerating(true);
     const parsed = parsePromptToAdContent(targetPrompt);
 
-    setTimeout(() => {
-      if (parsed) {
-        const dataUrl = generateBannerImageFromData({
-          title: parsed.title,
-          tagline: parsed.tagline,
-          offer: parsed.offer,
-          address: formAdData.address,
-          phone: formAdData.phone,
-          badge: formAdData.badge,
-          bannerSize: formAdData.bannerSize,
-          customW: formAdData.customWidth,
-          customH: formAdData.customHeight,
-          theme: parsed.theme
-        });
+    if (parsed) {
+      const dataUrl = await generateBannerImageFromData({
+        title: parsed.title,
+        tagline: parsed.tagline,
+        offer: parsed.offer,
+        address: formAdData.address,
+        phone: formAdData.phone,
+        badge: formAdData.badge,
+        bannerSize: formAdData.bannerSize,
+        customW: formAdData.customWidth,
+        customH: formAdData.customHeight,
+        theme: parsed.theme,
+        logoImage: formAdData.logoImage
+      });
 
-        setFormAdData((prev) => ({
-          ...prev,
-          title: parsed.title,
-          tagline: parsed.tagline,
-          offer: parsed.offer,
-          formTheme: parsed.theme,
-          image: dataUrl
-        }));
+      setFormAdData((prev) => ({
+        ...prev,
+        title: parsed.title,
+        tagline: parsed.tagline,
+        offer: parsed.offer,
+        formTheme: parsed.theme,
+        image: dataUrl
+      }));
 
-        if (notify) notify('✨ ChatGPT AI Prompt மூலம் அழகிய விளம்பர படம் & விவரங்கள் நொடியில் உருவாக்கப்பட்டன!');
-      }
-      setIsGenerating(false);
-    }, 400);
+      if (notify) notify('✨ ChatGPT AI Prompt மூலம் அழகிய விளம்பர படம் & விவரங்கள் நொடியில் உருவாக்கப்பட்டன!');
+    }
+    setIsGenerating(false);
   };
 
   // Instant AI Image Generation directly from Form Inputs
-  const handleGenerateImageFromForm = () => {
+  const handleGenerateImageFromForm = async () => {
     if (!formAdData.title.trim()) {
       if (notify) notify('⚠️ தயவுசெய்து முதலில் கடை பெயர்/தலைப்பை உள்ளிடவும்!');
       return;
     }
 
-    const dataUrl = generateBannerImageFromData({
+    setIsGenerating(true);
+    const dataUrl = await generateBannerImageFromData({
       title: formAdData.title,
       tagline: formAdData.tagline,
       offer: formAdData.offer,
@@ -465,10 +552,12 @@ export default function AdminSponsoredAdsManager({ notify }) {
       bannerSize: formAdData.bannerSize,
       customW: formAdData.customWidth,
       customH: formAdData.customHeight,
-      theme: formAdData.formTheme
+      theme: formAdData.formTheme,
+      logoImage: formAdData.logoImage
     });
 
     setFormAdData((prev) => ({ ...prev, image: dataUrl }));
+    setIsGenerating(false);
     if (notify) notify('✨ படிவ விவரங்களிலிருந்து HD விளம்பரப் படம் நொடியில் உருவாக்கப்பட்டது!');
   };
 
@@ -481,7 +570,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
   };
 
   // Save Ad (Create or Edit Update)
-  const handleSaveAd = (e) => {
+  const handleSaveAd = async (e) => {
     e.preventDefault();
     if (!formAdData.title.trim() || !formAdData.tagline.trim()) {
       if (notify) notify('⚠️ தயவுசெய்து விளம்பரத் தலைப்பு மற்றும் விவரங்களை உள்ளிடவும்!');
@@ -498,7 +587,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
     // Auto generate banner image if admin didn't upload or create one yet
     let finalImage = formAdData.image;
     if (!finalImage) {
-      finalImage = generateBannerImageFromData({
+      finalImage = await generateBannerImageFromData({
         title: formAdData.title,
         tagline: formAdData.tagline,
         offer: formAdData.offer,
@@ -508,7 +597,8 @@ export default function AdminSponsoredAdsManager({ notify }) {
         bannerSize: formAdData.bannerSize,
         customW: formAdData.customWidth,
         customH: formAdData.customHeight,
-        theme: formAdData.formTheme
+        theme: formAdData.formTheme,
+        logoImage: formAdData.logoImage
       });
     }
 
@@ -528,6 +618,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
             phone: formAdData.phone.trim(),
             whatsapp: formAdData.whatsapp.trim().startsWith('91') ? formAdData.whatsapp.trim() : `91${formAdData.whatsapp.trim()}`,
             image: finalImage,
+            logoImage: formAdData.logoImage,
             bannerSize: formAdData.bannerSize,
             customWidth: formAdData.customWidth,
             customHeight: formAdData.customHeight,
@@ -555,6 +646,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
         phone: formAdData.phone.trim(),
         whatsapp: formAdData.whatsapp.trim().startsWith('91') ? formAdData.whatsapp.trim() : `91${formAdData.whatsapp.trim()}`,
         image: finalImage,
+        logoImage: formAdData.logoImage,
         bannerSize: formAdData.bannerSize,
         customWidth: formAdData.customWidth,
         customHeight: formAdData.customHeight,
@@ -575,9 +667,14 @@ export default function AdminSponsoredAdsManager({ notify }) {
 
   const handleDeleteAd = async (id) => {
     if (!window.confirm('⚠️ இந்த விளம்பரத்தை நீக்க நிச்சயமாக விரும்புகிறீர்களா?')) return;
-    const updated = ads.filter((a) => a.id !== id);
-    saveAdsToStorage(updated);
-    await deleteSponsoredAdCloud(id);
+    const strId = String(id).trim();
+    const updated = ads.filter((a) => String(a.id).trim() !== strId);
+    setAds(updated);
+    localStorage.setItem('akesevai-sponsored-ads', JSON.stringify(updated));
+    localStorage.setItem('akesevai-has-custom-sponsored-ads', 'true');
+    await deleteSponsoredAdCloud(strId);
+    window.dispatchEvent(new Event('akesevai-ads-changed'));
+    window.dispatchEvent(new Event('storage'));
     if (notify) notify('🗑️ விளம்பரம் நீக்கப்பட்டது.');
   };
 
@@ -919,6 +1016,54 @@ export default function AdminSponsoredAdsManager({ notify }) {
               />
             </div>
 
+            {/* LOGO UPLOADER CONTROL */}
+            <div style={{ gridColumn: '1 / -1', background: '#eff6ff', border: '1.5px solid #93c5fd', borderRadius: '14px', padding: '14px', marginBottom: '4px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 900, color: '#1e40af', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <ImagePlus size={18} color="#1d4ed8" /> 🖼️ கடை லோகோ சேர்க்கவும் (Add Business Logo Image - Optional)
+              </div>
+              <p style={{ fontSize: '11.5px', color: '#1e3a8a', margin: '0 0 10px', fontWeight: 600 }}>
+                உங்கள் கடையின் லோகோவை பதிவேற்றினால், AI உருவாக்கும் பானரில் இந்த லோகோ அழகாக சேர்க்கப்படும்.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <label style={{ background: '#022c7a', color: 'white', padding: '8px 16px', borderRadius: '10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 3px 10px rgba(2,44,122,0.2)' }}>
+                  <UploadCloud size={15} /> 🖼️ லோகோ படம் தேர்ந்தெடு (Upload Logo)
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
+                </label>
+
+                {formAdData.logoImage && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'white', padding: '4px 10px', borderRadius: '20px', border: '1px solid #bfdbfe' }}>
+                    <img src={formAdData.logoImage} alt="Logo Preview" style={{ width: 34, height: 34, borderRadius: '50%', border: '2px solid #022c7a', objectFit: 'cover' }} />
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#15803d' }}>✓ Logo Added</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setFormAdData((prev) => ({ ...prev, logoImage: '' }));
+                        if (formAdData.title) {
+                          const newImg = await generateBannerImageFromData({
+                            title: formAdData.title,
+                            tagline: formAdData.tagline,
+                            offer: formAdData.offer,
+                            address: formAdData.address,
+                            phone: formAdData.phone,
+                            badge: formAdData.badge,
+                            bannerSize: formAdData.bannerSize,
+                            customW: formAdData.customWidth,
+                            customH: formAdData.customHeight,
+                            theme: formAdData.formTheme,
+                            logoImage: ''
+                          });
+                          setFormAdData((prev) => ({ ...prev, image: newImg }));
+                        }
+                      }}
+                      style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '10px', padding: '4px 8px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      ✕ நீக்கு
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* IMAGE GENERATOR TOOL & PHOTO UPLOADER */}
             <div style={{ gridColumn: '1 / -1', background: 'white', border: '2px dashed #7c3aed', borderRadius: '16px', padding: '18px', textAlign: 'center' }}>
               <div style={{ fontSize: '13px', fontWeight: 900, color: '#581c87', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -971,7 +1116,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
 
               <input
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,.jpg,.jpeg"
                 onChange={handleImageUpload}
                 style={{ display: 'block', margin: '8px auto 0', fontSize: '12px', fontWeight: 700 }}
               />
@@ -1040,7 +1185,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
                   <img
                     src={ad.image}
                     alt={ad.title}
-                    style={{ width: 95, height: 65, objectFit: 'cover', borderRadius: '10px', border: '1px solid #cbd5e1' }}
+                    style={{ width: 95, height: 65, objectFit: 'contain', background: '#0f172a', borderRadius: '10px', border: '1px solid #cbd5e1' }}
                   />
                 )}
 

@@ -2,20 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { 
   Cpu, FileText, CheckCircle2, Printer, MessageCircle, ArrowRight, UploadCloud, 
   RefreshCw, Sparkles, ShieldCheck, Download, PlusCircle, Volume2, Eye, Search, 
-  FileCheck2, Trash2, Ticket, User, Globe, QrCode, Calendar, Clock, X, Layers 
+  FileCheck2, Trash2, Ticket, User, CreditCard, Globe, QrCode, Calendar, Clock, X, Layers 
 } from 'lucide-react';
 import { saveApplicationRecord, getStoredApplications, updateApplicationStage } from '../utils/statusStore';
 import { 
   subscribeExpiryDocuments, deleteExpiryDocumentCloud, 
   subscribeTokens, deleteTokenBookingCloud, 
-  subscribeCustomerProfiles, deleteCustomerProfileCloud, subscribeApplications 
-} from '../utils/firebaseService';
+  subscribeCustomerProfiles, deleteCustomerProfileCloud, subscribeApplications,
+  fetchAllCloudRecords, subscribeDailyVisitorLogsCloud, isDocumentDeletedByBlacklist
+} from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
-import AdminCounterVoiceAnnouncer from './AdminCounterVoiceAnnouncer';
 import AdminAutoFillProfileDrawer from './AdminAutoFillProfileDrawer';
 import AdminSponsoredAdsManager from './AdminSponsoredAdsManager';
+import AdminCenterBannersControl from './AdminCenterBannersControl';
+import AdminPasswordModal from './AdminPasswordModal';
+import { validatePhotoUpload } from '../utils/documentHelper';
 
-export default function AdminSevaiSmartDesk({ notify }) {
+export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [applicantName, setApplicantName] = useState('');
   const [phone, setPhone] = useState('');
   const [aadhaarNo, setAadhaarNo] = useState('');
@@ -26,6 +30,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
 
   // Active Vault Tab: 'tokens' | 'documents' | 'customers'
   const [activeVaultTab, setActiveVaultTab] = useState('tokens');
+  const [deskTab, setDeskTab] = useState('all'); // 'all', 'receipt', 'voice', 'ads', 'vault'
 
   // Customer Uploaded Documents state
   const [customerDocs, setCustomerDocs] = useState([]);
@@ -41,6 +46,9 @@ export default function AdminSevaiSmartDesk({ notify }) {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomerForView, setSelectedCustomerForView] = useState(null);
 
+  // Daily Website Visitors Traffic state
+  const [visitorLogs, setVisitorLogs] = useState([]);
+
   // Real-time Cloud Subscriptions & Comprehensive Document/Token Merger
   useEffect(() => {
     let latestCloudDocs = [];
@@ -53,57 +61,137 @@ export default function AdminSevaiSmartDesk({ notify }) {
       const deletedDocs = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-docs') || '[]'));
       const deletedCustomers = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
 
+      // Read local customer records from localStorage
+      let localCust1 = {};
+      let localCust2 = {};
+      try {
+        localCust1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+        localCust2 = JSON.parse(localStorage.getItem('akesevai-customers') || '{}');
+      } catch (e) {}
+
+      const allProfilesSource = {
+        ...localCust2,
+        ...localCust1,
+        ...(latestCustomerProfiles || {})
+      };
+
       // Filter profiles by blacklist
       const filteredProfiles = {};
-      if (latestCustomerProfiles && typeof latestCustomerProfiles === 'object') {
-        Object.keys(latestCustomerProfiles).forEach((pKey) => {
-          const cleanP = pKey.replace(/\D/g, '');
-          if (!deletedCustomers.has(pKey) && !deletedCustomers.has(cleanP)) {
-            filteredProfiles[pKey] = latestCustomerProfiles[pKey];
-          }
-        });
-      }
+      Object.keys(allProfilesSource).forEach((pKey) => {
+        const cust = allProfilesSource[pKey];
+        if (!cust) return;
+        const cleanP = String(cust.phone || pKey).replace(/\D/g, '');
+        if (cleanP && !deletedCustomers.has(pKey) && !deletedCustomers.has(cleanP)) {
+          filteredProfiles[cleanP] = cust;
+          filteredProfiles[pKey] = cust;
+        }
+      });
       setCustomerProfiles(filteredProfiles);
 
       // 1. MERGE ALL DOCUMENTS (Excluding deleted docs)
       const allDocsMap = new Map();
 
-      if (Array.isArray(latestCloudDocs)) {
-        latestCloudDocs.forEach((d) => {
-          if (d && (d.url || d.data || d.name)) {
-            const key = d.id || `${d.customerPhone}_${d.requirement || d.name}_${d.uploadedAt}`;
-            if (!deletedDocs.has(key) && !deletedDocs.has(String(d.id))) {
-              allDocsMap.set(key, {
-                ...d,
-                url: d.url || d.data || '',
-                data: d.url || d.data || ''
-              });
-            }
+      const isDocDeleted = (docItem) => {
+        if (!docItem) return true;
+        if (isDocumentDeletedByBlacklist(docItem, deletedDocs)) return true;
+        const phoneNo = String(docItem.customerPhone || docItem.phone || '').replace(/\D/g, '');
+        const nameKey = String(docItem.name || docItem.requirement || docItem.title || '');
+        const reqKey = String(docItem.requirement || docItem.name || docItem.title || '');
+
+        const keys = [
+          String(docItem.id || ''),
+          String(docItem.url || ''),
+          String(docItem.data || ''),
+          String(docItem.storagePath || ''),
+          nameKey,
+          reqKey,
+          (phoneNo && nameKey) ? `${phoneNo}_${nameKey}` : '',
+          (phoneNo && reqKey) ? `${phoneNo}_${reqKey}` : ''
+        ];
+        return keys.some(k => k && k !== 'undefined' && deletedDocs.has(k));
+      };
+
+      const addDocToMap = (d, defaultPhone = '') => {
+        if (!d || isDocDeleted(d)) return;
+        
+        const docName = d.name || d.requirement || d.title || d.fileName || d.filename || 'Uploaded Document';
+        const validUrl = d.url || d.data || d.storagePath || '';
+        const rawPhone = d.customerPhone || d.phone || defaultPhone || '';
+        const phoneNo = String(rawPhone).replace(/\D/g, '');
+        
+        if (!docName && !validUrl && !d.id) return;
+
+        // Smart deduplication: Search map for existing document matching ID, URL, or Filename+Phone
+        let matchingKey = null;
+        for (const [k, item] of allDocsMap.entries()) {
+          const itemPhone = String(item.customerPhone || '').replace(/\D/g, '');
+          if (phoneNo && itemPhone && phoneNo !== itemPhone) continue;
+
+          const idMatch = d.id && item.id && String(d.id) === String(item.id);
+          const urlMatch = validUrl && item.url && (validUrl === item.url || validUrl === item.data);
+          const nameMatch = docName && item.name && docName.trim().toLowerCase() === item.name.trim().toLowerCase() && docName !== 'Uploaded Document';
+          const reqMatch = d.requirement && item.requirement && d.requirement.trim().toLowerCase() === item.requirement.trim().toLowerCase();
+
+          if (idMatch || urlMatch || nameMatch || reqMatch) {
+            matchingKey = k;
+            break;
           }
-        });
+        }
+
+        const key = matchingKey || String(d.id || `${phoneNo}_${docName.replace(/\s+/g, '_')}`);
+
+        const existing = allDocsMap.get(key);
+        if (!existing) {
+          allDocsMap.set(key, {
+            ...d,
+            id: key,
+            name: docName,
+            requirement: d.requirement || d.title || docName,
+            title: d.title || d.requirement || docName,
+            customerPhone: phoneNo,
+            url: validUrl,
+            data: validUrl,
+            uploadedAt: d.uploadedAt || d.date || 'Recently'
+          });
+        } else {
+          const bestUrl = validUrl || existing.url || existing.data || '';
+          allDocsMap.set(key, {
+            ...existing,
+            ...d,
+            id: key,
+            name: docName && docName !== 'Uploaded Document' ? docName : existing.name,
+            requirement: (existing.requirement && existing.requirement !== existing.name && existing.requirement !== 'Uploaded Document')
+              ? existing.requirement
+              : (d.requirement || existing.requirement || docName),
+            title: d.title || existing.title || docName,
+            customerPhone: phoneNo || existing.customerPhone,
+            url: bestUrl,
+            data: bestUrl,
+            uploadedAt: d.uploadedAt || existing.uploadedAt || 'Recently'
+          });
+        }
+      };
+
+      // Source A: Cloud Documents (from Firestore 'documents' collection)
+      if (Array.isArray(latestCloudDocs)) {
+        latestCloudDocs.forEach((d) => addDocToMap(d));
       }
 
-      if (filteredProfiles && typeof filteredProfiles === 'object') {
-        Object.values(filteredProfiles).forEach((cust) => {
-          if (cust && Array.isArray(cust.documents)) {
-            cust.documents.forEach((docItem, idx) => {
-              if (docItem && (docItem.url || docItem.data || docItem.name)) {
-                const key = docItem.id || `${cust.phone}_${docItem.requirement || docItem.name}_${idx}`;
-                if (!deletedDocs.has(key) && !deletedDocs.has(String(docItem.id))) {
-                  const existing = allDocsMap.get(key);
-                  const validUrl = docItem.url || docItem.data || (existing ? (existing.url || existing.data) : '');
-                  if (!existing || (!existing.url && !existing.data && validUrl)) {
-                    allDocsMap.set(key, {
-                      ...docItem,
-                      customerPhone: docItem.customerPhone || cust.phone || '',
-                      url: validUrl,
-                      data: validUrl
-                    });
-                  }
-                }
-              }
-            });
-          }
+      // Source B: Local Expiry / Uploaded Documents (akesevai_expiry_docs)
+      try {
+        const localExpiryDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
+        if (Array.isArray(localExpiryDocs)) {
+          localExpiryDocs.forEach((d) => addDocToMap(d));
+        }
+      } catch (e) {}
+
+      // Source C: Customer Profiles (documents array inside customer profiles)
+      if (allProfilesSource && typeof allProfilesSource === 'object') {
+        Object.values(allProfilesSource).forEach((cust) => {
+          if (!cust) return;
+          const custPhone = cust.phone || '';
+          const custDocs = Array.isArray(cust.documents) ? cust.documents : [];
+          custDocs.forEach((docItem) => addDocToMap(docItem, custPhone));
         });
       }
 
@@ -180,6 +268,48 @@ export default function AdminSevaiSmartDesk({ notify }) {
         }
       } catch (e) {}
 
+      // ✅ Also read admin-created application receipts (akesevai-application-records)
+      try {
+        const adminApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+        Object.values(adminApps).forEach((app) => {
+          if (!app) return;
+          const key = String(app.id || app.ackNo || app.tokenId || '');
+          if (key && !isTokenDeleted({ tokenNo: key, tokenId: key, id: key }) && !allTokensMap.has(key)) {
+            allTokensMap.set(key, {
+              tokenNo: app.id || app.ackNo,
+              tokenId: app.tokenId || app.id || app.ackNo,
+              id: app.id || app.ackNo,
+              customerName: app.applicantName || 'Customer',
+              applicantName: app.applicantName || 'Customer',
+              phone: String(app.phone || '').replace(/\D/g, ''),
+              customerPhone: String(app.phone || '').replace(/\D/g, ''),
+              service: app.service || 'e-Sevai Application',
+              date: app.submittedDate || app.date || 'Today',
+              slot: 'Admin Counter Desk',
+              paymentStatus: app.statusLabel || '✅ விண்ணப்பம் பெறப்பட்டது',
+              issuedAt: app.submittedDate || app.date || 'Recently',
+              updatedAt: app.updatedAt || new Date().toISOString(),
+              fee: app.fee || '₹60',
+              aadhaarNo: app.aadhaarNo || '',
+              currentStage: app.currentStage || 1
+            });
+          }
+        });
+      } catch (e) {}
+
+      // ✅ Also merge akesevai-customers profiles (alternate key used by some flows)
+      try {
+        const altCusts = JSON.parse(localStorage.getItem('akesevai-customers') || '{}');
+        Object.entries(altCusts).forEach(([k, c]) => {
+          if (!c) return;
+          const cleanP = String(c.phone || k).replace(/\D/g, '');
+          if (cleanP && !deletedCustomers.has(cleanP)) {
+            filteredProfiles[cleanP] = filteredProfiles[cleanP] || c;
+          }
+        });
+        setCustomerProfiles({ ...filteredProfiles });
+      } catch (e) {}
+
       const mergedTokens = Array.from(allTokensMap.values());
       mergedTokens.sort((a, b) => new Date(b.updatedAt || b.issuedDate || 0) - new Date(a.updatedAt || a.issuedDate || 0));
       setCustomerTokens(mergedTokens);
@@ -187,6 +317,28 @@ export default function AdminSevaiSmartDesk({ notify }) {
 
     const handleSyncEvent = () => syncAllCloudData();
     window.addEventListener('akesevai-data-changed', handleSyncEvent);
+
+    // ✅ IMMEDIATE: Populate from localStorage right away (no Firebase wait)
+    syncAllCloudData();
+
+    // ✅ PREFETCH: Load cloud data before real-time listeners respond
+    fetchAllCloudRecords().then((cloud) => {
+      if (cloud) {
+        if (cloud.customers && typeof cloud.customers === 'object') {
+          latestCustomerProfiles = cloud.customers;
+        }
+        if (Array.isArray(cloud.tokens)) {
+          latestCloudTokens = cloud.tokens;
+        }
+        if (Array.isArray(cloud.documents)) {
+          latestCloudDocs = cloud.documents;
+        }
+        if (cloud.applications && typeof cloud.applications === 'object') {
+          latestCloudApps = cloud.applications;
+        }
+        syncAllCloudData();
+      }
+    }).catch(() => {});
 
     const unsubDocs = subscribeExpiryDocuments((docs) => {
       latestCloudDocs = Array.isArray(docs) ? docs : [];
@@ -208,12 +360,17 @@ export default function AdminSevaiSmartDesk({ notify }) {
       syncAllCloudData();
     });
 
+    const unsubVisitors = subscribeDailyVisitorLogsCloud((logs) => {
+      if (Array.isArray(logs)) setVisitorLogs(logs);
+    });
+
     return () => {
       window.removeEventListener('akesevai-data-changed', handleSyncEvent);
       if (typeof unsubDocs === 'function') unsubDocs();
       if (typeof unsubTokens === 'function') unsubTokens();
       if (typeof unsubProfiles === 'function') unsubProfiles();
       if (typeof unsubApps === 'function') unsubApps();
+      if (typeof unsubVisitors === 'function') unsubVisitors();
     };
   }, []);
 
@@ -292,6 +449,14 @@ export default function AdminSevaiSmartDesk({ notify }) {
     const file = e.target.files[0];
     if (!file) return;
 
+    const validation = validatePhotoUpload(file, 1);
+    if (!validation.valid) {
+      if (typeof notify === 'function') notify(validation.error);
+      else alert(validation.error);
+      e.target.value = '';
+      return;
+    }
+
     setOriginalSize(Math.round(file.size / 1024));
 
     const reader = new FileReader();
@@ -325,7 +490,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
     const newReceipt = {
       ackNo,
       applicantName,
-      phone,
+      phone: cleanPhone,
       aadhaarNo: aadhaarNo || 'XXXX XXXX 9842',
       service,
       fee: `₹${fee}`,
@@ -337,7 +502,7 @@ export default function AdminSevaiSmartDesk({ notify }) {
     saveApplicationRecord({
       id: ackNo,
       applicantName,
-      phone,
+      phone: cleanPhone,
       aadhaarNo,
       service,
       fee: `₹${fee}`,
@@ -346,10 +511,75 @@ export default function AdminSevaiSmartDesk({ notify }) {
       remarks: `AkEsevai மையத்தில் ${service} விண்ணப்பம் பதிவு செய்யப்பட்டுள்ளது.`
     });
 
+    const newAppObj = {
+      id: ackNo,
+      name: service,
+      stage: 3,
+      currentStage: 3,
+      status: 'Submitted',
+      statusLabel: status,
+      date: newReceipt.date
+    };
+
+    let existingCustObj = {};
+    try {
+      const localCusts = JSON.parse(localStorage.getItem('akesevai-customers') || '{}');
+      existingCustObj = localCusts[cleanPhone] || {};
+    } catch (err) {}
+
+    const updatedCustObj = {
+      ...existingCustObj,
+      phone: cleanPhone,
+      profile: {
+        ...(existingCustObj.profile || {}),
+        name: applicantName,
+        aadhaarNo: aadhaarNo || existingCustObj.profile?.aadhaarNo || '',
+        complete: true
+      },
+      applications: [newAppObj, ...(existingCustObj.applications || [])],
+      updatedAt: new Date().toISOString()
+    };
+
+    saveCustomerProfileCloud(cleanPhone, updatedCustObj);
+
+    // ✅ Also save to token-bookings so vault shows this receipt
+    const tokenEntry = {
+      tokenNo: ackNo,
+      tokenId: ackNo,
+      id: ackNo,
+      customerName: applicantName,
+      applicantName,
+      phone: cleanPhone,
+      customerPhone: cleanPhone,
+      service,
+      date: newReceipt.date,
+      slot: 'Admin Counter Desk',
+      paymentStatus: status,
+      issuedAt: newReceipt.date,
+      updatedAt: new Date().toISOString(),
+      fee: `₹${fee}`,
+      aadhaarNo: aadhaarNo || ''
+    };
+    try {
+      const existingToks = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
+      const filtered = existingToks.filter(t => String(t.tokenNo || t.id) !== ackNo);
+      localStorage.setItem('akesevai-token-bookings', JSON.stringify([tokenEntry, ...filtered]));
+    } catch (e) {}
+    // Also save to Firebase tokens collection
+    try {
+      import('../utils/firebaseService').then(({ saveTokenBookingCloud }) => {
+        saveTokenBookingCloud(tokenEntry);
+      }).catch(() => {});
+    } catch (e) {}
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('akesevai-data-changed'));
+    }
+
     setReceipt(newReceipt);
     announceReceiptOverSpeaker(applicantName, ackNo);
 
-    if (typeof notify === 'function') notify('✅ இ-சேவை விண்ணப்பம் சேமிக்கப்பட்டது & குரல் வழி அறிவிக்கப்பட்டது!');
+    if (typeof notify === 'function') notify(`✅ ${applicantName} வாடிக்கையாளர் விவரம் & விண்ணப்பம் சேமிக்கப்பட்டது!`);
   };
 
   const handlePrintReceipt = () => {
@@ -394,7 +624,60 @@ export default function AdminSevaiSmartDesk({ notify }) {
     window.open(`https://wa.me/91${targetPhone}?text=${text}`, '_blank', 'noopener,noreferrer');
   };
 
-  const customerListArray = Object.values(customerProfiles || {});
+  const customerListMap = new Map();
+  Object.values(customerProfiles || {}).forEach((c) => {
+    if (c && (c.phone || c.profile?.name || c.name)) {
+      const cleanP = String(c.phone || '').replace(/\D/g, '');
+      if (!cleanP) return;
+
+      const existing = customerListMap.get(cleanP) || {};
+      const mergedName = c.name && c.name !== 'Customer' && !c.name.startsWith('Customer ') ? c.name :
+                        c.profile?.name && c.profile.name !== 'Customer' && !c.profile.name.startsWith('Customer ') ? c.profile.name :
+                        existing.name || existing.profile?.name || c.name || c.profile?.name || `Customer +91 ${cleanP}`;
+
+      const mergedAadhaar = c.aadhaarNo || c.profile?.aadhaarNo || existing.aadhaarNo || existing.profile?.aadhaarNo || '';
+      const mergedDob = c.dob || c.profile?.dob || existing.dob || existing.profile?.dob || '';
+      const mergedToken = c.lastToken || existing.lastToken || null;
+      const rawApps = [...(existing.applications || []), ...(c.applications || [])];
+      const appsMap = new Map();
+      rawApps.forEach((a) => {
+        if (!a) return;
+        const key = String(a.id || a.ackNo || a.name || '').trim();
+        if (key && !appsMap.has(key)) appsMap.set(key, a);
+      });
+      const mergedApps = Array.from(appsMap.values());
+
+      const rawDocs = [...(existing.documents || []), ...(c.documents || [])];
+      const docsMap = new Map();
+      rawDocs.forEach((d) => {
+        if (!d) return;
+        const key = String(d.id || d.url || `${d.requirement}_${d.name}` || '').trim();
+        if (key && !docsMap.has(key)) docsMap.set(key, d);
+      });
+      const mergedDocs = Array.from(docsMap.values());
+
+      customerListMap.set(cleanP, {
+        ...existing,
+        ...c,
+        phone: cleanP,
+        name: mergedName,
+        profile: {
+          ...(existing.profile || {}),
+          ...(c.profile || {}),
+          name: mergedName,
+          aadhaarNo: mergedAadhaar,
+          dob: mergedDob
+        },
+        aadhaarNo: mergedAadhaar,
+        dob: mergedDob,
+        lastToken: mergedToken,
+        applications: mergedApps,
+        documents: mergedDocs,
+        updatedAt: c.updatedAt || existing.updatedAt || new Date().toISOString()
+      });
+    }
+  });
+  const customerListArray = Array.from(customerListMap.values());
 
   return (
     <div style={{ background: '#f8fafc', border: '2px solid #0052cc', borderRadius: '18px', padding: '28px', textAlign: 'left', margin: '20px 0' }}>
@@ -408,817 +691,94 @@ export default function AdminSevaiSmartDesk({ notify }) {
             நேரடி இ-சேவை <span>விண்ணப்ப உருவாக்கி, டோக்கன் மேலாண்மை & ஆவணக் காப்பகம்</span>
           </h3>
         </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => setShowPasswordModal(true)}
+            style={{
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)'
+            }}
+          >
+            <ShieldCheck size={14} /> 🔐 அட்மின் கடவுச்சொல் மாற்று (Change Admin Password)
+          </button>
+        </div>
       </div>
 
-      {/* COUNTER SPEAKER VOICE CALL WIDGET */}
-      <AdminCounterVoiceAnnouncer />
+      <AdminPasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        changeAdminPassword={changeAdminPassword}
+        notify={notify}
+      />
+
+      {/* SMART OPERATOR CONSOLE MODULE SELECTOR TABS */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '16px 0 24px', background: '#ffffff', padding: '10px 14px', borderRadius: '14px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+        <button
+          type="button"
+          onClick={() => setDeskTab('all')}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '10px',
+            fontSize: '12px',
+            fontWeight: 800,
+            border: 'none',
+            cursor: 'pointer',
+            background: deskTab === 'all' ? '#0052cc' : '#f1f5f9',
+            color: deskTab === 'all' ? 'white' : '#475569'
+          }}
+        >
+          ⚡ அனைத்து கருவிகளும் (All Modules)
+        </button>
+        <button
+          type="button"
+          onClick={() => setDeskTab('banners')}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '10px',
+            fontSize: '12px',
+            fontWeight: 800,
+            border: 'none',
+            cursor: 'pointer',
+            background: deskTab === 'banners' ? '#16a34a' : '#f1f5f9',
+            color: deskTab === 'banners' ? 'white' : '#475569'
+          }}
+        >
+          🎏 முகப்பு பேனர்கள் மேலாண்மை (Home Banners)
+        </button>
+        <button
+          type="button"
+          onClick={() => setDeskTab('ads')}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '10px',
+            fontSize: '12px',
+            fontWeight: 800,
+            border: 'none',
+            cursor: 'pointer',
+            background: deskTab === 'ads' ? '#7c3aed' : '#f1f5f9',
+            color: deskTab === 'ads' ? 'white' : '#475569'
+          }}
+        >
+          📢 விளம்பர ஸ்டுடியோ (Ad Studio)
+        </button>
+      </div>
+
+      {/* LIVE CENTER OPERATIONAL STATUS & SERVICE OF THE DAY BANNERS CONTROL DESK */}
+      {(deskTab === 'all' || deskTab === 'banners') && <AdminCenterBannersControl notify={notify} />}
 
       {/* HOMEPAGE SPONSORED ADS & AI BANNER STUDIO CONTROL DESK */}
-      <AdminSponsoredAdsManager notify={notify} />
-
-      {/* OPERATOR WORKSTATION: RECEIPT CREATOR & CROPPER */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '25px', marginTop: '20px' }}>
-        {/* LEFT FORM: CREATE APPLICATION RECEIPT */}
-        <form onSubmit={handleCreateApplicationReceipt} className="smartdesk-card smartdesk-receipt-form" style={{ border: '1px solid var(--line)', borderRadius: '14px', padding: '20px', display: 'grid', gap: '14px', background: 'white' }}>
-          <h4 className="smartdesk-form-title" style={{ font: '800 16px Manrope', margin: 0, display: 'flex', alignItems: 'center', gap: '6px', color: '#022c7a' }}>
-            <PlusCircle size={18} color="#16a34a" /> 1. விண்ணப்ப ஒப்புதல் சீட்டு உருவாக்க:
-          </h4>
-
-          <label style={{ fontSize: '12px', fontWeight: 700 }}>
-            விண்ணப்பதாரர் பெயர் (Applicant Name) *
-            <input
-              type="text"
-              required
-              value={applicantName}
-              onChange={(e) => setApplicantName(e.target.value)}
-              placeholder="எ.கா: கந்தசாமி K."
-              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
-            />
-          </label>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 700 }}>
-              மொபைல் எண் *
-              <input
-                type="tel"
-                required
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="10-digit Mobile"
-                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
-              />
-            </label>
-
-            <label style={{ fontSize: '12px', fontWeight: 700 }}>
-              ஆதார் எண்
-              <input
-                type="text"
-                value={aadhaarNo}
-                onChange={(e) => setAadhaarNo(e.target.value)}
-                placeholder="12-digit Aadhaar"
-                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
-              />
-            </label>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-            <label style={{ fontSize: '12px', fontWeight: 700 }}>
-              சேவை (Service)
-              <select
-                value={service}
-                onChange={(e) => setService(e.target.value)}
-                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
-              >
-                <option>வருமானச் சான்றிதழ் (Income Certificate)</option>
-                <option>ஜாதிச் சான்றிதழ் (Community Certificate)</option>
-                <option>இருப்பிடச் சான்றிதழ் (Nativity Certificate)</option>
-                <option>முதல் பட்டதாரி சான்றிதழ் (First Graduate)</option>
-                <option>ஓபிசி சான்றிதழ் (OBC Certificate)</option>
-                <option>குடும்பக் அட்டை திருத்தம் (Ration Card)</option>
-                <option>ஆதார் திருத்தம் (Aadhaar Update)</option>
-              </select>
-            </label>
-
-            <label style={{ fontSize: '12px', fontWeight: 700 }}>
-              கட்டணம் (Fee ₹)
-              <input
-                type="number"
-                value={fee}
-                onChange={(e) => setFee(e.target.value)}
-                style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
-              />
-            </label>
-          </div>
-
-          <label style={{ fontSize: '12px', fontWeight: 700 }}>
-            நிலை (Status)
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '9px', marginTop: '4px', fontSize: '13px', outline: 'none' }}
-            >
-              <option>விண்ணப்பிக்கப்பட்டது (Applied & Processing)</option>
-              <option>VAO & RI சரிபார்ப்பில் உள்ளது</option>
-              <option>சான்றிதழ் தயார் (Ready for Download)</option>
-              <option>ஒப்புதல் வழங்கப்பட்டது (Approved ✅)</option>
-            </select>
-          </label>
-
-          <button
-            type="submit"
-            className="button button-primary"
-            style={{ background: 'linear-gradient(135deg, #16a34a 0%, #022c7a 100%)', padding: '11px', justifySelf: 'start' }}
-          >
-            <Sparkles size={16} /> ஒப்புதல் சீட்டு உருவாக்கு / Create Receipt
-          </button>
-        </form>
-
-        {/* RIGHT TOOL: RECEIPT PREVIEW & PHOTO COMPRESSOR */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* GENERATED RECEIPT DISPLAY */}
-          {receipt ? (
-            <div id="admin-receipt-print-area" className="smartdesk-card smartdesk-receipt-display" style={{ border: '2px solid #16a34a', borderRadius: '14px', padding: '20px', background: 'white', boxShadow: '0 8px 20px rgba(22,163,74,0.1)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '8px', marginBottom: '12px' }}>
-                <div>
-                  <strong style={{ fontSize: '14px', color: '#022c7a', display: 'block' }}>AkEsevai Centre, Palani</strong>
-                  <small style={{ fontSize: '9px', color: '#16a34a', fontWeight: 800 }}>ACKNOWLEDGEMENT RECEIPT</small>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 800 }}>
-                    {receipt.ackNo}
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px', marginBottom: '14px' }}>
-                <div><small style={{ color: '#64748b' }}>விண்ணப்பதாரர்:</small> <strong>{receipt.applicantName}</strong></div>
-                <div><small style={{ color: '#64748b' }}>மொபைல்:</small> <strong>+91 {receipt.phone}</strong></div>
-                <div><small style={{ color: '#64748b' }}>சேவை:</small> <strong>{receipt.service}</strong></div>
-                <div><small style={{ color: '#64748b' }}>கட்டணம்:</small> <strong style={{ color: '#16a34a' }}>{receipt.fee} (Paid)</strong></div>
-                <div><small style={{ color: '#64748b' }}>தேதி:</small> <strong>{receipt.date} ({receipt.time})</strong></div>
-                <div><small style={{ color: '#64748b' }}>நிலை:</small> <strong>{receipt.status}</strong></div>
-              </div>
-
-              {/* Action buttons */}
-              <div data-no-print="true" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => announceReceiptOverSpeaker(receipt.applicantName, receipt.ackNo)}
-                  style={{ background: '#7c3aed', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Volume2 size={15} /> ஸ்பீக்கர் அழைப்பு
-                </button>
-                <button
-                  onClick={handleSendWhatsAppAck}
-                  style={{ background: '#25D366', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <MessageCircle size={15} /> WhatsApp
-                </button>
-                <button
-                  onClick={handlePrintReceipt}
-                  style={{ background: '#0052cc', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <Printer size={15} /> அச்சிடு / PDF
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="smartdesk-card smartdesk-empty-preview" style={{ border: '1 dashed #cbd5e1', borderRadius: '14px', padding: '20px', textAlign: 'center', background: 'white' }}>
-              <FileText size={36} color="#94a3b8" />
-              <h5 className="smartdesk-empty-title" style={{ font: '800 14px Manrope', margin: '8px 0 2px' }}>ஒப்புதல் சீட்டு உருவாக்கப்படவில்லை</h5>
-              <p className="smartdesk-empty-sub" style={{ fontSize: '11px', margin: 0 }}>இடதுபுற படிவத்தில் விவரங்களை நிரப்பி "ஒப்புதல் சீட்டு உருவாக்கு" அழுத்தவும்.</p>
-            </div>
-          )}
-
-          {/* SMART PHOTO CROPPER & COMPRESSOR */}
-          <div className="smartdesk-card smartdesk-compressor-card" style={{ border: '1.5px solid #0052cc', borderRadius: '14px', padding: '16px', background: 'white' }}>
-            <h5 className="smartdesk-compressor-title" style={{ font: '800 13px Manrope', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: '6px', color: '#022c7a' }}>
-              📸 ஸ்மார்ட் போட்டோ & ஆவண அமுக்கி (Target Size Compressor):
-            </h5>
-            
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '11px', fontWeight: 800, alignSelf: 'center' }}>அளவு:</span>
-              <button
-                type="button"
-                onClick={() => handleTargetKbChange(50)}
-                style={{ background: targetKb === 50 ? '#022c7a' : '#f1f5f9', color: targetKb === 50 ? 'white' : '#475569', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
-              >
-                &lt; 50 KB (Sign/Thumb)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTargetKbChange(100)}
-                style={{ background: targetKb === 100 ? '#022c7a' : '#f1f5f9', color: targetKb === 100 ? 'white' : '#475569', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
-              >
-                &lt; 100 KB (TNEGA Photo)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTargetKbChange(200)}
-                style={{ background: targetKb === 200 ? '#022c7a' : '#f1f5f9', color: targetKb === 200 ? 'white' : '#475569', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
-              >
-                &lt; 200 KB (Certificate Doc)
-              </button>
-            </div>
-
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handlePhotoUploadAndCompress}
-              style={{ fontSize: '12px' }}
-            />
-
-            {compressedPhoto && (
-              <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '14px', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                <img src={compressedPhoto} alt="Compressed" style={{ width: '60px', height: '60px', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
-                <div>
-                  <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 800 }}>
-                    ✅ அமுக்கப்பட்டது! ({compressedSize} KB)
-                  </div>
-                  <small style={{ fontSize: '10px', color: '#64748b' }}>அசல் அளவு: {originalSize} KB</small>
-                  <br />
-                  <a
-                    href={compressedPhoto}
-                    download="akesevai_compressed_document.jpg"
-                    style={{ background: '#16a34a', color: 'white', padding: '3px 10px', borderRadius: '4px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}
-                  >
-                    <Download size={12} /> பதிவிறக்கு (Download)
-                  </a>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 🌍 WORLDWIDE CUSTOMERS CENTRAL VAULT & MANAGEMENT HUB (REQUIREMENT PART 1) */}
-      {/* ========================================================================= */}
-      <div style={{ background: 'white', border: '2px solid #0052cc', borderRadius: '20px', padding: '24px', marginTop: '30px', boxShadow: '0 12px 35px rgba(0,82,204,0.08)' }}>
-        
-        {/* VAULT HEADER & TAB SELECTOR */}
-        <div style={{ borderBottom: '2px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
-            <div>
-              <span style={{ background: '#0052cc', color: 'white', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <Globe size={14} /> WORLDWIDE CUSTOMER DATA CLOUD • உலகளாவிய வாடிக்கையாளர் மையம்
-              </span>
-              <h3 style={{ font: '900 22px Manrope', color: '#022c7a', margin: '6px 0 0' }}>
-                உலகெங்குமிருந்தும் வாடிக்கையாளர்கள் சமர்ப்பித்த <span>டோக்கன் சீட்டுகள், ஆவணங்கள் & சுயவிவரங்கள்</span>
-              </h3>
-            </div>
-
-            {/* Quick Stat Badges */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ background: '#eff6ff', color: '#0052cc', border: '1px solid #bfdbfe', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Ticket size={14} /> {customerTokens.length} டோக்கன்கள்
-              </span>
-              <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <FileText size={14} /> {customerDocs.length} ஆவணங்கள்
-              </span>
-              <span style={{ background: '#f3e8ff', color: '#7c3aed', border: '1px solid #e9d5ff', padding: '6px 14px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <User size={14} /> {customerListArray.length} வாடிக்கையாளர்கள்
-              </span>
-            </div>
-          </div>
-
-          {/* TAB BUTTONS */}
-          <div style={{ display: 'flex', gap: '10px', borderBottom: '1px solid #cbd5e1', paddingBottom: '10px', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setActiveVaultTab('tokens')}
-              style={{
-                background: activeVaultTab === 'tokens' ? '#0052cc' : '#f1f5f9',
-                color: activeVaultTab === 'tokens' ? 'white' : '#475569',
-                border: 'none',
-                borderRadius: '10px',
-                padding: '10px 18px',
-                fontSize: '13px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <Ticket size={16} /> 🎫 வாடிக்கையாளர் டோக்கன் சீட்டுகள் ({customerTokens.length})
-            </button>
-
-            <button
-              onClick={() => setActiveVaultTab('documents')}
-              style={{
-                background: activeVaultTab === 'documents' ? '#16a34a' : '#f1f5f9',
-                color: activeVaultTab === 'documents' ? 'white' : '#475569',
-                border: 'none',
-                borderRadius: '10px',
-                padding: '10px 18px',
-                fontSize: '13px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <FileText size={16} /> 📁 பதிவேற்றிய ஆவணங்கள் ({customerDocs.length})
-            </button>
-
-            <button
-              onClick={() => setActiveVaultTab('customers')}
-              style={{
-                background: activeVaultTab === 'customers' ? '#7c3aed' : '#f1f5f9',
-                color: activeVaultTab === 'customers' ? 'white' : '#475569',
-                border: 'none',
-                borderRadius: '10px',
-                padding: '10px 18px',
-                fontSize: '13px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <User size={16} /> 👥 வாடிக்கையாளர் சுயவிவரங்கள் ({customerListArray.length})
-            </button>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* TAB 1: GENERATED CUSTOMER TOKEN SLIPS VAULT */}
-        {/* ========================================================================= */}
-        {activeVaultTab === 'tokens' && (
-          <div>
-            {/* Search */}
-            <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '8px 14px' }}>
-                <Search size={16} color="#64748b" />
-                <input
-                  type="text"
-                  value={tokenSearch}
-                  onChange={(e) => setTokenSearch(e.target.value)}
-                  placeholder="🔍 தேடவும்: டோக்கன் எண், வாடிக்கையாளர் பெயர் அல்லது மொபைல் எண் (Search Token No, Name, Mobile)..."
-                  style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '13px' }}
-                />
-              </div>
-              {tokenSearch && (
-                <button onClick={() => setTokenSearch('')} style={{ fontSize: '12px', color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-              )}
-            </div>
-
-            {customerTokens.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '36px', background: '#f8fafc', borderRadius: '14px', color: '#64748b' }}>
-                <Ticket size={36} style={{ opacity: 0.4, marginBottom: '8px' }} />
-                <p style={{ margin: 0, fontWeight: 700 }}>வாடிக்கையாளர்கள் இன்னும் டோக்கன்கள் உருவாக்கவில்லை.</p>
-                <small>No customer generated token slips recorded yet. When a customer generates a token slip anywhere in the world, it will appear here instantly.</small>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gap: '12px' }}>
-                {customerTokens
-                  .filter((t) => {
-                    if (!tokenSearch.trim()) return true;
-                    const q = tokenSearch.toLowerCase();
-                    return (
-                      String(t.tokenNo || t.tokenId || '').toLowerCase().includes(q) ||
-                      String(t.customerName || t.applicantName || '').toLowerCase().includes(q) ||
-                      String(t.phone || t.customerPhone || '').toLowerCase().includes(q) ||
-                      String(t.service || '').toLowerCase().includes(q)
-                    );
-                  })
-                  .map((tok) => {
-                    const tokenNum = tok.tokenNo || tok.tokenId || tok.id || 'TOK-001';
-                    const custName = tok.customerName || tok.applicantName || 'Customer';
-                    const custPhone = tok.phone || tok.customerPhone || 'N/A';
-
-                    return (
-                      <div
-                        key={tokenNum}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '14px',
-                          background: '#f8fafc',
-                          border: '1.5px solid #cbd5e1',
-                          borderRadius: '12px',
-                          padding: '14px 18px',
-                          flexWrap: 'wrap'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: '240px' }}>
-                          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#0052cc', color: 'white', display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: '15px', flexShrink: 0 }}>
-                            {tokenNum}
-                          </div>
-                          <div>
-                            <strong style={{ fontSize: '14px', color: '#022c7a', display: 'block' }}>
-                              👤 {custName}
-                            </strong>
-                            <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
-                              🛠️ {tok.service} • 📱 <strong>+91 {custPhone}</strong>
-                            </div>
-                            <small style={{ fontSize: '11px', color: '#64748b' }}>
-                              📅 Visit Date: {tok.date} ({tok.slot || 'Standard Slot'}) • Issued: {tok.issuedAt || 'Recently'}
-                            </small>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                          {/* View Token Slip Modal Trigger */}
-                          <button
-                            type="button"
-                            onClick={() => setSelectedTokenForView(tok)}
-                            style={{
-                              background: '#0052cc',
-                              color: 'white',
-                              border: 'none',
-                              padding: '8px 14px',
-                              borderRadius: '8px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              boxShadow: '0 2px 6px rgba(0,82,204,0.2)'
-                            }}
-                          >
-                            <Eye size={14} /> சீட்டு காண்க (View Slip)
-                          </button>
-
-                          {/* Print / Download Token PDF */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedTokenForView(tok);
-                              setTimeout(() => handlePrintTokenSlipModal(), 200);
-                            }}
-                            style={{
-                              background: '#16a34a',
-                              color: 'white',
-                              border: 'none',
-                              padding: '8px 14px',
-                              borderRadius: '8px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              boxShadow: '0 2px 6px rgba(22,163,74,0.2)'
-                            }}
-                          >
-                            <Printer size={14} /> அச்சிடு / PDF
-                          </button>
-
-                          {/* WhatsApp */}
-                          <button
-                            type="button"
-                            onClick={() => handleSendTokenWhatsApp(tok)}
-                            style={{
-                              background: '#25D366',
-                              color: 'white',
-                              border: 'none',
-                              padding: '8px 12px',
-                              borderRadius: '8px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px'
-                            }}
-                          >
-                            <MessageCircle size={14} /> WhatsApp
-                          </button>
-
-                          {/* Delete */}
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (window.confirm(`Are you sure you want to delete Token ${tokenNum}? This will delete the token across all pages & database.`)) {
-                                setCustomerTokens((prev) => prev.filter((t) => (t.tokenNo || t.id || t.tokenId) !== tokenNum));
-                                await deleteTokenBookingCloud(tokenNum, custPhone);
-                                if (notify) notify(`🗑️ Token ${tokenNum} deleted from all pages & database!`);
-                              }
-                            }}
-                            style={{
-                              background: '#fef2f2',
-                              color: '#dc2626',
-                              border: '1px solid #fca5a5',
-                              padding: '8px 12px',
-                              borderRadius: '8px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer'
-                            }}
-                            title="Delete Token Slip Everywhere"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* TAB 2: CUSTOMER UPLOADED DOCUMENTS VAULT */}
-        {/* ========================================================================= */}
-        {activeVaultTab === 'documents' && (
-          <div>
-            {/* Search */}
-            <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '8px 14px' }}>
-                <Search size={16} color="#64748b" />
-                <input
-                  type="text"
-                  value={docSearch}
-                  onChange={(e) => setDocSearch(e.target.value)}
-                  placeholder="🔍 தேடவும்: மொபைல் எண் அல்லது ஆவணத்தின் பெயர் (Search Phone or Document Name)..."
-                  style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '13px' }}
-                />
-              </div>
-              {docSearch && (
-                <button onClick={() => setDocSearch('')} style={{ fontSize: '12px', color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-              )}
-            </div>
-
-            {customerDocs.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '36px', background: '#f8fafc', borderRadius: '14px', color: '#64748b' }}>
-                <UploadCloud size={36} style={{ opacity: 0.4, marginBottom: '8px' }} />
-                <p style={{ margin: 0, fontWeight: 700 }}>வாடிக்கையாளர்கள் இன்னும் ஆவணங்கள் பதிவேற்றவில்லை.</p>
-                <small>No customer document uploads recorded yet. When a customer uploads a PDF/JPG, it will appear here instantly.</small>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gap: '10px' }}>
-                {customerDocs
-                  .filter((d) => {
-                    if (!docSearch.trim()) return true;
-                    const query = docSearch.toLowerCase();
-                    return (
-                      d.name?.toLowerCase().includes(query) ||
-                      d.requirement?.toLowerCase().includes(query) ||
-                      d.title?.toLowerCase().includes(query) ||
-                      d.customerPhone?.toLowerCase().includes(query) ||
-                      d.id?.toLowerCase().includes(query)
-                    );
-                  })
-                  .map((docItem) => (
-                    <div
-                      key={docItem.id || docItem.url}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justify: 'space-between',
-                        gap: '14px',
-                        background: '#f8fafc',
-                        border: '1px solid #cbd5e1',
-                        borderRadius: '10px',
-                        padding: '14px 18px',
-                        flexWrap: 'wrap'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '220px' }}>
-                        <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: '#f0fdf4', color: '#16a34a', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                          <FileText size={22} />
-                        </div>
-                        <div>
-                          <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
-                            {docItem.requirement || docItem.title || docItem.name || 'Uploaded Document'}
-                          </strong>
-                          <small style={{ fontSize: '11px', color: '#64748b' }}>
-                            📄 {docItem.name || 'document.pdf'} • 📱 Customer: <strong>+91 {docItem.customerPhone || 'N/A'}</strong> • {docItem.uploadedAt || 'Recently'}
-                          </small>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <a
-                          href={docItem.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            background: '#0052cc',
-                            color: 'white',
-                            padding: '8px 14px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            textDecoration: 'none',
-                            boxShadow: '0 2px 6px rgba(0,82,204,0.2)'
-                          }}
-                          title="View PDF or JPG Document"
-                        >
-                          <Eye size={14} /> ஆவணம் காண்க (View)
-                        </a>
-
-                        <a
-                          href={docItem.url}
-                          download={docItem.name || 'customer_document.pdf'}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            background: '#16a34a',
-                            color: 'white',
-                            padding: '8px 14px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            textDecoration: 'none',
-                            boxShadow: '0 2px 6px rgba(22,163,74,0.2)'
-                          }}
-                          title="Download PDF or JPG File"
-                        >
-                          <Download size={14} /> பதிவிறக்கு (Download)
-                        </a>
-
-                        <button
-                          onClick={async () => {
-                            const reqName = docItem.requirement || docItem.name || 'Document';
-                            const targetId = docItem.id || docItem.url || docItem.data;
-                            if (window.confirm(`Are you sure you want to delete "${reqName}"? This will delete the document across all pages & database.`)) {
-                              setCustomerDocs((prev) => prev.filter((d) => String(d.id || d.url || d.data) !== String(targetId)));
-                              await deleteExpiryDocumentCloud(targetId, docItem.customerPhone);
-                              if (notify) notify(`🗑️ Document "${reqName}" deleted from all pages & database!`);
-                            }
-                          }}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px',
-                            background: '#fef2f2',
-                            color: '#dc2626',
-                            border: '1px solid #fca5a5',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            cursor: 'pointer'
-                          }}
-                          title="Delete Document Everywhere"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* TAB 3: WORLDWIDE CUSTOMER PROFILES VAULT */}
-        {/* ========================================================================= */}
-        {activeVaultTab === 'customers' && (
-          <div>
-            {/* Search */}
-            <div style={{ marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '8px 14px' }}>
-                <Search size={16} color="#64748b" />
-                <input
-                  type="text"
-                  value={customerSearch}
-                  onChange={(e) => setCustomerSearch(e.target.value)}
-                  placeholder="🔍 தேடவும்: வாடிக்கையாளர் பெயர் அல்லது மொபைல் (Search Customer Name or Phone)..."
-                  style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '13px' }}
-                />
-              </div>
-              {customerSearch && (
-                <button onClick={() => setCustomerSearch('')} style={{ fontSize: '12px', color: '#64748b', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
-              )}
-            </div>
-
-            {customerListArray.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '36px', background: '#f8fafc', borderRadius: '14px', color: '#64748b' }}>
-                <User size={36} style={{ opacity: 0.4, marginBottom: '8px' }} />
-                <p style={{ margin: 0, fontWeight: 700 }}>வாடிக்கையாளர் சுயவிவரங்கள் இல்லை.</p>
-                <small>No registered customer profiles found. As customers interact worldwide, profiles will register here.</small>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
-                {customerListArray
-                  .filter((c) => {
-                    if (!customerSearch.trim()) return true;
-                    const q = customerSearch.toLowerCase();
-                    return (
-                      String(c.name || '').toLowerCase().includes(q) ||
-                      String(c.phone || '').toLowerCase().includes(q)
-                    );
-                  })
-                  .map((cust, idx) => (
-                    <div
-                      key={cust.phone || idx}
-                      style={{
-                        background: '#f8fafc',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '12px',
-                        padding: '16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justify: 'space-between',
-                        gap: '12px'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                        <div style={{ width: 42, height: 42, borderRadius: '50%', background: '#f3e8ff', color: '#7c3aed', display: 'grid', placeItems: 'center', fontWeight: 900, flexShrink: 0 }}>
-                          <User size={20} />
-                        </div>
-                        <div>
-                          <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>
-                            {cust.name || 'Registered Customer'}
-                          </strong>
-                          <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: 800, marginTop: '2px' }}>
-                            📱 +91 {cust.phone}
-                          </div>
-                          <small style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '4px' }}>
-                            Last Active: {cust.updatedAt ? new Date(cust.updatedAt).toLocaleDateString('en-IN') : 'Recently'}
-                          </small>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                        <a
-                          href={`https://wa.me/91${String(cust.phone).replace(/\D/g, '')}?text=Hello%20${encodeURIComponent(cust.name || '')},%20Greetings%20from%20AkEsevai%20Centre.`}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            flex: 1,
-                            background: '#25D366',
-                            color: 'white',
-                            textAlign: 'center',
-                            padding: '8px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            textDecoration: 'none',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <MessageCircle size={14} /> WhatsApp
-                        </a>
-
-                        <a
-                          href={`tel:${cust.phone}`}
-                          style={{
-                            background: '#0052cc',
-                            color: 'white',
-                            textAlign: 'center',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            textDecoration: 'none',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          Call
-                        </a>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const custName = cust.name || 'Customer';
-                            const custPhone = cust.phone || '';
-                            if (!custPhone) return;
-
-                            if (
-                              window.confirm(
-                                `Are you sure you want to delete customer profile for "${custName}" (+91 ${custPhone})?\n\n` +
-                                `This will delete customer records, uploaded documents, token slips, and applications everywhere across all pages and database!`
-                              )
-                            ) {
-                              setCustomerProfiles((prev) => {
-                                const copy = { ...prev };
-                                delete copy[custPhone];
-                                delete copy[`+91${custPhone}`];
-                                delete copy[`91${custPhone}`];
-                                return copy;
-                              });
-                              setCustomerDocs((prev) => prev.filter((d) => String(d.customerPhone || '').replace(/\D/g, '') !== String(custPhone).replace(/\D/g, '')));
-                              setCustomerTokens((prev) => prev.filter((t) => String(t.phone || t.customerPhone || '').replace(/\D/g, '') !== String(custPhone).replace(/\D/g, '')));
-
-                              await deleteCustomerProfileCloud(custPhone);
-
-                              if (notify) notify(`🗑️ Customer profile for ${custName} (+91 ${custPhone}) and all tokens/docs deleted everywhere!`);
-                            }
-                          }}
-                          style={{
-                            background: '#fef2f2',
-                            color: '#dc2626',
-                            border: '1px solid #fca5a5',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                          title="Delete Customer Profile & All Data"
-                        >
-                          <Trash2 size={14} /> நீக்கு
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
+      {(deskTab === 'all' || deskTab === 'ads') && <AdminSponsoredAdsManager notify={notify} />}
 
       {/* AUTO-FILL CUSTOMER PROFILE DRAWER FOR TNEGA */}
       <AdminAutoFillProfileDrawer />

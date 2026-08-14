@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { siteConfig } from './config/siteConfig';
 import { translations } from './config/translations';
 import { publicPages } from './data/pageManifest';
-import { getStoredApplications } from './utils/statusStore';
-import { handleViewDocument, handleDownloadDocument } from './utils/documentHelper';
+import { getStoredApplications, updateApplicationStage, deleteApplicationRecord, getDeletedAppsSet } from './utils/statusStore';
+import { handleViewDocument, handleDownloadDocument, validatePhotoUpload } from './utils/documentHelper';
 import ServiceCard from './components/ServiceCard';
 import NotificationCard from './components/NotificationCard';
 import NotificationTables from './components/NotificationTables';
@@ -45,10 +45,10 @@ import CustomerEasyGuide from './components/CustomerEasyGuide';
 import SEOHeadManager from './components/SEOHeadManager';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './components/SocialIcons';
 import {
-  ArrowRight, Award, BadgeCheck, Bell, CalendarDays, Check, ChevronDown, Clock3,
-  FileCheck2, FileText, Gift, Headphones, Home, IndianRupee, Landmark, LockKeyhole,
+  ArrowRight, Award, BadgeCheck, Bell, Calendar, CalendarDays, Check, ChevronDown, ChevronUp, Clock, Clock3, CreditCard,
+  FileCheck2, FileText, Gift, Globe, Headphones, Home, IndianRupee, Landmark, LockKeyhole,
   LogIn, Mail, Menu, MessageCircle, Phone, Plus, Search, ShieldCheck, Sparkles,
-  UploadCloud, UserRound, Users, X, ClipboardCheck, MapPin, Send, ChevronRight,
+  UploadCloud, User, UserCheck, UserPlus, UserRound, Users, X, ClipboardCheck, MapPin, Send, ChevronRight,
   Camera, ExternalLink, FileCog, Megaphone, BriefcaseBusiness, GraduationCap,
   FormInput, Download, ImagePlus, Printer, Trash2, Sun, Contrast, ZoomIn,
   Crop, SlidersHorizontal, Eye, LogOut, Ticket, Volume2
@@ -138,7 +138,7 @@ const appointmentSlots = Array.from({ length: 14 }, (_, index) => {
   return `${formatTime(start)} - ${formatTime(start + 30)}`;
 });
 
-import { isFirebaseConfigured } from './config/firebase';
+const isFirebaseConfigured = () => false;
 import {
   clearAllApplicationLocalStorage,
   saveCustomerProfileCloud,
@@ -160,15 +160,20 @@ import {
   deleteTokenBookingCloud,
   recordVisitorHitCloud,
   subscribeVisitorCounter,
+  subscribeDailyVisitorLogsCloud,
   deleteApplicationCloud,
-  deleteExpiryDocumentCloud
-} from './utils/firebaseService';
+  deleteExpiryDocumentCloud,
+  normalizePhone
+} from './utils/dataService';
 import { setInStoreApplications } from './utils/statusStore';
 
 const readCustomerRecords = () => {
   try {
-    const raw = localStorage.getItem(CUSTOMER_RECORDS_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const raw1 = localStorage.getItem(CUSTOMER_RECORDS_KEY);
+    const raw2 = localStorage.getItem('akesevai-customers');
+    const recs1 = raw1 ? JSON.parse(raw1) : {};
+    const recs2 = raw2 ? JSON.parse(raw2) : {};
+    return { ...recs2, ...recs1 };
   } catch (e) {
     return {};
   }
@@ -176,12 +181,21 @@ const readCustomerRecords = () => {
 
 const saveCustomerRecord = (record) => {
   if (!record || !record.phone) return;
+  const cleanPhone = normalizePhone(record.phone);
+  if (!cleanPhone) return;
+
+  const normalizedRecord = {
+    ...record,
+    phone: cleanPhone
+  };
+
   try {
     const current = readCustomerRecords();
-    current[record.phone] = record;
+    current[cleanPhone] = normalizedRecord;
     localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(current));
+    localStorage.setItem('akesevai-customers', JSON.stringify(current));
   } catch (e) {}
-  saveCustomerProfileCloud(record.phone, record);
+  saveCustomerProfileCloud(cleanPhone, normalizedRecord);
 };
 
 const readTokenBookings = () => {
@@ -382,22 +396,7 @@ const validPages = [
   'photo-maker', 'whatsapp-poster'
 ];
 
-const getInitialPage = () => {
-  const pathname = window.location.pathname.replace(/^\/+/, '').trim();
-  const mainPath = pathname.split('/')[0].split('?')[0];
-
-  if (validPages.includes(mainPath)) {
-    return mainPath;
-  }
-
-  const hash = window.location.hash.replace('#', '').trim();
-  if (hash) {
-    const mainHash = hash.split('/')[0].split('?')[0];
-    if (validPages.includes(mainHash)) return mainHash;
-  }
-
-  return 'home';
-};
+const getInitialPage = () => 'home';
 
 function App() {
   const [page, setPage] = useState(getInitialPage);
@@ -487,35 +486,61 @@ function App() {
   useEffect(() => {
     fetchAllCloudRecords().then((cloudData) => {
       if (cloudData) {
-        if (cloudData.customers) setCustomerRecords(cloudData.customers);
-        if (cloudData.tokens) setTokenBookings(cloudData.tokens);
+        if (cloudData.customers) {
+          const local = readCustomerRecords();
+          setCustomerRecords({ ...local, ...cloudData.customers });
+        }
+        if (cloudData.tokens) {
+          const localToks = readTokenBookings();
+          const tokenMap = new Map();
+          [...localToks, ...cloudData.tokens].forEach(t => {
+            if (!t) return;
+            const k = String(t.tokenNo || t.tokenId || t.id || '');
+            if (k && !tokenMap.has(key => key === k)) tokenMap.set(k, t);
+          });
+          setTokenBookings(Array.from(tokenMap.values()));
+        }
         if (cloudData.applications) {
-          setApplicationRecords(cloudData.applications);
-          setInStoreApplications(cloudData.applications);
+          const localApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+          setApplicationRecords({ ...localApps, ...cloudData.applications });
+          setInStoreApplications({ ...localApps, ...cloudData.applications });
         }
       }
     });
 
     const unsubscribeTokens = subscribeTokens((cloudTokens) => {
       if (cloudTokens && Array.isArray(cloudTokens)) {
-        setTokenBookings(cloudTokens);
+        setTokenBookings((prev = []) => {
+          const localToks = readTokenBookings();
+          const tokenMap = new Map();
+          [...localToks, ...prev, ...cloudTokens].forEach(t => {
+            if (!t) return;
+            const k = String(t.tokenNo || t.tokenId || t.id || '');
+            if (k && !tokenMap.has(k)) tokenMap.set(k, t);
+          });
+          return Array.from(tokenMap.values());
+        });
       }
     });
 
     const unsubscribeProfiles = subscribeCustomerProfiles((cloudProfiles) => {
       if (cloudProfiles && typeof cloudProfiles === 'object') {
-        setCustomerRecords(cloudProfiles);
-        const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY);
-        if (activePhone && cloudProfiles[activePhone]) {
-          setCustomer(cloudProfiles[activePhone]);
+        const local = readCustomerRecords();
+        const merged = { ...local, ...cloudProfiles };
+        setCustomerRecords(merged);
+        const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
+        if (activePhone && (merged[activePhone] || merged[normalizePhone(activePhone)])) {
+          setCustomer(merged[activePhone] || merged[normalizePhone(activePhone)]);
         }
       }
     });
 
     const unsubscribeApps = subscribeApplications((cloudApps) => {
       if (cloudApps && typeof cloudApps === 'object') {
-        setApplicationRecords(cloudApps);
-        setInStoreApplications(cloudApps);
+        const localApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+        const merged = { ...localApps, ...cloudApps };
+        setApplicationRecords(merged);
+        setInStoreApplications(merged);
       }
     });
 
@@ -532,26 +557,82 @@ function App() {
       }
     });
 
+    const autoLogoutIfDeleted = () => {
+      const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
+      if (activePhone) {
+        const cleanActivePhone = String(activePhone).replace(/\D/g, '');
+        const updatedRecords = readCustomerRecords();
+        const deletedSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
+
+        const isDeleted = (!updatedRecords[cleanActivePhone] && !updatedRecords[activePhone]) || deletedSet.has(cleanActivePhone) || deletedSet.has(activePhone);
+
+        if (isDeleted) {
+          sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
+          localStorage.removeItem(CUSTOMER_SESSION_KEY);
+          setCustomer(null);
+          setPage('home');
+          alert('⚠️ உங்கள் வாடிக்கையாளர் கணக்கு அட்மினால் நீக்கப்பட்டுள்ளது. தயவுசெய்து புதிய பயனராக மீண்டும் பதிவு செய்யவும்.');
+        }
+      }
+    };
+
     const handleDataChanged = () => {
       const updatedRecords = readCustomerRecords();
       const updatedTokens = readTokenBookings();
       setCustomerRecords(updatedRecords);
       setTokenBookings(updatedTokens);
 
+      autoLogoutIfDeleted();
+
       const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
       if (activePhone) {
         const cleanActivePhone = String(activePhone).replace(/\D/g, '');
-        if (!updatedRecords[cleanActivePhone] && !updatedRecords[activePhone]) {
-          setCustomer(null);
-          sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
-          localStorage.removeItem(CUSTOMER_SESSION_KEY);
-        } else {
-          setCustomer(updatedRecords[cleanActivePhone] || updatedRecords[activePhone]);
+        if (updatedRecords[cleanActivePhone] || updatedRecords[activePhone]) {
+          const storageRecord = updatedRecords[cleanActivePhone] || updatedRecords[activePhone];
+          setCustomer(prev => {
+            if (!prev) return storageRecord;
+            const docMap = new Map();
+            (prev.documents || []).forEach(d => {
+              if (d) {
+                const k = d.requirement || d.id;
+                if (k) docMap.set(k, d);
+              }
+            });
+            (storageRecord.documents || []).forEach(d => {
+              if (d) {
+                const k = d.requirement || d.id;
+                if (k) {
+                  const existing = docMap.get(k);
+                  docMap.set(k, {
+                    ...d,
+                    data: d.data || d.url || existing?.data || existing?.url || '',
+                    url: d.url || d.data || existing?.url || existing?.data || ''
+                  });
+                }
+              }
+            });
+            return {
+              ...storageRecord,
+              documents: Array.from(docMap.values())
+            };
+          });
         }
       }
     };
 
     window.addEventListener('akesevai-data-changed', handleDataChanged);
+
+    let syncChannel = null;
+    if ('BroadcastChannel' in window) {
+      try {
+        syncChannel = new BroadcastChannel('akesevai_data_sync_channel');
+        syncChannel.onmessage = (e) => {
+          if (e.data && e.data.type === 'CUSTOMER_DELETED') {
+            autoLogoutIfDeleted();
+          }
+        };
+      } catch (e) {}
+    }
 
     return () => {
       unsubscribeTokens();
@@ -560,6 +641,9 @@ function App() {
       unsubscribeDocs();
       unsubscribeVisitor();
       window.removeEventListener('akesevai-data-changed', handleDataChanged);
+      if (syncChannel) {
+        try { syncChannel.close(); } catch (e) {}
+      }
     };
   }, []);
 
@@ -593,9 +677,46 @@ function App() {
     ];
 
     const saveToken = (token) => {
+      if (!token) return;
+      const tokNo = String(token.tokenNo || token.tokenId || token.id || '').trim();
+
+      // 1. Un-blacklist token number if creating a new active token
+      if (tokNo) {
+        try {
+          const delSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
+          if (delSet.has(tokNo)) {
+            delSet.delete(tokNo);
+            localStorage.setItem('akesevai-deleted-tokens', JSON.stringify(Array.from(delSet)));
+          }
+        } catch (e) {}
+      }
+
       persistTokenBooking(token);
-      setTokenBookings((prev) => Array.isArray(prev) ? [token, ...prev.filter(t => String(t.tokenNo) !== String(token.tokenNo))] : [token]);
+      setTokenBookings((prev) => Array.isArray(prev) ? [token, ...prev.filter(t => String(t.tokenNo || t.id) !== String(token.tokenNo || token.id))] : [token]);
       saveTokenBookingCloud(token);
+
+      // 2. Update customer's lastToken in customerRecords for immediate sync
+      const cleanPhone = normalizePhone(token.phone);
+      if (cleanPhone) {
+        setCustomerRecords((prevRecords = {}) => {
+          const existingCust = prevRecords[cleanPhone] || prevRecords[token.phone] || { phone: cleanPhone, name: token.customerName };
+          const updatedCust = {
+            ...existingCust,
+            phone: cleanPhone,
+            lastToken: token,
+            updatedAt: new Date().toISOString()
+          };
+          saveCustomerProfileCloud(cleanPhone, updatedCust);
+          return {
+            ...prevRecords,
+            [cleanPhone]: updatedCust
+          };
+        });
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('akesevai-data-changed'));
+      }
 
       if ('BroadcastChannel' in window) {
         try {
@@ -627,21 +748,98 @@ function App() {
       window.setTimeout(() => setToast(''), 3500);
     };
 
-    const loginCustomer = (phone) => {
+    const findExistingCustomerRecord = (phoneInput, recordsObj) => {
+      if (!phoneInput) return null;
+      const cleanP = normalizePhone(phoneInput);
+      if (!cleanP) return null;
+      
+      const possibleKeys = [cleanP, phoneInput, `+91${cleanP}`, `91${cleanP}`, `+91 ${cleanP}`];
+      for (const k of possibleKeys) {
+        if (recordsObj && recordsObj[k]) {
+          return recordsObj[k];
+        }
+      }
+
+      if (recordsObj && typeof recordsObj === 'object') {
+        const found = Object.values(recordsObj).find(c => {
+          if (!c) return false;
+          const cPhone = normalizePhone(c.phone || c.profile?.phone);
+          return cPhone && cPhone === cleanP;
+        });
+        if (found) return found;
+      }
+
+      return null;
+    };
+
+    const loginCustomer = async (phone, pass = '') => {
+      const cleanPhone = normalizePhone(phone);
+      if (!cleanPhone) return false;
+
+      const deletedSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
+
+      if (cleanPhone && deletedSet.has(cleanPhone)) {
+        deletedSet.delete(cleanPhone);
+        localStorage.setItem('akesevai-deleted-customers', JSON.stringify(Array.from(deletedSet)));
+      }
+
       const records = customerRecords || readCustomerRecords();
-      const isNew = !records[phone];
-      const record = records[phone] ? { ...records[phone] } : {
-        phone,
-        profile: { name: '', createdAt: new Date().toISOString(), complete: false },
+      let existingRecord = findExistingCustomerRecord(cleanPhone, records);
+
+      // If not found in local storage, check MongoDB cloud server
+      if (!existingRecord && cleanPhone) {
+        try {
+          const cloudRecords = await fetchAllCloudRecords();
+          if (cloudRecords && cloudRecords.customers) {
+            existingRecord = findExistingCustomerRecord(cleanPhone, cloudRecords.customers);
+          }
+        } catch (e) {}
+      }
+
+      const hasName = existingRecord?.name || existingRecord?.profile?.name;
+      const isExistingProfileComplete = Boolean(
+        existingRecord &&
+        existingRecord.profile?.complete &&
+        hasName &&
+        !hasName.startsWith('Customer ')
+      );
+
+      const isNew = !isExistingProfileComplete;
+
+      const custName = isExistingProfileComplete ? (existingRecord.name || existingRecord.profile?.name) : '';
+      const custDob = isExistingProfileComplete ? (existingRecord.dob || existingRecord.profile?.dob) : '';
+      const custAadhaar = isExistingProfileComplete ? (existingRecord.aadhaarNo || existingRecord.profile?.aadhaarNo || existingRecord.aadhar) : '';
+
+      const record = isExistingProfileComplete ? {
+        ...existingRecord,
+        phone: cleanPhone,
+        name: custName,
+        dob: custDob,
+        aadhaarNo: custAadhaar,
+        profile: {
+          ...(existingRecord.profile || {}),
+          name: custName,
+          dob: custDob,
+          aadhaarNo: custAadhaar,
+          password: pass || existingRecord.profile?.password || '',
+          complete: true
+        }
+      } : {
+        phone: cleanPhone,
+        name: '',
+        dob: '',
+        aadhaarNo: '',
+        profile: { name: '', password: pass, createdAt: new Date().toISOString(), complete: false },
         applications: [],
         documents: [],
         appointment: { date: '', time: '' },
       };
+
       saveCustomerRecord(record);
-      sessionStorage.setItem(CUSTOMER_SESSION_KEY, phone);
-      localStorage.setItem(CUSTOMER_SESSION_KEY, phone);
+      sessionStorage.setItem(CUSTOMER_SESSION_KEY, cleanPhone || phone);
+      localStorage.setItem(CUSTOMER_SESSION_KEY, cleanPhone || phone);
       setCustomer(record);
-      setCustomerRecords((prev) => ({ ...prev, [phone]: record }));
+      setCustomerRecords((prev) => ({ ...prev, [cleanPhone || phone]: record }));
 
       recordLoginEventCloud({
         type: 'customer_login',
@@ -651,8 +849,8 @@ function App() {
       });
 
       setIsFirstTimeLogin(isNew);
-      setShowFirstLoginModal(true);
-      notify(isNew ? 'Account created. Your details will be saved for your next login.' : 'Welcome back. Your saved details are ready.');
+      setShowFirstLoginModal(isNew);
+      notify(isNew ? 'Account created. Your details will be saved for your next login.' : `Welcome back ${custName}! Your saved details are ready.`);
     };
 
     const updateCustomer = (updater) => {
@@ -665,6 +863,9 @@ function App() {
         }));
         if (updated && updated.phone) {
           saveCustomerProfileCloud(updated.phone, updated);
+        }
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('akesevai-data-changed'));
         }
         return updated;
       });
@@ -1251,13 +1452,381 @@ const getServiceVisual = (group, title = '') => {
     const [photoText, setPhotoText] = useState('');
     const [margins, setMargins] = useState({ top: 5, bottom: 5, left: 5, right: 5 });
     const [gaps, setGaps] = useState({ horizontal: 2.5, vertical: 2.5 });
+    const bgRemoverRef = useRef(null);
+
     const updateMargin = (key, value) => setMargins({ ...margins, [key]: value });
     const updateGap = (key, value) => setGaps({ ...gaps, [key]: value });
     const clearPhoto = () => { setPhoto(''); setPhotoText(''); notify('Photo cleared.'); };
     const photoStyle = { filter: `brightness(${brightness}%) contrast(${contrast}%)`, transform: `scale(${zoom / 100})` };
-    return <PageIntro kicker="PHOTO MAKER SOFTWARE" title="Create your passport photo sheet." text="Upload one photo, adjust the layout, and generate a ready-to-print sheet just like a service centre tool."><div className="photo-tool"><div className="photo-toolbar"><span className="tool-badge"><Camera size={18} /> PHOTO MAKER</span><button className="tool-action" onClick={() => notify('Photo sheet generated.')}>Generate Sheet</button><button className="tool-action" onClick={() => notify('Select the photo area in the preview to crop.')}> <Crop size={15} /> Crop Photo</button><button className="tool-action" onClick={() => notify('Crop applied.')}>Apply Crop</button><button className="tool-action" onClick={() => notify('PDF download is ready for printing.')}> <Download size={15} /> Download PDF</button></div><div className="photo-tool-layout"><aside className="photo-controls"><label className="photo-upload compact-upload"><ImagePlus size={25} /><strong>{photo ? 'Change photo' : 'Upload photo'}</strong><small>JPG or PNG up to 10 MB</small><input type="file" accept="image/png,image/jpeg" onChange={(event) => { const file = event.target.files?.[0]; if (file) { setPhoto(URL.createObjectURL(file)); notify('Photo loaded into the sheet.'); } }} /></label><div className="control-section"><strong><SlidersHorizontal size={15} /> Sheet settings</strong><label>Paper<select value={paper} onChange={(event) => setPaper(event.target.value)}><option>A4</option><option>4 x 6 inch</option><option>A5</option></select></label><label>Copies<input type="number" min="1" max="40" value={copies} onChange={(event) => setCopies(Math.max(1, Math.min(40, Number(event.target.value))))} /></label></div><div className="control-section"><strong><Sun size={15} /> Image adjustment</strong><label>Brightness <output>{brightness}%</output><input type="range" min="50" max="150" value={brightness} onChange={(event) => setBrightness(event.target.value)} /></label><label><Contrast size={14} /> Contrast <output>{contrast}%</output><input type="range" min="50" max="150" value={contrast} onChange={(event) => setContrast(event.target.value)} /></label><label><ZoomIn size={14} /> Zoom <output>{zoom}%</output><input type="range" min="70" max="140" value={zoom} onChange={(event) => setZoom(event.target.value)} /></label></div><div className="control-section"><strong>Margins (mm)</strong><div className="mini-input-grid"><label>Top<input type="number" value={margins.top} onChange={(event) => updateMargin('top', event.target.value)} /></label><label>Bottom<input type="number" value={margins.bottom} onChange={(event) => updateMargin('bottom', event.target.value)} /></label><label>Left<input type="number" value={margins.left} onChange={(event) => updateMargin('left', event.target.value)} /></label><label>Right<input type="number" value={margins.right} onChange={(event) => updateMargin('right', event.target.value)} /></label></div></div><div className="control-section"><strong>Gaps (mm)</strong><div className="mini-input-grid"><label>Horizontal<input type="number" step="0.5" value={gaps.horizontal} onChange={(event) => updateGap('horizontal', event.target.value)} /></label><label>Vertical<input type="number" step="0.5" value={gaps.vertical} onChange={(event) => updateGap('vertical', event.target.value)} /></label></div></div><div className="toggle-list"><label><input type="checkbox" checked={border} onChange={(event) => setBorder(event.target.checked)} /> Photo Border</label><label><input type="checkbox" checked={textEnabled} onChange={(event) => setTextEnabled(event.target.checked)} /> Text on Photo</label>{textEnabled && <input className="text-photo-input" value={photoText} onChange={(event) => setPhotoText(event.target.value)} placeholder="Name or ID number" />}</div><div className="tool-footer-actions"><button className="button button-primary" onClick={() => notify(`${copies} photos ready on ${paper} sheet.`)}><Printer size={16} /> Print Photos</button><button className="text-button" onClick={() => notify('Single photo saved as JPEG.')}><Download size={15} /> Save Single Photo (JPEG)</button><button className="text-button" onClick={() => notify('AI background removal requested.')}><Sparkles size={15} /> AI Remove BG</button><button className="clear-photo" onClick={clearPhoto}><Trash2 size={15} /> Clear Photo</button></div></aside><section className="sheet-workspace"><div className="workspace-head"><span><strong>Preview Sheet</strong><small>{paper} · {copies} copies · {margins.top}/{margins.bottom}/{margins.left}/{margins.right} mm margins</small></span><span className="workspace-status">● Ready</span></div><div className={`print-sheet ${paper === 'A5' ? 'paper-a5' : ''}`} style={{ padding: `${margins.top}px ${margins.right}px ${margins.bottom}px ${margins.left}px`, gap: `${gaps.vertical}px ${gaps.horizontal}px` }}>{Array.from({ length: copies }).map((_, index) => <div className={`sheet-photo ${border ? 'with-border' : ''}`} key={index}>{photo ? <img src={photo} alt={`Photo copy ${index + 1}`} style={photoStyle} /> : <span><Camera size={18} />Upload a photo</span>}{textEnabled && photoText && <small>{photoText}</small>}</div>)}</div><div className="sheet-help"><Crop size={15} /> Photo size: 35 × 45 mm <span>•</span> Adjust controls on the left, then print your sheet</div></section></div></div>
-      <PhotoBackgroundRemover />
-    </PageIntro>;
+
+    const buildSheetCanvas = (photoUrl) => {
+      return new Promise((resolve, reject) => {
+        if (!photoUrl) {
+          reject(new Error('No photo uploaded'));
+          return;
+        }
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          let canvasWidth = 2480; // A4
+          let canvasHeight = 3508;
+          let cols = 5;
+
+          if (paper === '4 x 6 inch') {
+            canvasWidth = 1200;
+            canvasHeight = 1800;
+            cols = 3;
+          } else if (paper === 'A5') {
+            canvasWidth = 1748;
+            canvasHeight = 2480;
+            cols = 4;
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = canvasWidth;
+          canvas.height = canvasHeight;
+          const ctx = canvas.getContext('2d');
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+          const scaleMM = 300 / 25.4;
+          const photoW = Math.round(35 * scaleMM);
+          const photoH = Math.round(45 * scaleMM);
+
+          const mt = (Number(margins.top) || 5) * scaleMM;
+          const ml = (Number(margins.left) || 5) * scaleMM;
+          const gh = (Number(gaps.horizontal) || 2.5) * scaleMM;
+          const gv = (Number(gaps.vertical) || 2.5) * scaleMM;
+
+          for (let i = 0; i < copies; i++) {
+            const row = Math.floor(i / cols);
+            const col = i % cols;
+            const x = ml + col * (photoW + gh);
+            const y = mt + row * (photoH + gv);
+
+            if (y + photoH > canvasHeight) break;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, photoW, photoH);
+            ctx.clip();
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(x, y, photoW, photoH);
+
+            ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
+
+            const zoomFactor = (zoom || 100) / 100;
+            const drawW = photoW * zoomFactor;
+            const drawH = photoH * zoomFactor;
+            const drawX = x + (photoW - drawW) / 2;
+            const drawY = y + (photoH - drawH) / 2;
+
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            ctx.filter = 'none';
+
+            if (border) {
+              ctx.strokeStyle = '#666666';
+              ctx.lineWidth = 3;
+              ctx.strokeRect(x, y, photoW, photoH);
+            }
+
+            if (textEnabled && photoText) {
+              const textHeight = Math.round(28 * (scaleMM / 10));
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+              ctx.fillRect(x, y + photoH - textHeight, photoW, textHeight);
+
+              ctx.fillStyle = '#000000';
+              ctx.font = `bold ${Math.round(14 * (scaleMM / 10))}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(photoText, x + photoW / 2, y + photoH - textHeight / 2);
+            }
+
+            ctx.restore();
+          }
+
+          resolve(canvas);
+        };
+        img.onerror = (err) => reject(err);
+        img.src = photoUrl;
+      });
+    };
+
+    const buildSinglePhotoCanvas = (photoUrl) => {
+      return new Promise((resolve, reject) => {
+        if (!photoUrl) {
+          reject(new Error('No photo uploaded'));
+          return;
+        }
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const scaleMM = 300 / 25.4;
+          const photoW = Math.round(35 * scaleMM);
+          const photoH = Math.round(45 * scaleMM);
+
+          const canvas = document.createElement('canvas');
+          canvas.width = photoW;
+          canvas.height = photoH;
+          const ctx = canvas.getContext('2d');
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, photoW, photoH);
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, 0, photoW, photoH);
+          ctx.clip();
+
+          ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
+          const zoomFactor = (zoom || 100) / 100;
+          const drawW = photoW * zoomFactor;
+          const drawH = photoH * zoomFactor;
+          const drawX = (photoW - drawW) / 2;
+          const drawY = (photoH - drawH) / 2;
+
+          ctx.drawImage(img, drawX, drawY, drawW, drawH);
+          ctx.filter = 'none';
+
+          if (border) {
+            ctx.strokeStyle = '#666666';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(0, 0, photoW, photoH);
+          }
+
+          if (textEnabled && photoText) {
+            const textHeight = 34;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(0, photoH - textHeight, photoW, textHeight);
+
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(photoText, photoW / 2, photoH - textHeight / 2);
+          }
+
+          ctx.restore();
+          resolve(canvas);
+        };
+        img.onerror = (err) => reject(err);
+        img.src = photoUrl;
+      });
+    };
+
+    const triggerDownload = (dataUrl, filename) => {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+
+    const handlePrintPhotos = async () => {
+      if (!photo) {
+        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும் (Please upload a photo first).');
+        return;
+      }
+      try {
+        notify('⏳ Photo sheet தயார் செய்யப்படுகிறது...');
+        const canvas = await buildSheetCanvas(photo);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        const printWin = window.open('', '_blank');
+        if (!printWin) {
+          notify('⚠️ Popup தடுப்பு உள்ளது. பிரின்ட் செய்ய popup அனுமதி கொடுக்கவும்.');
+          return;
+        }
+        printWin.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>AkEsevai Passport Photo Sheet - ${paper}</title>
+              <style>
+                @page { size: auto; margin: 0mm; }
+                body { margin: 0; padding: 0; background: white; text-align: center; }
+                img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+                @media print { img { width: 100%; height: auto; } }
+              </style>
+            </head>
+            <body>
+              <img src="${dataUrl}" />
+              <script>
+                window.onload = function() {
+                  setTimeout(function() {
+                    window.focus();
+                    window.print();
+                  }, 300);
+                };
+              </script>
+            </body>
+          </html>
+        `);
+        printWin.document.close();
+        notify(`🖨️ ${copies} போட்டோ தாள் பிரிண்ட் செய்ய சன்னல் திறக்கப்பட்டது.`);
+      } catch (err) {
+        console.error(err);
+        notify('❌ Error generating print sheet: ' + err.message);
+      }
+    };
+
+    const handleDownloadPDF = async () => {
+      if (!photo) {
+        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும் (Please upload a photo first).');
+        return;
+      }
+      try {
+        notify('⏳ PDF / Image பதிவிறக்கம் செய்யப்படுகிறது...');
+        const canvas = await buildSheetCanvas(photo);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        triggerDownload(dataUrl, `akesevai_passport_photos_${paper.replace(/\s+/g, '_')}.jpg`);
+        notify(`✅ போட்டோ தாள் உங்கள் கணினியின் 'Downloads' (பதிவிறக்கங்கள்) போல்டரில் சேமிக்கப்பட்டது!`);
+      } catch (err) {
+        console.error(err);
+        notify('❌ Download error: ' + err.message);
+      }
+    };
+
+    const handleSaveSinglePhoto = async () => {
+      if (!photo) {
+        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும்.');
+        return;
+      }
+      try {
+        const canvas = await buildSinglePhotoCanvas(photo);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        triggerDownload(dataUrl, 'passport_photo_single.jpg');
+        notify(`✅ தனி புகைப்படம் 'Downloads' போல்டரில் சேமிக்கப்பட்டது!`);
+      } catch (err) {
+        console.error(err);
+        notify('❌ Error saving photo: ' + err.message);
+      }
+    };
+
+    const handleCropPhoto = () => {
+      if (!photo) {
+        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும்.');
+        return;
+      }
+      buildSinglePhotoCanvas(photo)
+        .then((canvas) => {
+          const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+          setPhoto(croppedDataUrl);
+          notify('✂️ பாஸ்போர்ட் அளவீட்டிற்கு போட்டோ க்ராப் செய்யப்பட்டது.');
+        })
+        .catch((err) => notify('❌ Crop error: ' + err.message));
+    };
+
+    return (
+      <PageIntro kicker="PHOTO MAKER SOFTWARE" title="Create your passport photo sheet." text="Upload one photo, adjust the layout, and generate a ready-to-print sheet just like a service centre tool.">
+        <div className="photo-tool">
+          <div className="photo-toolbar">
+            <span className="tool-badge"><Camera size={18} /> PHOTO MAKER</span>
+            <button className="tool-action" onClick={handleDownloadPDF}><Download size={15} /> Generate & Download Sheet</button>
+            <button className="tool-action" onClick={handleCropPhoto}><Crop size={15} /> Crop Photo (3.5x4.5)</button>
+            <button className="tool-action" onClick={handlePrintPhotos}><Printer size={15} /> Print Sheet / Save PDF</button>
+            <button className="tool-action" onClick={handleDownloadPDF}><Download size={15} /> Download PDF / Sheet</button>
+          </div>
+          <div className="photo-tool-layout">
+            <aside className="photo-controls">
+              <label className="photo-upload compact-upload">
+                <ImagePlus size={25} />
+                <strong>{photo ? 'Change photo' : 'Upload photo'}</strong>
+                <small>JPG format only, up to 1 MB</small>
+                <input
+                  type="file"
+                  accept="image/jpeg,.jpg,.jpeg"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      const validation = validatePhotoUpload(file, 1);
+                      if (!validation.valid) {
+                        notify(validation.error);
+                        event.target.value = '';
+                        return;
+                      }
+                      setPhoto(URL.createObjectURL(file));
+                      notify('Photo loaded into the sheet.');
+                    }
+                  }}
+                />
+              </label>
+
+              <div className="control-section">
+                <strong><SlidersHorizontal size={15} /> Sheet settings</strong>
+                <label>Paper<select value={paper} onChange={(event) => setPaper(event.target.value)}><option>A4</option><option>4 x 6 inch</option><option>A5</option></select></label>
+                <label>Copies<input type="number" min="1" max="40" value={copies} onChange={(event) => setCopies(Math.max(1, Math.min(40, Number(event.target.value))))} /></label>
+              </div>
+
+              <div className="control-section">
+                <strong><Sun size={15} /> Image adjustment</strong>
+                <label>Brightness <output>{brightness}%</output><input type="range" min="50" max="150" value={brightness} onChange={(event) => setBrightness(event.target.value)} /></label>
+                <label><Contrast size={14} /> Contrast <output>{contrast}%</output><input type="range" min="50" max="150" value={contrast} onChange={(event) => setContrast(event.target.value)} /></label>
+                <label><ZoomIn size={14} /> Zoom <output>{zoom}%</output><input type="range" min="70" max="140" value={zoom} onChange={(event) => setZoom(event.target.value)} /></label>
+              </div>
+
+              <div className="control-section">
+                <strong>Margins (mm)</strong>
+                <div className="mini-input-grid">
+                  <label>Top<input type="number" value={margins.top} onChange={(event) => updateMargin('top', event.target.value)} /></label>
+                  <label>Bottom<input type="number" value={margins.bottom} onChange={(event) => updateMargin('bottom', event.target.value)} /></label>
+                  <label>Left<input type="number" value={margins.left} onChange={(event) => updateMargin('left', event.target.value)} /></label>
+                  <label>Right<input type="number" value={margins.right} onChange={(event) => updateMargin('right', event.target.value)} /></label>
+                </div>
+              </div>
+
+              <div className="control-section">
+                <strong>Gaps (mm)</strong>
+                <div className="mini-input-grid">
+                  <label>Horizontal<input type="number" step="0.5" value={gaps.horizontal} onChange={(event) => updateGap('horizontal', event.target.value)} /></label>
+                  <label>Vertical<input type="number" step="0.5" value={gaps.vertical} onChange={(event) => updateGap('vertical', event.target.value)} /></label>
+                </div>
+              </div>
+
+              <div className="toggle-list">
+                <label><input type="checkbox" checked={border} onChange={(event) => setBorder(event.target.checked)} /> Photo Border</label>
+                <label><input type="checkbox" checked={textEnabled} onChange={(event) => setTextEnabled(event.target.checked)} /> Text on Photo</label>
+                {textEnabled && <input className="text-photo-input" value={photoText} onChange={(event) => setPhotoText(event.target.value)} placeholder="Name or ID number" />}
+              </div>
+
+              <div className="tool-footer-actions">
+                <button className="button button-primary" onClick={handlePrintPhotos}><Printer size={16} /> Print Photos (அச்சு எடுக்க)</button>
+                <button className="text-button" onClick={handleDownloadPDF}><Download size={15} /> Download Photo Sheet (சேமிக்க)</button>
+                <button className="text-button" onClick={handleSaveSinglePhoto}><Download size={15} /> Save Single Photo (JPEG)</button>
+                <button className="text-button" onClick={() => { if (bgRemoverRef.current) bgRemoverRef.current.scrollIntoView({ behavior: 'smooth' }); }}><Sparkles size={15} /> AI Background Remover</button>
+                <button className="clear-photo" onClick={clearPhoto}><Trash2 size={15} /> Clear Photo</button>
+              </div>
+            </aside>
+
+            <section className="sheet-workspace">
+              <div className="workspace-head">
+                <span>
+                  <strong>Preview Sheet</strong>
+                  <small>{paper} · {copies} copies · {margins.top}/{margins.bottom}/{margins.left}/{margins.right} mm margins</small>
+                </span>
+                <span className="workspace-status">● Ready</span>
+              </div>
+              <div className={`print-sheet ${paper === 'A5' ? 'paper-a5' : ''}`} style={{ padding: `${margins.top}px ${margins.right}px ${margins.bottom}px ${margins.left}px`, gap: `${gaps.vertical}px ${gaps.horizontal}px` }}>
+                {Array.from({ length: copies }).map((_, index) => (
+                  <div className={`sheet-photo ${border ? 'with-border' : ''}`} key={index}>
+                    {photo ? <img src={photo} alt={`Photo copy ${index + 1}`} style={photoStyle} /> : <span><Camera size={18} />Upload a photo</span>}
+                    {textEnabled && photoText && <small>{photoText}</small>}
+                  </div>
+                ))}
+              </div>
+              <div className="sheet-help">
+                <Crop size={15} /> Photo size: 35 × 45 mm <span>•</span> Adjust controls on the left, then click Print or Download PDF (Saved in your Downloads folder)
+              </div>
+            </section>
+          </div>
+        </div>
+        <div ref={bgRemoverRef}>
+          <PhotoBackgroundRemover />
+        </div>
+      </PageIntro>
+    );
   }
 
   function FormsPage({ notify }) { const [fileName, setFileName] = useState(''); const [query, setQuery] = useState(''); const [category, setCategory] = useState('All Forms'); const categories = ['All Forms', ...new Set(formsCatalog.map((form) => form[1]))]; const filteredForms = formsCatalog.filter((form) => (category === 'All Forms' || form[1] === category) && form.join(' ').toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="FORMS & DOWNLOADS" title="Official forms, ready to download." text="Search for a form and download the available official PDF from the TD Common e-Sevai forms collection."><div className="form-count"><FormInput size={18} /> <strong>📋 All Forms</strong><span>{filteredForms.length} forms available</span></div><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Form-ஐ தேடவும்... Search forms" /><span>{filteredForms.length} results</span></div><div className="category-tabs">{categories.map((item) => <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="forms-directory">{filteredForms.map(([title, type]) => <FormRow title={title} type={type} notify={notify} key={title} />)}</div><label className="form-dropzone full-dropzone"><UploadCloud size={30} /><strong>{fileName || 'Upload a completed form'}</strong><small>PDF, JPG or PNG up to 10 MB</small><input type="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || '')} />{fileName && <span className="upload-ready"><Check size={14} /> Ready for review</span>}</label></PageIntro>; }
@@ -1604,7 +2173,7 @@ const getServiceVisual = (group, title = '') => {
       const requirementName = docCategory === 'Other' ? (customRequirement.trim() || 'Uploaded Document') : docCategory;
       
       setUploading(true);
-      notify(`⏳ Uploading ${selectedFile.name} to Firebase Cloud Storage...`);
+      notify(`⏳ Uploading ${selectedFile.name}...`);
 
       try {
         const docRecord = await uploadFileToFirebaseStorage(selectedFile, 'customer_documents', cleanPhone);
@@ -1648,7 +2217,7 @@ const getServiceVisual = (group, title = '') => {
 
           setSelectedFile(null);
           setCustomRequirement('');
-          notify(`🎉 Document "${requirementName}" uploaded and saved to Firebase Cloud!`);
+          notify(`🎉 Document "${requirementName}" uploaded and saved successfully!`);
         } else {
           notify('❌ Upload failed. Please try again.');
         }
@@ -1702,13 +2271,25 @@ const getServiceVisual = (group, title = '') => {
           ) : (
             <div>
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
-                Select File (PDF or Image):
+                Select File (PDF or JPG Image, Photo max 1MB):
               </label>
               <input
                 type="file"
-                accept=".pdf,image/*"
+                accept=".pdf,image/jpeg,.jpg,.jpeg"
                 required
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  if (file && (docCategory === 'Passport Size Photo' || file.type.startsWith('image/'))) {
+                    const val = validatePhotoUpload(file, 1);
+                    if (!val.valid) {
+                      notify(val.error);
+                      e.target.value = '';
+                      setSelectedFile(null);
+                      return;
+                    }
+                  }
+                  setSelectedFile(file);
+                }}
                 style={{ width: '100%', padding: '6px', fontSize: '11px' }}
               />
             </div>
@@ -1717,13 +2298,25 @@ const getServiceVisual = (group, title = '') => {
           {docCategory === 'Other' && (
             <div style={{ gridColumn: 'span 2' }}>
               <label style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
-                Select File (PDF or Image):
+                Select File (PDF or JPG Image, Photo max 1MB):
               </label>
               <input
                 type="file"
-                accept=".pdf,image/*"
+                accept=".pdf,image/jpeg,.jpg,.jpeg"
                 required
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  if (file && file.type.startsWith('image/')) {
+                    const val = validatePhotoUpload(file, 1);
+                    if (!val.valid) {
+                      notify(val.error);
+                      e.target.value = '';
+                      setSelectedFile(null);
+                      return;
+                    }
+                  }
+                  setSelectedFile(file);
+                }}
                 style={{ width: '100%', padding: '6px', fontSize: '11px' }}
               />
             </div>
@@ -1764,12 +2357,86 @@ const getServiceVisual = (group, title = '') => {
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [editName, setEditName] = useState('');
     const [editPhone, setEditPhone] = useState('');
+    const [editDob, setEditDob] = useState('');
+    const [editAadhaar, setEditAadhaar] = useState('');
     const [activeDocPreview, setActiveDocPreview] = useState(null);
 
+    // Visitor Logs & New Customer Registration state
+    const [visitorLogs, setVisitorLogs] = useState([]);
+    const [visitorSearch, setVisitorSearch] = useState('');
+    const [showAddCustForm, setShowAddCustForm] = useState(false);
+    const [newCustName, setNewCustName] = useState('');
+    const [newCustPhone, setNewCustPhone] = useState('');
+    const [newCustDob, setNewCustDob] = useState('');
+    const [newCustAadhar, setNewCustAadhar] = useState('');
+    const [newCustNotes, setNewCustNotes] = useState('');
+
+    useEffect(() => {
+      const unsub = subscribeDailyVisitorLogsCloud((logs) => {
+        if (Array.isArray(logs)) setVisitorLogs(logs);
+      });
+      return () => {
+        if (typeof unsub === 'function') unsub();
+      };
+    }, []);
+
     if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button></form></section>;
-    const activeRecords = customerRecords || {};
-    const customers = Object.values(activeRecords)
-      .filter(c => c && (c.phone || c.profile?.name || c.name))
+    const localRecords = readCustomerRecords();
+    const activeRecords = { ...localRecords, ...(customerRecords || {}) };
+    const deletedCustSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
+    const appCustomersMap = new Map();
+    Object.values(activeRecords).forEach((c) => {
+      if (c && (c.phone || c.profile?.name || c.name)) {
+        const cleanP = String(c.phone || '').replace(/\D/g, '');
+        if (!cleanP || deletedCustSet.has(cleanP) || deletedCustSet.has(c.phone)) return;
+
+        const existing = appCustomersMap.get(cleanP) || {};
+        const mergedName = c.name && c.name !== 'Customer' && !c.name.startsWith('Customer ') ? c.name :
+                          c.profile?.name && c.profile.name !== 'Customer' && !c.profile.name.startsWith('Customer ') ? c.profile.name :
+                          existing.name || existing.profile?.name || c.name || c.profile?.name || `Customer +91 ${cleanP}`;
+
+        const mergedAadhaar = c.aadhaarNo || c.profile?.aadhaarNo || existing.aadhaarNo || existing.profile?.aadhaarNo || '';
+        const mergedDob = c.dob || c.profile?.dob || existing.dob || existing.profile?.dob || '';
+        const mergedToken = c.lastToken || existing.lastToken || null;
+        const mergedAppsMap = new Map();
+        [...(existing.applications || []), ...(c.applications || [])].forEach((a) => {
+          if (!a) return;
+          const k = String(a.id || a.ackNo || a.name || '').trim();
+          if (k && !mergedAppsMap.has(k)) mergedAppsMap.set(k, a);
+        });
+        const mergedApps = Array.from(mergedAppsMap.values());
+
+        const mergedDocsMap = new Map();
+        [...(existing.documents || []), ...(c.documents || [])].forEach((d) => {
+          if (!d) return;
+          const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+          if (k && !mergedDocsMap.has(k)) mergedDocsMap.set(k, d);
+        });
+        const mergedDocs = Array.from(mergedDocsMap.values());
+
+        appCustomersMap.set(cleanP, {
+          ...existing,
+          ...c,
+          phone: cleanP,
+          name: mergedName,
+          profile: {
+            ...(existing.profile || {}),
+            ...(c.profile || {}),
+            name: mergedName,
+            aadhaarNo: mergedAadhaar,
+            dob: mergedDob
+          },
+          aadhaarNo: mergedAadhaar,
+          dob: mergedDob,
+          lastToken: mergedToken,
+          applications: mergedApps,
+          documents: mergedDocs,
+          updatedAt: c.updatedAt || existing.updatedAt || new Date().toISOString()
+        });
+      }
+    });
+
+    const customers = Array.from(appCustomersMap.values())
       .sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
 
     const matchingCustomers = customers.filter((customer) => {
@@ -1781,14 +2448,36 @@ const getServiceVisual = (group, title = '') => {
 
     const selected = matchingCustomers.find((customer) => customer.phone === activeCustomer) || matchingCustomers[0];
     const totalApplications = Object.keys(applicationRecords || {}).length || customers.reduce((total, customer) => total + (Array.isArray(customer.applications) ? customer.applications.length : 0), 0);
-    const totalDocuments = customers.reduce((total, customer) => total + (Array.isArray(customer.documents) ? customer.documents.length : 0), 0);
+
+    const uniqueDocsCounterMap = new Map();
+    (cloudExpiryDocs || []).forEach((d) => {
+      if (!d) return;
+      const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+      if (k) uniqueDocsCounterMap.set(k, d);
+    });
+    customers.forEach((c) => {
+      if (c && Array.isArray(c.documents)) {
+        c.documents.forEach((d) => {
+          if (!d) return;
+          const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+          if (k) uniqueDocsCounterMap.set(k, d);
+        });
+      }
+    });
+    const totalDocuments = uniqueDocsCounterMap.size;
     
+    const deletedTokensSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
+
     const combinedTokensList = [
       ...(tokenBookings || []),
       ...Object.values(customerRecords || {}).map(c => c.lastToken).filter(Boolean)
-    ].reduce((acc, current) => {
-      const tNo = current.tokenNo || current.id;
-      if (tNo && !acc.some(item => (item.tokenNo || item.id) === tNo)) {
+    ].filter(t => {
+      if (!t) return false;
+      const tNo = String(t.tokenNo || t.tokenId || t.id || '').trim();
+      return tNo && !deletedTokensSet.has(tNo);
+    }).reduce((acc, current) => {
+      const tNo = String(current.tokenNo || current.tokenId || current.id || '').trim();
+      if (tNo && !acc.some(item => String(item.tokenNo || item.tokenId || item.id || '').trim() === tNo)) {
         acc.push(current);
       }
       return acc;
@@ -1848,7 +2537,13 @@ const getServiceVisual = (group, title = '') => {
       }
     });
 
-    const allAppsList = Object.values(allAppsMap);
+    const delAppsSet = getDeletedAppsSet();
+    const allAppsList = Object.values(allAppsMap).filter((app) => {
+      if (!app) return false;
+      const appIdKey = String(app.id || app.ackNo || '').trim();
+      return appIdKey && !delAppsSet.has(appIdKey);
+    });
+
     const filteredApps = allAppsList.filter((app) => {
       const q = appSearch.trim().toLowerCase();
       if (!q) return true;
@@ -1954,18 +2649,135 @@ const getServiceVisual = (group, title = '') => {
 
     const handleDeleteApp = async (appId) => {
       if (!appId) return;
-      const confirmDelete = window.confirm(`Are you sure you want to PERMANENTLY delete application "${appId}" from Firebase Cloud?`);
-      if (confirmDelete) {
-        if (setApplicationRecords) {
-          setApplicationRecords((prev) => {
-            const copy = { ...prev };
-            delete copy[appId];
-            return copy;
-          });
-        }
-        await deleteApplicationCloud(appId);
-        notify(`🗑️ Application ${appId} deleted permanently from Firebase Cloud!`);
+      const strId = String(appId).trim();
+      const confirmDelete = window.confirm(`Are you sure you want to PERMANENTLY delete application "${strId}"? / இந்த விண்ணப்பத்தை நிச்சயமாக நிரந்தரமாக நீக்க விரும்புகிறீர்களா?`);
+      if (!confirmDelete) return;
+
+      // 1. Blacklist & remove from local storage & memory & customer applications
+      deleteApplicationRecord(strId);
+
+      // 2. Remove from React state
+      if (setApplicationRecords) {
+        setApplicationRecords((prev = {}) => {
+          const copy = { ...prev };
+          delete copy[strId];
+          return copy;
+        });
       }
+      if (setCustomerRecords) {
+        setCustomerRecords((prevRecords = {}) => {
+          const updatedRecords = { ...prevRecords };
+          Object.keys(updatedRecords).forEach((key) => {
+            const cust = updatedRecords[key];
+            if (cust && Array.isArray(cust.applications)) {
+              const filteredApps = cust.applications.filter(a => a && String(a.id || a.ackNo).trim() !== strId);
+              if (filteredApps.length !== cust.applications.length) {
+                const cleanPhone = String(cust.phone || key).replace(/\D/g, '');
+                const updatedCust = { ...cust, phone: cleanPhone, applications: filteredApps, updatedAt: new Date().toISOString() };
+                updatedRecords[key] = updatedCust;
+                if (cleanPhone) {
+                  updatedRecords[cleanPhone] = updatedCust;
+                  saveCustomerProfileCloud(cleanPhone, updatedCust);
+                }
+              }
+            }
+          });
+          return updatedRecords;
+        });
+      }
+
+      // 3. Remove from Mongo Cloud
+      try {
+        await deleteApplicationCloud(strId);
+      } catch (e) {}
+
+      notify(`🗑️ Application ${strId} deleted permanently from everywhere!`);
+    };
+
+    const handleAddNewCustomer = async (e) => {
+      e.preventDefault();
+      const cleanPhone = newCustPhone.replace(/\D/g, '');
+      if (!cleanPhone || cleanPhone.length !== 10) {
+        notify('⚠️ தயவுசெய்து சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும் (Please enter 10-digit phone number).');
+        return;
+      }
+      if (!newCustName.trim()) {
+        notify('⚠️ வாடிக்கையாளர் பெயரை உள்ளிடவும் (Please enter Customer Name).');
+        return;
+      }
+
+      const existingCust = (customers || []).find(c => (c.phone || '').replace(/\D/g, '') === cleanPhone);
+      const updatedCust = {
+        ...(existingCust || {}),
+        phone: cleanPhone,
+        name: newCustName.trim(),
+        dob: newCustDob || existingCust?.dob || '',
+        aadhaarNo: newCustAadhar.trim() || existingCust?.aadhaarNo || '',
+        aadhar: newCustAadhar.trim() || existingCust?.aadhar || '',
+        notes: newCustNotes.trim() || existingCust?.notes || '',
+        profile: {
+          ...(existingCust?.profile || {}),
+          name: newCustName.trim(),
+          phone: cleanPhone,
+          dob: newCustDob || existingCust?.profile?.dob || '',
+          aadhaarNo: newCustAadhar.trim() || existingCust?.profile?.aadhaarNo || ''
+        },
+        applications: existingCust?.applications || [],
+        documents: existingCust?.documents || [],
+        updatedAt: new Date().toISOString()
+      };
+
+      await saveCustomerProfileCloud(cleanPhone, updatedCust);
+      if (setCustomerRecords) {
+        setCustomerRecords((prev) => ({
+          ...prev,
+          [cleanPhone]: updatedCust,
+          [newCustPhone]: updatedCust
+        }));
+      }
+      notify(`✅ வாடிக்கையாளர் ${newCustName.trim()} (+91 ${cleanPhone}) வெற்றிகரமாகச் சேர்க்கப்பட்டார்!`);
+
+      setNewCustName('');
+      setNewCustPhone('');
+      setNewCustDob('');
+      setNewCustAadhar('');
+      setNewCustNotes('');
+      setShowAddCustForm(false);
+      setActiveCustomer(cleanPhone);
+    };
+
+    const handleSendMonthlyWhatsAppReminder = async (customer) => {
+      if (!customer) return;
+      const cleanPhone = String(customer.phone || '').replace(/\D/g, '');
+      if (!cleanPhone || cleanPhone.length !== 10) {
+        notify('⚠️ செல்லுபடியாகும் மொபைல் எண் இல்லை (Invalid phone number).');
+        return;
+      }
+      const custName = customer.profile?.name || customer.name || 'வாடிக்கையாளர்';
+      const reminderMsg = encodeURIComponent(
+        `வணக்கம் ${custName} அவர்களுக்கு,\n\n` +
+        `AkEsevai டிஜிட்டல் சேவை மையம் (பழனி) சார்பாக மாதாந்திர அன்பு வாழ்த்துகள்! 🌸\n\n` +
+        `உங்கள் ஆதார், ரேஷன் கார்டு, வருமானச் சான்றிதழ், பட்டா சிட்டா, வாக்காளர் அட்டை அல்லது அரசின் புதிய திட்டங்கள்/புதுப்பிப்பு சேவைகளுக்கு எங்களை அணுகலாம்.\n\n` +
+        `📍 முகவரி: Mill Road, Sanmugapuram, Palani - 624601\n` +
+        `📞 தொடர்புக்கு: 93423 18844\n` +
+        `🌐 AkEsevai Portal: akesevaipalani.com`
+      );
+
+      window.open(`https://wa.me/91${cleanPhone}?text=${reminderMsg}`, '_blank');
+
+      const updatedRecord = {
+        ...customer,
+        phone: cleanPhone,
+        lastReminderSent: new Date().toISOString()
+      };
+      await saveCustomerProfileCloud(cleanPhone, updatedRecord);
+      if (setCustomerRecords) {
+        setCustomerRecords((prev) => ({
+          ...prev,
+          [cleanPhone]: updatedRecord
+        }));
+      }
+      notify(`💬 ${custName} அவர்களுக்கு WhatsApp மாதாந்திர நினைவுறுத்தல் அனுப்பப்பட்டது!`);
     };
 
     const handleSaveEditCustomer = async () => {
@@ -1975,10 +2787,17 @@ const getServiceVisual = (group, title = '') => {
 
       const updatedRecord = {
         ...editingCustomer,
+        name: editName,
         phone: cleanNewPhone,
+        dob: editDob || editingCustomer.dob || '',
+        aadhaarNo: editAadhaar || editingCustomer.aadhaarNo || '',
+        aadhar: editAadhaar || editingCustomer.aadhar || '',
         profile: {
           ...(editingCustomer.profile || {}),
-          name: editName
+          name: editName,
+          phone: cleanNewPhone,
+          dob: editDob || editingCustomer.profile?.dob || '',
+          aadhaarNo: editAadhaar || editingCustomer.profile?.aadhaarNo || ''
         },
         updatedAt: new Date().toISOString()
       };
@@ -1996,26 +2815,32 @@ const getServiceVisual = (group, title = '') => {
         });
       }
       setEditingCustomer(null);
-      notify('🎉 Customer profile updated and synced to Firebase Cloud!');
+      notify('🎉 Customer profile updated successfully!');
     };
 
     const handleDeleteCustomer = async (cust) => {
       if (!cust) return;
       const custName = cust.profile?.name || cust.name || 'Customer';
-      const confirmDelete = window.confirm(`Are you sure you want to remove customer "${custName}" (+91 ${cust.phone}) from Firebase Cloud?`);
+      const cleanPhone = String(cust.phone || '').replace(/\D/g, '');
+      const confirmDelete = window.confirm(`Are you sure you want to PERMANENTLY remove customer "${custName}" (+91 ${cleanPhone})?\n\nஇந்த வாடிக்கையாளரின் அனைத்து விவரங்கள், பதிவேற்றிய ஆவணங்கள் மற்றும் டோக்கன் சீட்டுகளை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`);
       if (confirmDelete) {
-        const cleanPhone = String(cust.phone).replace(/\D/g, '');
         if (setCustomerRecords) {
-          setCustomerRecords((prev) => {
-            const updated = { ...prev };
-            delete updated[cleanPhone];
-            delete updated[cust.phone];
-            return updated;
+          setCustomerRecords((prevRecords = {}) => {
+            const copy = {};
+            Object.keys(prevRecords).forEach((k) => {
+              const kClean = String(k).replace(/\D/g, '');
+              const valClean = String(prevRecords[k]?.phone || prevRecords[k]?.profile?.phone || '').replace(/\D/g, '');
+              if (kClean !== cleanPhone && valClean !== cleanPhone) {
+                copy[k] = prevRecords[k];
+              }
+            });
+            return copy;
           });
         }
         setActiveCustomer('');
+        await deleteCustomerProfileCloud(cleanPhone);
         await deleteCustomerProfileCloud(cust.phone);
-        notify(`🗑️ Customer ${custName} removed from Firebase database!`);
+        notify(`🗑️ Customer ${custName} (+91 ${cleanPhone}) deleted permanently from all pages & database!`);
       }
     };
 
@@ -2030,15 +2855,34 @@ const getServiceVisual = (group, title = '') => {
     };
 
     const handleDeleteToken = async (tok) => {
-      if (!tok || !tok.tokenNo) return;
-      const confirmDelete = window.confirm(`Delete Token ${tok.tokenNo} for ${tok.customerName}?`);
-      if (confirmDelete) {
-        if (setTokenBookings) {
-          setTokenBookings((prev) => prev.filter(t => String(t.tokenNo) !== String(tok.tokenNo)));
-        }
-        await deleteTokenBookingCloud(tok.tokenNo);
-        notify(`🗑️ Token ${tok.tokenNo} removed!`);
+      if (!tok) return;
+      const targetTokNo = String(tok.tokenNo || tok.tokenId || tok.id || '');
+      if (!targetTokNo) return;
+
+      const confirmDelete = window.confirm(`Are you sure you want to PERMANENTLY delete Token ${targetTokNo} for ${tok.customerName || tok.applicantName || 'Customer'}?\n\nஇந்த டோக்கன் சீட்டை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`);
+      if (!confirmDelete) return;
+
+      if (setTokenBookings) {
+        setTokenBookings((prev) => prev.filter(t => String(t.tokenNo || t.tokenId || t.id) !== targetTokNo));
       }
+
+      if (setCustomerRecords) {
+        setCustomerRecords((prevRecords = {}) => {
+          const updated = { ...prevRecords };
+          Object.keys(updated).forEach((k) => {
+            if (updated[k] && updated[k].lastToken) {
+              const tNo = String(updated[k].lastToken.tokenNo || updated[k].lastToken.tokenId || updated[k].lastToken.id || '');
+              if (tNo === targetTokNo) {
+                updated[k] = { ...updated[k], lastToken: null, updatedAt: new Date().toISOString() };
+              }
+            }
+          });
+          return updated;
+        });
+      }
+
+      await deleteTokenBookingCloud(targetTokNo, tok.phone || tok.customerPhone);
+      notify(`🗑️ Token ${targetTokNo} removed permanently from all pages & database!`);
     };
 
     return (
@@ -2047,14 +2891,14 @@ const getServiceVisual = (group, title = '') => {
           <div><span className="section-kicker">ADMIN DASHBOARD</span><h1>Customer <em>requests.</em></h1><p>View submitted services, documents, and token bookings.</p></div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button className="logout-button" style={{ background: '#0052cc', color: 'white', borderColor: '#0043a8' }} onClick={async () => {
-              notify('⏳ Fetching latest data from Firebase Cloud...');
+              notify('⏳ Fetching latest data from cloud database...');
               const cloud = await fetchAllCloudRecords();
               if (cloud) {
-                notify('✅ Firebase Cloud sync complete!');
+                notify('✅ Database sync complete!');
               } else {
                 notify('⚡ Using latest synchronized cloud state');
               }
-            }}><Sparkles size={14} /> 🔄 Sync Firebase Cloud</button>
+            }}><Sparkles size={14} /> 🔄 Sync Database</button>
             <button className="logout-button" onClick={logout}><LogOut size={14} /> Logout admin</button>
           </div>
         </div>
@@ -2066,33 +2910,78 @@ const getServiceVisual = (group, title = '') => {
           <button onClick={() => navigate('photo-maker')}><Camera size={18} /><span><strong>Photo Maker</strong><small>Private photo tools</small></span></button>
         </div>
         <div className="dashboard-stats">
-          <div><span className="stat-icon yellow"><Users /></span><span><strong>{customers.length}</strong><small>Customers</small></span></div>
-          <div><span className="stat-icon blue"><FileText /></span><span><strong>{totalApplications}</strong><small>Service requests</small></span></div>
-          <div><span className="stat-icon green"><FileCheck2 /></span><span><strong>{totalDocuments}</strong><small>Uploaded documents</small></span></div>
-          <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><CalendarDays /></span><span><strong>{tokenBookings.length}</strong><small>Token Bookings</small></span></div>
-          <div><span className="stat-icon" style={{ background: '#f0fdf4', color: '#16a34a' }}><IndianRupee /></span><span><strong>₹{tokenBookings.length * 50}</strong><small>Est. Token Revenue</small></span></div>
+          <div
+            onClick={() => setAdminTab('customers')}
+            style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+            title="Click to view Customer Requests & Profiles (வாடிக்கையாளர்கள்)"
+          >
+            <span className="stat-icon yellow"><Users /></span>
+            <span><strong>{customers.length}</strong><small>Customers (வாடிக்கையாளர்கள்)</small></span>
+          </div>
+
+          <div
+            onClick={() => setAdminTab('applications')}
+            style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+            title="Click to view Applications Manager (விண்ணப்பங்கள்)"
+          >
+            <span className="stat-icon blue"><FileText /></span>
+            <span><strong>{totalApplications}</strong><small>Service requests (விண்ணப்பங்கள்)</small></span>
+          </div>
+
+          <div
+            onClick={() => setAdminTab('smartdesk')}
+            style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+            title="Click to view Uploaded Documents in Smart Desk (ஆவணங்கள்)"
+          >
+            <span className="stat-icon green"><FileCheck2 /></span>
+            <span><strong>{totalDocuments}</strong><small>Uploaded documents (ஆவணங்கள்)</small></span>
+          </div>
+
+          <div
+            onClick={() => setAdminTab('tokens')}
+            style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+            title="Click to view Token Bookings (டோக்கன் சீட்டுகள்)"
+          >
+            <span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><CalendarDays /></span>
+            <span><strong>{combinedTokensList.length}</strong><small>Token Bookings (டோக்கன்கள்)</small></span>
+          </div>
+
+          <div
+            onClick={() => setAdminTab('tokens')}
+            style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+            title="Click to view Token Bookings & Revenue (வருமானம்)"
+          >
+            <span className="stat-icon" style={{ background: '#f0fdf4', color: '#16a34a' }}><IndianRupee /></span>
+            <span><strong>₹{combinedTokensList.length * 50}</strong><small>Est. Token Revenue (வருமானம்)</small></span>
+          </div>
         </div>
         <div className="dashboard-tabs" style={{ marginBottom: '24px' }}>
           <button className={adminTab === 'applications' ? 'tab-active' : ''} onClick={() => setAdminTab('applications')} style={{ background: adminTab === 'applications' ? '#0052cc' : undefined, color: adminTab === 'applications' ? 'white' : undefined }}>📋 Applications Manager ({allAppsList.length})</button>
-          <button className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests</button>
-          <button className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings {tokenBookings.length > 0 && <span className="tab-count">{tokenBookings.length}</span>}</button>
+          <button className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests ({customers.length})</button>
+          <button className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings ({combinedTokensList.length})</button>
           <button className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={() => setAdminTab('notifications')} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
           <button className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={() => setAdminTab('smartdesk')} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
-          <button className={adminTab === 'analytics' ? 'tab-active' : ''} onClick={() => setAdminTab('analytics')} style={{ background: adminTab === 'analytics' ? '#7c3aed' : undefined, color: adminTab === 'analytics' ? 'white' : undefined }}>📊 Revenue Analytics</button>
-          <button className={adminTab === 'queue' ? 'tab-active' : ''} onClick={() => setAdminTab('queue')} style={{ background: adminTab === 'queue' ? '#0052cc' : undefined, color: adminTab === 'queue' ? 'white' : undefined }}>⚙️ Live Center Queue Control</button>
         </div>
 
         {editingCustomer && (
           <div style={{ background: '#f8fafc', border: '2px solid #3b82f6', borderRadius: '12px', padding: '16px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 20px rgba(0,0,0,0.06)' }}>
             <h3 style={{ margin: 0, fontSize: '15px', color: '#1e3a8a', display: 'flex', alignItems: 'center', gap: '6px' }}>✏️ Edit Customer Profile ({editingCustomer.phone})</h3>
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+              <label style={{ flex: 1, minWidth: '180px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
                 Customer Name:
                 <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
               </label>
-              <label style={{ flex: 1, minWidth: '200px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+              <label style={{ flex: 1, minWidth: '180px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
                 Mobile Phone Number:
                 <input type="text" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
+              </label>
+              <label style={{ flex: 1, minWidth: '180px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+                Date of Birth (DOB):
+                <input type="date" value={editDob} onChange={(e) => setEditDob(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
+              </label>
+              <label style={{ flex: 1, minWidth: '180px', fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+                Aadhaar Number:
+                <input type="text" value={editAadhaar} onChange={(e) => setEditAadhaar(e.target.value)} placeholder="12-digit Aadhaar" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }} />
               </label>
             </div>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -2235,9 +3124,121 @@ const getServiceVisual = (group, title = '') => {
           </div>
         )}
 
-        {adminTab === 'analytics' && (
+        {adminTab === 'visitors' && (
           <div style={{ marginTop: '10px' }}>
-            <AdminRevenueDashboard tokenBookings={tokenBookings} />
+            <div style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '2px solid #334155', borderRadius: '16px', padding: '20px 24px', marginBottom: '20px', color: 'white' }}>
+              <div style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '1px', color: '#fbbf24', textTransform: 'uppercase' }}>REAL-TIME TRAFFIC & VISITORS MONITOR</div>
+              <h2 style={{ margin: '4px 0 0', fontSize: '20px', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                👀 தினசரி பார்வையாளர்கள் மேலாண்மை (Daily Visitor Analytics)
+              </h2>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#94a3b8' }}>
+                உங்கள் AkEsevai இணையதளத்தை தினமும் யாரெல்லாம் பார்வையிடுகிறார்கள், எந்தப் பக்கத்தைப் பார்க்கிறார்கள் மற்றும் மொபைல்/கணினி விவரங்களை நேரலையாகக் காணலாம்.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginTop: '18px' }}>
+                <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px' }}>
+                  <small style={{ color: '#fbbf24', fontWeight: 800, textTransform: 'uppercase', fontSize: '11px', display: 'block' }}>இன்றைய பார்வையாளர்கள் (Today's Visitors)</small>
+                  <strong style={{ fontSize: '24px', color: 'white', display: 'block', marginTop: '4px' }}>
+                    {visitorLogs.filter(l => l.date === new Date().toISOString().split('T')[0]).length}
+                  </strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px' }}>
+                  <small style={{ color: '#4ade80', fontWeight: 800, textTransform: 'uppercase', fontSize: '11px', display: 'block' }}>மொத்த வருகைப் பதிவுகள் (Total Visitor Logs)</small>
+                  <strong style={{ fontSize: '24px', color: 'white', display: 'block', marginTop: '4px' }}>
+                    {visitorLogs.length}
+                  </strong>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px' }}>
+                  <small style={{ color: '#60a5fa', fontWeight: 800, textTransform: 'uppercase', fontSize: '11px', display: 'block' }}>மொபைல் பயனர்கள் (Mobile Users)</small>
+                  <strong style={{ fontSize: '24px', color: 'white', display: 'block', marginTop: '4px' }}>
+                    {visitorLogs.filter(l => (l.device || '').toLowerCase().includes('mobile')).length}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div className="service-search" style={{ flex: 1, margin: 0 }}>
+                <Search size={18} />
+                <input
+                  type="text"
+                  value={visitorSearch}
+                  onChange={(e) => setVisitorSearch(e.target.value)}
+                  placeholder="🔍 பார்வையாளர் பெயர், மொபைல் எண், பக்கம் அல்லது தேதி வைத்துத் தேடவும்..."
+                />
+                {visitorSearch && (
+                  <button type="button" onClick={() => setVisitorSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--muted)' }}>Clear</button>
+                )}
+              </div>
+            </div>
+
+            <div className="token-bookings-table-wrap" style={{ background: 'white', borderRadius: '14px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+              <table className="admin-token-table">
+                <thead>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <th>தேதி & நேரம் (Date & Time)</th>
+                    <th>பார்வையாளர் விவரம் (Visitor Name / Mobile)</th>
+                    <th>பார்த்த பக்கம் (Page Visited)</th>
+                    <th>சாதனம் (Device / Browser)</th>
+                    <th>நடவடிக்கை (Action)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visitorLogs.filter((l) => {
+                    const q = visitorSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return (l.name || '').toLowerCase().includes(q) || (l.phone || '').toLowerCase().includes(q) || (l.page || '').toLowerCase().includes(q) || (l.date || '').toLowerCase().includes(q) || (l.device || '').toLowerCase().includes(q);
+                  }).length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>
+                        பார்வையாளர் பதிவுகள் எதுவும் கிடைக்கவில்லை (No visitor logs found).
+                      </td>
+                    </tr>
+                  ) : (
+                    visitorLogs.filter((l) => {
+                      const q = visitorSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return (l.name || '').toLowerCase().includes(q) || (l.phone || '').toLowerCase().includes(q) || (l.page || '').toLowerCase().includes(q) || (l.date || '').toLowerCase().includes(q) || (l.device || '').toLowerCase().includes(q);
+                    }).map((log, idx) => (
+                      <tr key={log.id || idx}>
+                        <td>
+                          <strong style={{ fontSize: '12px', color: '#1e293b' }}>{log.date || 'Today'}</strong>
+                          <small style={{ display: 'block', color: '#64748b', fontSize: '10px' }}>{log.time || log.timestamp || 'Recently'}</small>
+                        </td>
+                        <td>
+                          <strong style={{ fontSize: '13px', color: '#0f172a' }}>👤 {log.name || 'Guest Visitor'}</strong>
+                          {log.phone && (
+                            <small style={{ display: 'block', color: '#2563eb', fontWeight: 700, fontSize: '11px' }}>
+                              📱 +91 {log.phone}
+                            </small>
+                          )}
+                        </td>
+                        <td>
+                          <span style={{ background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 800 }}>
+                            📄 {log.page || 'Home'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '12px', color: '#475569' }}>
+                          {log.device || 'Mobile Browser'}
+                        </td>
+                        <td>
+                          {log.phone ? (
+                            <button
+                              onClick={() => window.open(`https://wa.me/91${log.phone.replace(/\D/g, '')}`, '_blank')}
+                              style={{ background: '#16a34a', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <MessageCircle size={13} /> WhatsApp மெசேஜ்
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>இணைப்பில்லை (Guest)</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -2245,7 +3246,52 @@ const getServiceVisual = (group, title = '') => {
         {adminTab === 'customers' && (
           <div className="admin-grid">
             <aside className="admin-customers">
-              <div className="panel-heading"><div><span className="section-kicker">CUSTOMERS</span><h2>All requests</h2></div></div>
+              <div className="panel-heading" style={{ flexWrap: 'wrap', gap: '8px' }}>
+                <div><span className="section-kicker">CUSTOMERS REGISTER</span><h2>All requests ({matchingCustomers.length})</h2></div>
+                <button
+                  onClick={() => setShowAddCustForm(!showAddCustForm)}
+                  style={{
+                    background: showAddCustForm ? '#94a3b8' : '#16a34a',
+                    color: 'white',
+                    border: 'none',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {showAddCustForm ? '✕ Close' : '➕ New Customer'}
+                </button>
+              </div>
+
+              {showAddCustForm && (
+                <form onSubmit={handleAddNewCustomer} style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '10px', padding: '12px', marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <strong style={{ fontSize: '12px', color: '#15803d' }}>➕ புதிய வாடிக்கையாளர் பதிவு (New Registration)</strong>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#374151' }}>
+                    பெயர் (Name)*:
+                    <input type="text" required value={newCustName} onChange={(e) => setNewCustName(e.target.value)} placeholder="e.g. Ramesh" style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', marginTop: '2px', fontSize: '12px' }} />
+                  </label>
+                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#374151' }}>
+                    மொபைல் எண் (Mobile)*:
+                    <input type="tel" required maxLength="10" value={newCustPhone} onChange={(e) => setNewCustPhone(e.target.value)} placeholder="10-digit mobile" style={{ width: '100%', padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', marginTop: '2px', fontSize: '12px' }} />
+                  </label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <label style={{ flex: 1, fontSize: '11px', fontWeight: 700, color: '#374151' }}>
+                      பிறந்த தேதி (DOB):
+                      <input type="date" value={newCustDob} onChange={(e) => setNewCustDob(e.target.value)} style={{ width: '100%', padding: '5px', borderRadius: '4px', border: '1px solid #cbd5e1', marginTop: '2px', fontSize: '11px' }} />
+                    </label>
+                    <label style={{ flex: 1, fontSize: '11px', fontWeight: 700, color: '#374151' }}>
+                      ஆதார் (Aadhaar):
+                      <input type="text" maxLength="14" value={newCustAadhar} onChange={(e) => setNewCustAadhar(e.target.value)} placeholder="12-digit Aadhaar" style={{ width: '100%', padding: '5px', borderRadius: '4px', border: '1px solid #cbd5e1', marginTop: '2px', fontSize: '11px' }} />
+                    </label>
+                  </div>
+                  <button type="submit" style={{ background: '#16a34a', color: 'white', border: 'none', padding: '7px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', marginTop: '2px' }}>
+                    💾 Save Customer Profile (சேமிக்க)
+                  </button>
+                </form>
+              )}
+
               <div className="service-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer or service" /></div>
               {matchingCustomers.length ? matchingCustomers.map((customer) => {
                 const custName = customer.profile?.name || customer.name || customer.phone || 'Customer';
@@ -2267,7 +3313,17 @@ const getServiceVisual = (group, title = '') => {
                 const profileRecord = liveCustomerMap[cleanSelectedPhone] || liveCustomerMap[selected.phone] || {};
                 const globalExpiryDocs = cloudExpiryDocs || [];
 
-                const selectedApps = Array.isArray(selected.applications) ? selected.applications : [];
+                const rawSelectedApps = Array.isArray(selected.applications) ? selected.applications : [];
+                // Deduplicate applications by ID / service name for clean display
+                const selectedAppsMap = new Map();
+                rawSelectedApps.forEach((app) => {
+                  if (!app) return;
+                  const key = String(app.id || app.name || '');
+                  if (!selectedAppsMap.has(key)) {
+                    selectedAppsMap.set(key, app);
+                  }
+                });
+                const selectedApps = Array.from(selectedAppsMap.values());
                 const selectedAppIds = selectedApps.map(a => a.id).filter(Boolean);
 
                 const combinedDocs = [
@@ -2289,9 +3345,36 @@ const getServiceVisual = (group, title = '') => {
                 ];
 
                 const selectedDocs = combinedDocs.reduce((acc, current) => {
-                  const docId = current.id || `${current.requirement}-${current.name}`;
-                  const exists = acc.find(item => (item.id && current.id && String(item.id) === String(current.id)) || (item.requirement && current.requirement && item.requirement.trim().toLowerCase() === current.requirement.trim().toLowerCase()));
-                  if (!exists) return acc.concat([current]);
+                  if (!current) return acc;
+                  const curReq = (current.requirement || current.title || '').trim().toLowerCase();
+                  const curId = String(current.id || '');
+
+                  const existingIndex = acc.findIndex((item) => {
+                    const itemReq = (item.requirement || item.title || '').trim().toLowerCase();
+                    const itemId = String(item.id || '');
+
+                    const reqMatch = curReq && itemReq && curReq === itemReq;
+                    const idMatch = curId && itemId && curId === itemId;
+
+                    return reqMatch || idMatch;
+                  });
+
+                  if (existingIndex === -1) {
+                    acc.push(current);
+                  } else {
+                    const existing = acc[existingIndex];
+                    const isExistingReqFilename = existing.requirement && (existing.requirement.endsWith('.jpg') || existing.requirement.endsWith('.png') || existing.requirement.endsWith('.jpeg') || existing.requirement.endsWith('.pdf'));
+                    const isCurReqFilename = current.requirement && (current.requirement.endsWith('.jpg') || current.requirement.endsWith('.png') || current.requirement.endsWith('.jpeg') || current.requirement.endsWith('.pdf'));
+
+                    const bestRequirement = (!isCurReqFilename && current.requirement) ? current.requirement : existing.requirement;
+                    acc[existingIndex] = {
+                      ...existing,
+                      ...current,
+                      requirement: bestRequirement || existing.requirement || current.requirement,
+                      url: current.url || current.data || existing.url || existing.data,
+                      data: current.url || current.data || existing.url || existing.data
+                    };
+                  }
                   return acc;
                 }, []);
 
@@ -2303,11 +3386,23 @@ const getServiceVisual = (group, title = '') => {
                       <div>
                         <span className="section-kicker">CUSTOMER DETAILS</span>
                         <h2>{selectedName}</h2>
-                        <p>+91 {selected.phone}</p>
+                        <p style={{ fontWeight: 800, color: '#16a34a' }}>📱 +91 {selected.phone}</p>
                       </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <button
-                          onClick={() => { setEditingCustomer(selected); setEditName(selectedName); setEditPhone(selected.phone || ''); }}
+                          onClick={() => handleSendMonthlyWhatsAppReminder(selected)}
+                          style={{ background: '#16a34a', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <MessageCircle size={14} /> 💬 மாதாந்திர WhatsApp நினைவுறுத்தல்
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingCustomer(selected);
+                            setEditName(selectedName);
+                            setEditPhone(selected.phone || '');
+                            setEditDob(selected.dob || selected.profile?.dob || profileRecord.dob || '');
+                            setEditAadhaar(selected.aadhaarNo || selected.aadhar || selected.profile?.aadhaarNo || profileRecord.aadhaarNo || '');
+                          }}
                           style={{ background: '#0052cc', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                         >
                           ✏️ Edit Profile
@@ -2321,45 +3416,140 @@ const getServiceVisual = (group, title = '') => {
                       </div>
                     </div>
 
-
-
-
-
-                    <h3 className="admin-section-title">Selected services</h3>
-                    {selectedApps.length ? selectedApps.map((application) => (
-                      <div className="admin-service-row" key={application.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span className="doc-symbol"><FileText size={17} /></span>
-                          <span>
-                            <strong>{application.name}</strong>
-                            <small>{application.id} · Status: <span style={{ color: application.status === 'Completed' ? '#16a34a' : '#d97706', fontWeight: 700 }}>{application.status}</span> · {application.date}</small>
-                          </span>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            const cleanPhone = String(selected.phone).replace(/\D/g, '');
-                            const updatedApps = selectedApps.map(a => a.id === application.id ? { ...a, status: 'Completed' } : a);
-                            const updatedRecord = {
-                              ...selected,
-                              applications: updatedApps,
-                              updatedAt: new Date().toISOString()
-                            };
-                            await saveCustomerProfileCloud(cleanPhone, updatedRecord);
-                            if (setCustomerRecords) {
-                              setCustomerRecords((prev) => ({
-                                ...prev,
-                                [cleanPhone]: updatedRecord,
-                                [selected.phone]: updatedRecord
-                              }));
-                            }
-                            notify(`🎉 Service "${application.name}" marked COMPLETED for ${selectedName}!`);
-                          }}
-                          style={{ background: '#f0fdf4', color: '#15803d', border: '1.5px solid #86efac', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        >
-                          ✅ Mark Completed (சேவை நிறைவு)
-                        </button>
+                    {/* Customer Profile Quick Overview Box: Aadhaar, DOB, Token & Reminder */}
+                    <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', fontSize: '12.5px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CreditCard size={16} color="#0052cc" />
+                        <span>ஆதார் எண்: <strong style={{ color: '#0f172a' }}>{selected.aadhaarNo || selected.aadhar || selected.profile?.aadhaarNo || selected.profile?.aadhar || profileRecord.aadhaarNo || profileRecord.aadhar || 'பதிவாகவில்லை'}</strong></span>
                       </div>
-                    )) : <p className="empty-customer-state">No service selected.</p>}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Calendar size={16} color="#d97706" />
+                        <span>பிறந்த தேதி: <strong style={{ color: '#0f172a' }}>{selected.dob || selected.profile?.dob || profileRecord.dob || 'பதிவாகவில்லை'}</strong></span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Ticket size={16} color="#16a34a" />
+                        <span>டோக்கன் சீட்டு: <strong style={{ color: '#16a34a' }}>{(selected.lastToken || profileRecord.lastToken) ? `${(selected.lastToken || profileRecord.lastToken).tokenNo} (${(selected.lastToken || profileRecord.lastToken).service || 'Service'})` : 'டோக்கன் இல்லை'}</strong></span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Clock size={16} color="#7c3aed" />
+                        <span>நினைவுறுத்தல்: <strong style={{ color: '#7c3aed' }}>{selected.lastReminderSent ? new Date(selected.lastReminderSent).toLocaleDateString('ta-IN') : 'இன்னும் அனுப்பப்படவில்லை'}</strong></span>
+                      </div>
+                    </div>
+
+
+
+
+
+                    <h3 className="admin-section-title">Selected services (விண்ணப்பித்த சேவைகள் & நிலைகள்)</h3>
+                    {selectedApps.length ? selectedApps.map((application) => {
+                      const appIdKey = application.id || application.ackNo;
+                      const storeRecord = applicationRecords && (applicationRecords[appIdKey] || applicationRecords[application.name]);
+                      const currentStageNum = storeRecord?.currentStage || application.currentStage || application.stage || (application.status === 'Completed' ? 6 : 1);
+
+                      return (
+                        <div className="admin-service-row" key={application.id || application.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span className="doc-symbol"><FileText size={17} /></span>
+                            <div>
+                              <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{application.name}</strong>
+                              <small style={{ fontSize: '11px', color: '#64748b' }}>
+                                ID: <strong>{application.id}</strong> · Submitted: {application.date}
+                              </small>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {/* Step-by-step Stage Change Selector Dropdown */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f1f5f9', padding: '4px 10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                              <small style={{ fontSize: '11px', fontWeight: 800, color: '#334155', textTransform: 'uppercase' }}>
+                                📊 Step / நிலை:
+                              </small>
+                              <select
+                                value={currentStageNum}
+                                onChange={(e) => {
+                                  const newStage = parseInt(e.target.value, 10);
+                                  handleUpdateAppStage(appIdKey, newStage, {
+                                    ...application,
+                                    id: appIdKey,
+                                    applicantName: selectedName,
+                                    phone: selected.phone,
+                                    service: application.name
+                                  });
+                                  notify(`🔄 ${application.name} நிலை Step ${newStage}-க்கு மாற்றப்பட்டது!`);
+                                }}
+                                style={{
+                                  padding: '5px 8px',
+                                  borderRadius: '6px',
+                                  border: '1.5px solid #0052cc',
+                                  fontWeight: 800,
+                                  fontSize: '11.5px',
+                                  cursor: 'pointer',
+                                  background: currentStageNum === 6 ? '#f0fdf4' : '#eff6ff',
+                                  color: currentStageNum === 6 ? '#15803d' : '#1d4ed8'
+                                }}
+                              >
+                                <option value={1}>Step 1: விண்ணப்பம் பெறப்பட்டது (Received)</option>
+                                <option value={2}>Step 2: ஆவணங்கள் சரிபார்க்கப்பட்டது (Verified)</option>
+                                <option value={3}>Step 3: கட்டணம் பெறப்பட்டது (Fee Paid)</option>
+                                <option value={4}>Step 4: அரசு தளத்தில் தாக்கல் செய்யப்பட்டது (Submitted to Govt)</option>
+                                <option value={5}>Step 5: அதிகாரி பரிசீலனை (Officer Review)</option>
+                                <option value={6}>Step 6: சான்றிதழ் தயார் / நிறைவடைந்தது (Approved & Completed)</option>
+                              </select>
+                            </div>
+
+                            <button
+                              onClick={async () => {
+                                const cleanPhone = String(selected.phone).replace(/\D/g, '');
+                                handleUpdateAppStage(appIdKey, 6, {
+                                  ...application,
+                                  id: appIdKey,
+                                  applicantName: selectedName,
+                                  phone: selected.phone,
+                                  service: application.name
+                                });
+                                notify(`🎉 Service "${application.name}" marked COMPLETED for ${selectedName}!`);
+                              }}
+                              style={{ background: '#f0fdf4', color: '#15803d', border: '1.5px solid #86efac', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              ✅ Mark Completed
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (window.confirm(`Are you sure you want to delete application "${application.name}" (${application.id})? / இந்த விண்ணப்பத்தை நீக்க விரும்புகிறீர்களா?`)) {
+                                  const cleanPhone = String(selected.phone).replace(/\D/g, '');
+                                  const updatedApps = (selected.applications || []).filter(a => a.id !== application.id && a.name !== application.name);
+                                const updatedRecord = {
+                                  ...selected,
+                                  applications: updatedApps,
+                                  updatedAt: new Date().toISOString()
+                                };
+                                await saveCustomerProfileCloud(cleanPhone, updatedRecord);
+                                if (application.id) await deleteApplicationCloud(application.id);
+                                if (setCustomerRecords) {
+                                  setCustomerRecords((prev) => ({
+                                    ...prev,
+                                    [cleanPhone]: updatedRecord,
+                                    [selected.phone]: updatedRecord
+                                  }));
+                                }
+                                if (setApplicationRecords && application.id) {
+                                  setApplicationRecords((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[application.id];
+                                    return copy;
+                                  });
+                                }
+                                notify(`🗑️ Application "${application.name}" deleted successfully!`);
+                              }
+                            }}
+                            style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <Trash2 size={13} /> Delete (நீக்கு)
+                          </button>
+                          </div>
+                        </div>
+                      );
+                    }) : <p className="empty-customer-state">No service selected.</p>}
                     <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
                     {selectedDocs.length ? selectedDocs.map((document, idx) => (
                       <div className="admin-service-row" key={document.id || idx} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
@@ -2383,7 +3573,7 @@ const getServiceVisual = (group, title = '') => {
                             className="document-open"
                             onClick={async () => {
                               const reqName = document.requirement || document.name;
-                              if (window.confirm(`Are you sure you want to PERMANENTLY delete document "${reqName}"?`)) {
+                              if (window.confirm(`Are you sure you want to PERMANENTLY delete document "${reqName}"? / இந்த ஆவணத்தை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`)) {
                                 const docId = document.id || document.url;
                                 const phone = selected.phone;
 
@@ -2393,17 +3583,20 @@ const getServiceVisual = (group, title = '') => {
                                     const custObj = prev[cleanPhone] || prev[phone];
                                     if (!custObj) return prev;
                                     const updatedDocs = (custObj.documents || []).filter(
-                                      (d) => String(d.id) !== String(docId) && d.requirement !== reqName && String(d.url || d.data) !== String(docId)
+                                      (d) => String(d.id) !== String(docId) && d.requirement !== reqName && String(d.url || d.data) !== String(docId) && String(d.name) !== String(document.name)
                                     );
+                                    const updatedCust = { ...custObj, documents: updatedDocs, updatedAt: new Date().toISOString() };
+                                    saveCustomerProfileCloud(cleanPhone, updatedCust);
                                     return {
                                       ...prev,
-                                      [cleanPhone]: { ...custObj, documents: updatedDocs }
+                                      [cleanPhone]: updatedCust,
+                                      [phone]: updatedCust
                                     };
                                   });
                                 }
 
                                 await deleteExpiryDocumentCloud(docId, phone);
-                                notify(`🗑️ Document "${reqName}" deleted from Firebase Cloud!`);
+                                notify(`🗑️ Document "${reqName}" deleted successfully!`);
                               }
                             }}
                             title="Delete Document"
@@ -2465,16 +3658,15 @@ const getServiceVisual = (group, title = '') => {
                       <option value="CHECKED-IN / VERIFIED">🟢 VERIFIED / CHECKED-IN (பெறப்பட்டது)</option>
                       <option value="AWAITING VISIT">🟡 AWAITING VISIT (காத்திருப்பில்)</option>
                       <option value="COMPLETED / SERVED">🔵 COMPLETED / SERVED (நிறைவடைந்தது)</option>
-                      <option value="NO-SHOW / CANCELLED">🔴 NO-SHOW / CANCELLED (வரவில்லை / ரத்து)</option>
+                      <option value="NO-SHOW / CANCELLED">🔴 NO-SHOW / CANCELLED (வரவில்லை)</option>
                     </select>
                   </td>
                   <td>
                     <button
-                      onClick={() => handleDeleteToken(tok)}
-                      title="Delete Token"
-                      style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '5px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                      onClick={() => handleRemoveToken(tok)}
+                      style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
                     >
-                      <Trash2 size={13} />
+                      Delete
                     </button>
                   </td>
                 </tr>
@@ -2482,206 +3674,281 @@ const getServiceVisual = (group, title = '') => {
             })}</tbody></table></div>}
           </div>
         )}
-        {adminTab === 'queue' && (
-          <div style={{ marginTop: '10px' }}>
-            <AdminLiveQueueControlForm />
-          </div>
-        )}
       </section>
-    );
-  }
-
-  function CustomerImageCompressorWidget({ notify, customer, updateCustomer }) {
-    const [file, setFile] = useState(null);
-    const [originalKb, setOriginalKb] = useState(0);
-    const [targetKb, setTargetKb] = useState(100);
-    const [compressedUrl, setCompressedUrl] = useState(null);
-    const [compressedKb, setCompressedKb] = useState(0);
-    const [isProcessing, setIsProcessing] = useState(false);
-
-    const processImageCompression = (dataUrl, targetSizeKb) => {
-      setIsProcessing(true);
-      const img = new Image();
-      img.onload = () => {
-        let quality = 0.90;
-        let width = img.width;
-        let height = img.height;
-
-        const maxDim = targetSizeKb <= 100 ? 800 : 1200;
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        let resultUrl = canvas.toDataURL('image/jpeg', quality);
-        let kb = Math.round((resultUrl.length * 3) / 4 / 1024);
-
-        while (kb > targetSizeKb && quality > 0.08) {
-          quality -= 0.06;
-          resultUrl = canvas.toDataURL('image/jpeg', quality);
-          kb = Math.round((resultUrl.length * 3) / 4 / 1024);
-        }
-
-        setCompressedUrl(resultUrl);
-        setCompressedKb(kb);
-        setIsProcessing(false);
-      };
-      img.onerror = () => setIsProcessing(false);
-      img.src = dataUrl;
-    };
-
-    const handleFileSelect = (e) => {
-      const selectedFile = e.target.files?.[0];
-      if (!selectedFile) return;
-
-      setFile(selectedFile);
-      setOriginalKb(Math.round(selectedFile.size / 1024));
-
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        processImageCompression(ev.target.result, targetKb);
-      };
-      reader.readAsDataURL(selectedFile);
-    };
-
-    const handleTargetChange = (newTarget) => {
-      setTargetKb(newTarget);
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => processImageCompression(ev.target.result, newTarget);
-        reader.readAsDataURL(file);
-      }
-    };
-
-    return (
-      <div style={{ background: '#f8fafc', border: '2px solid #0052cc', borderRadius: '16px', padding: '24px', margin: '16px 0' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', borderBottom: '1.5px solid #cbd5e1', paddingBottom: '12px' }}>
-          <div>
-            <span style={{ background: '#eff6ff', color: '#0052cc', padding: '4px 12px', borderRadius: '16px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <Camera size={14} /> CUSTOMER IMAGE & DOCUMENT COMPRESSOR
-            </span>
-            <h3 style={{ font: '900 20px Manrope', color: '#022c7a', margin: '6px 0 0' }}>
-              📸 ஸ்மார்ட் போட்டோ & ஆவண அமுக்கி <span>(Target Size Compressor)</span>
-            </h3>
-            <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-              அரசு இ-சேவை தளங்களுக்கு ஏற்றவாறு உங்கள் போட்டோ / ஆவணங்களின் அளவை (KB) 1-கிளிக்கில் சுருக்கவும்.
-            </p>
-          </div>
-        </div>
-
-        {/* Target Size Presets */}
-        <div style={{ marginBottom: '18px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', display: 'block', marginBottom: '8px' }}>
-            தேவையான அளவு வரம்பு (Target KB Limit Select):
-          </label>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {[
-              { kb: 50, label: '🎯 < 50 KB (கையொப்பம் / Signature)' },
-              { kb: 100, label: '🎯 < 100 KB (TNEGA / Passport Photo)' },
-              { kb: 200, label: '🎯 < 200 KB (சான்றிதழ் / Aadhaar Doc)' },
-              { kb: 500, label: '🎯 < 500 KB (பொது ஆவணம் / General)' }
-            ].map((item) => (
-              <button
-                key={item.kb}
-                type="button"
-                onClick={() => handleTargetChange(item.kb)}
-                style={{
-                  background: targetKb === item.kb ? '#0052cc' : 'white',
-                  color: targetKb === item.kb ? 'white' : '#1e293b',
-                  border: targetKb === item.kb ? '2px solid #0052cc' : '1.5px solid #cbd5e1',
-                  borderRadius: '10px',
-                  padding: '8px 14px',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  boxShadow: targetKb === item.kb ? '0 4px 12px rgba(0,82,204,0.25)' : 'none'
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Upload Input */}
-        <div style={{ background: 'white', border: '2px dashed #0052cc', borderRadius: '12px', padding: '24px', textAlign: 'center', marginBottom: '20px' }}>
-          <UploadCloud size={36} color="#0052cc" style={{ marginBottom: '8px' }} />
-          <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>
-            {file ? `தேர்ந்தெடுக்கப்பட்ட படம்: ${file.name}` : 'புகைப்படம் அல்லது ஆவணத்தைத் தேர்ந்தெடுக்கவும்'}
-          </h4>
-          <small style={{ color: '#64748b', fontSize: '11px', display: 'block', margin: '4px 0 12px' }}>
-            JPG, PNG அல்லது WebP படங்கள் (Up to 15 MB)
-          </small>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFileSelect}
-            style={{ display: 'inline-block', fontSize: '12px' }}
-          />
-        </div>
-
-        {/* Compression Result Preview */}
-        {compressedUrl && (
-          <div style={{ background: 'white', border: '2px solid #16a34a', borderRadius: '14px', padding: '18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <img src={compressedUrl} alt="Compressed Result" style={{ width: '80px', height: '80px', objectFit: 'contain', border: '1px solid #cbd5e1', borderRadius: '10px', background: '#f8fafc' }} />
-              <div>
-                <div style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '4px 10px', borderRadius: '14px', fontSize: '12px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <Check size={14} /> வெற்றி! சுருக்கப்பட்டது ({compressedKb} KB)
-                </div>
-                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
-                  அசல் அளவு: <strong>{originalKb} KB</strong> • இலக்கு அளவு: <strong>&lt; {targetKb} KB</strong>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <a
-                href={compressedUrl}
-                download={`compressed_${file?.name || 'document.jpg'}`}
-                style={{
-                  background: '#16a34a',
-                  color: 'white',
-                  padding: '10px 18px',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: 900,
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 12px rgba(22,163,74,0.25)'
-                }}
-              >
-                <Download size={16} /> 📥 பதிவிறக்கு (Download JPG)
-              </a>
-            </div>
-          </div>
-        )}
-      </div>
     );
   }
 
   function CustomerPage({ customer, updateCustomer, logout, notify, saveToken, cloudExpiryDocs = [] }) {
     const [activeTab, setActiveTab] = useState('overview');
     const [selectedService, setSelectedService] = useState('');
+    const [showNotifications, setShowNotifications] = useState(false);
     const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
-    if (!customer.profile.complete) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> Customer profile</span><h1>Welcome to<br /><em>AkEsevai.</em></h1><p>Please enter your name once. We will save it with your mobile number for your next login.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); const cleanedName = name.trim(); if (!cleanedName) return; updateCustomer((current) => ({ ...current, profile: { ...current.profile, name: cleanedName, complete: true } })); notify('Your name has been saved. Welcome to your dashboard.'); }}><div className="login-icon"><UserRound size={22} /></div><span className="section-kicker">YOUR DETAILS</span><h2>What is your name?</h2><p>This is visible only in your customer account and to AkEsevai administration.</p><label>Full name<input className="admin-password" autoFocus required value={name} onChange={(event) => setName(event.target.value)} placeholder="Enter your full name" /></label><button className="button button-primary button-wide" type="submit">Continue <ArrowRight size={17} /></button></form></section>;
-    const tabs = [['overview', 'Overview'], ['documents', 'My documents'], ['compressor', '📸 போட்டோ அமுக்கி (Compressor)'], ['token-slip', '🎫 Token Slip']];
-    const applications = customer.applications;
-    const addApplication = (event) => { event.preventDefault(); if (!selectedService) return; const service = serviceCatalog.find(([, title]) => title === selectedService); const requirements = getRequiredDocuments(selectedService, service?.[2]); const application = { id: `AK-${Date.now().toString().slice(-8)}`, name: selectedService, status: 'Submitted', date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), progress: 22, requirements }; updateCustomer((current) => ({ ...current, applications: [application, ...current.applications] })); setSelectedService(''); setActiveTab('documents'); notify('🎉 Service selected!'); };
-    const initials = customer.profile.name.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+    const [dobInput, setDobInput] = useState(customer.profile.dob || customer.dob || '');
+    const [aadhaarInput, setAadhaarInput] = useState(customer.profile.aadhaarNo || customer.profile.aadhar || customer.aadhaarNo || customer.aadhar || '');
+
+    // Editable state inside customer settings
+    const [editName, setEditName] = useState(customer.profile.name || '');
+    const [editDob, setEditDob] = useState(customer.profile.dob || customer.dob || '');
+    const [editAadhaar, setEditAadhaar] = useState(customer.profile.aadhaarNo || customer.profile.aadhar || customer.aadhaarNo || customer.aadhar || '');
+
+    // FIRST TIME PROFILE COMPLETION SCREEN: Name, DOB, Aadhaar Number
+    if (!customer.profile.complete) {
+      return (
+        <section className="customer-entry">
+          <div className="login-art">
+            <span className="eyebrow"><span className="live-dot" /> Customer Profile Registration</span>
+            <h1>Welcome to<br /><em>AkEsevai.</em></h1>
+            <p>உங்கள் பெயர், பிறந்த தேதி மற்றும் ஆதார் எண் விவரங்களை ஒருமுறை உள்ளிடவும். இவை பாதுகாப்பாகச் சேமிக்கப்படும்.</p>
+          </div>
+          <form
+            className="login-card"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const cleanedName = name.trim();
+              if (!cleanedName) {
+                notify('⚠️ தயவுசெய்து உங்கள் பெயரை உள்ளிடவும்.');
+                return;
+              }
+
+              const updatedProfile = {
+                ...customer.profile,
+                name: cleanedName,
+                dob: dobInput,
+                aadhaarNo: aadhaarInput,
+                aadhar: aadhaarInput,
+                complete: true
+              };
+
+              const updatedCustomerRecord = {
+                ...customer,
+                name: cleanedName,
+                dob: dobInput,
+                aadhaarNo: aadhaarInput,
+                aadhar: aadhaarInput,
+                profile: updatedProfile
+              };
+
+              updateCustomer(() => updatedCustomerRecord);
+              if (typeof saveCustomerProfileCloud === 'function') {
+                await saveCustomerProfileCloud(customer.phone, updatedCustomerRecord);
+              }
+              notify('🎉 உங்கள் பெயர், பிறந்த தேதி மற்றும் ஆதார் எண் வெற்றிகரமாக சேமிக்கப்பட்டது!');
+            }}
+          >
+            <div className="login-icon"><UserRound size={24} /></div>
+            <span className="section-kicker">YOUR DETAILS / உங்கள் விவரங்கள்</span>
+            <h2 style={{ fontSize: '20px', color: '#0f172a', margin: '4px 0 6px' }}>வாடிக்கையாளர் விவரங்கள்</h2>
+            <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px' }}>
+              இந்த விவரங்கள் உங்கள் வாடிக்கையாளர் கணக்கில் மற்றும் AkEsevai நிர்வாகத்தில் மட்டுமே பாதுகாப்பாக இருக்கும்.
+            </p>
+
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '10px', textTransform: 'uppercase' }}>
+              1. Full Name / முழு பெயர் *
+              <input
+                className="admin-password"
+                autoFocus
+                required
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="உதாரணம்: K. Ramesh"
+                style={{ width: '100%', marginTop: '4px', padding: '10px', fontSize: '13.5px', fontWeight: 700 }}
+              />
+            </label>
+
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '10px', textTransform: 'uppercase' }}>
+              2. Date of Birth / பிறந்த தேதி (DOB) *
+              <input
+                type="date"
+                className="admin-password"
+                required
+                value={dobInput}
+                onChange={(e) => setDobInput(e.target.value)}
+                style={{ width: '100%', marginTop: '4px', padding: '10px', fontSize: '13.5px', fontWeight: 700 }}
+              />
+            </label>
+
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '16px', textTransform: 'uppercase' }}>
+              3. Aadhaar Number / 12-இலக்க ஆதார் எண் *
+              <input
+                type="text"
+                maxLength="14"
+                className="admin-password"
+                required
+                value={aadhaarInput}
+                onChange={(e) => setAadhaarInput(e.target.value)}
+                placeholder="1234 5678 9012"
+                style={{ width: '100%', marginTop: '4px', padding: '10px', fontSize: '13.5px', fontWeight: 700 }}
+              />
+            </label>
+
+            <button className="button button-primary button-wide" type="submit" style={{ padding: '12px', fontSize: '13px', fontWeight: 800 }}>
+              சேமித்து உள்நுழைக / Save Profile & Continue <ArrowRight size={17} />
+            </button>
+          </form>
+        </section>
+      );
+    }
+
+    const tabs = [
+      ['overview', 'Overview'],
+      ['documents', 'My documents'],
+      ['compressor', '📸 போட்டோ அமுக்கி (Compressor)'],
+      ['token-slip', '🎫 Token Slip'],
+      ['profile-settings', '👤 Profile & Delete Account']
+    ];
+
+    const rawApps = customer.applications || [];
+    const applicationsMap = new Map();
+    rawApps.forEach((a) => {
+      if (!a) return;
+      const key = String(a.id || a.ackNo || a.name || '').trim();
+      if (key && !applicationsMap.has(key)) {
+        applicationsMap.set(key, a);
+      }
+    });
+    const applications = Array.from(applicationsMap.values());
+    const addApplication = (event) => {
+      event.preventDefault();
+      if (!selectedService) return;
+      
+      const existingApp = (customer.applications || []).find(
+        (a) => a && a.name && a.name.trim().toLowerCase() === selectedService.trim().toLowerCase()
+      );
+      
+      if (existingApp) {
+        setSelectedService('');
+        setActiveTab('documents');
+        notify(`ℹ️ "${selectedService}" சேவை ஏற்கனவே சேர்க்கப்பட்டுள்ளது! (${existingApp.id})`);
+        return;
+      }
+
+      const service = serviceCatalog.find(([, title]) => title === selectedService);
+      const requirements = getRequiredDocuments(selectedService, service?.[2]);
+      const application = {
+        id: `AK-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        name: selectedService,
+        status: 'Submitted',
+        date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        progress: 22,
+        requirements
+      };
+      
+      updateCustomer((current) => ({
+        ...current,
+        applications: [application, ...(current.applications || [])]
+      }));
+      setSelectedService('');
+      setActiveTab('documents');
+      notify('🎉 Service selected!');
+    };
+
+    const handleSaveSelfProfile = async () => {
+      const updatedProfile = {
+        ...customer.profile,
+        name: editName || customer.profile.name,
+        dob: editDob,
+        aadhaarNo: editAadhaar,
+        aadhar: editAadhaar
+      };
+      const updatedCustomerRecord = {
+        ...customer,
+        name: editName || customer.profile.name,
+        dob: editDob,
+        aadhaarNo: editAadhaar,
+        aadhar: editAadhaar,
+        profile: updatedProfile
+      };
+
+      updateCustomer(() => updatedCustomerRecord);
+      if (typeof saveCustomerProfileCloud === 'function') {
+        await saveCustomerProfileCloud(customer.phone, updatedCustomerRecord);
+      }
+      notify('✅ உங்கள் கணக்கு சுயவிவரம் புதுப்பிக்கப்பட்டது! (Profile updated)');
+    };
+
+    const handleDeleteSelfAccount = async () => {
+      const confirmDelete = window.confirm(
+        `⚠️ எச்சரிக்கை! உங்கள் கணக்கு (+91 ${customer.phone}) மற்றும் பதிவேற்றப்பட்ட ஆவணங்கள் அனைத்தும் நிரந்தரமாக நீக்கப்படும்!\n\nநிச்சயமாக உங்கள் வாடிக்கையாளர் கணக்கை நீக்க விரும்புகிறீர்களா? (Are you sure you want to delete your customer account?)`
+      );
+      if (confirmDelete) {
+        const cleanPhone = String(customer.phone).replace(/\D/g, '');
+        if (typeof deleteCustomerProfileCloud === 'function') {
+          await deleteCustomerProfileCloud(cleanPhone);
+        }
+        try {
+          const rawRecords = localStorage.getItem('akesevai-customer-records') || '{}';
+          const records = JSON.parse(rawRecords);
+          delete records[cleanPhone];
+          delete records[customer.phone];
+          localStorage.setItem('akesevai-customer-records', JSON.stringify(records));
+          localStorage.setItem('akesevai-customers', JSON.stringify(records));
+        } catch (e) {}
+        localStorage.removeItem('akesevai-customer-session');
+        localStorage.removeItem('AKESEVAI_CUSTOMER');
+        notify('🗑️ உங்கள் கணக்கு வெற்றிகரமாக நீக்கப்பட்டது. (Account deleted successfully)');
+        logout();
+      }
+    };
+
+    const handleDeleteCustomerToken = async (tokenNo) => {
+      const targetTokNo = tokenNo || customer?.lastToken?.tokenNo;
+      if (!targetTokNo) return;
+
+      const confirmDelete = window.confirm(
+        `⚠️ உங்கள் டோக்கன் சீட்டை (${targetTokNo}) நிச்சயமாக ரத்து செய்து நீக்க விரும்புகிறீர்களா?\n\n(Are you sure you want to cancel and delete your active token pass ${targetTokNo}?)`
+      );
+      if (!confirmDelete) return;
+
+      if (typeof deleteTokenBookingCloud === 'function') {
+        await deleteTokenBookingCloud(targetTokNo, customer.phone);
+      }
+
+      updateCustomer((curr) => {
+        const copy = { ...curr };
+        delete copy.lastToken;
+        return copy;
+      });
+
+      notify(`🗑️ டோக்கன் ${targetTokNo} வெற்றிகரமாக ரத்து செய்யப்பட்டது! (Token ${targetTokNo} deleted successfully)`);
+    };
+
+    const getActiveUploadedDocsCount = () => {
+      const custDocs = customer.documents || [];
+      const custApps = customer.applications || [];
+
+      if (custApps.length === 0) {
+        const uniqueMap = new Map();
+        custDocs.forEach(d => {
+          if (d) {
+            const k = d.requirement || d.name || d.id;
+            if (k) uniqueMap.set(k, d);
+          }
+        });
+        return uniqueMap.size;
+      }
+
+      const allReqs = new Set();
+      custApps.forEach(app => {
+        (app.requirements || []).forEach(r => allReqs.add(r));
+      });
+
+      let uploadedCount = 0;
+      allReqs.forEach(req => {
+        const hasDoc = custDocs.some(item =>
+          item && (
+            item.requirement === req ||
+            (item.requirement && req && item.requirement.trim().toLowerCase() === req.trim().toLowerCase()) ||
+            (item.name && req && item.name.trim().toLowerCase().includes(req.trim().toLowerCase()))
+          )
+        );
+        if (hasDoc) uploadedCount++;
+      });
+
+      return uploadedCount;
+    };
+
+    const uploadedCount = getActiveUploadedDocsCount();
+    const initials = (customer.profile.name || 'C').split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
     return (
       <section className="customer-dashboard page-width">
         <div className="dashboard-top">
@@ -2689,15 +3956,173 @@ const getServiceVisual = (group, title = '') => {
           <div className="profile-pill"><span className="avatar">{initials}</span><span><strong>{customer.profile.name}</strong><small>Mobile: {customer.phone}</small></span><button className="logout-button" onClick={logout}><LogOut size={14} /> Logout</button></div>
         </div>
         <div className="dashboard-tabs">
-          {tabs.map(([id, label]) => <button className={activeTab === id ? 'tab-active' : ''} onClick={() => setActiveTab(id)} key={id}>{label}{id === 'documents' && <span className="tab-count">{customer.documents.length}</span>}</button>)}
-          <button className="notification-button" aria-label="Notifications"><Bell size={18} /><i /></button>
+          {tabs.map(([id, label]) => <button className={activeTab === id ? 'tab-active' : ''} onClick={() => setActiveTab(id)} key={id}>{label}{id === 'documents' && <span className="tab-count">{uploadedCount}</span>}</button>)}
+          <button
+            className="notification-button"
+            aria-label="Notifications"
+            onClick={() => setShowNotifications(!showNotifications)}
+            style={{ position: 'relative', cursor: 'pointer' }}
+            title="Click to view notifications"
+          >
+            <Bell size={18} />
+            <i />
+          </button>
         </div>
+
+        {/* NOTIFICATIONS CENTER MODAL */}
+        {showNotifications && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(15, 23, 42, 0.55)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px'
+            }}
+            onClick={() => setShowNotifications(false)}
+          >
+            <div
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                maxWidth: '520px',
+                width: '100%',
+                padding: '24px',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
+                border: '1.5px solid #cbd5e1'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '14px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ background: '#eff6ff', color: '#0052cc', padding: '10px', borderRadius: '50%', display: 'grid', placeItems: 'center' }}>
+                    <Bell size={22} />
+                  </span>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>🔔 அறிவிப்புகள் மையம் (Notifications)</h3>
+                    <small style={{ color: '#64748b', fontSize: '12px' }}>உங்கள் கணக்கின் நேரடி தகவல்கள்</small>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowNotifications(false)}
+                  style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', fontWeight: 900, color: '#64748b' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gap: '12px', maxHeight: '350px', overflowY: 'auto', paddingRight: '4px' }}>
+                <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '12px', padding: '12px 16px', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <Check size={20} color="#16a34a" />
+                  <div>
+                    <strong style={{ fontSize: '13px', color: '#166534', display: 'block' }}>அறிவிப்புகள் நேரலையில் இயங்குகிறது!</strong>
+                    <span style={{ fontSize: '12px', color: '#15803d' }}>உங்கள் சான்றிதழ் தயாரானதும் அல்லது நிலைகள் மாறும்போது உடனே தெரிவிக்கப்படும்.</span>
+                  </div>
+                </div>
+
+                {applications.length > 0 ? (
+                  applications.map((app) => (
+                    <div key={app.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <strong style={{ fontSize: '13.5px', color: '#0f172a', display: 'block' }}>📋 {app.name} ({app.id})</strong>
+                        <small style={{ fontSize: '12px', color: '#64748b' }}>தற்போதைய நிலை: <span style={{ color: '#0052cc', fontWeight: 700 }}>{app.status || 'Submitted'}</span></small>
+                      </div>
+                      <span style={{ background: '#e0e7ff', color: '#3730a3', fontSize: '11px', fontWeight: 900, padding: '4px 10px', borderRadius: '12px' }}>
+                        {app.status === 'Completed' ? 'முடிந்தது' : 'செயல்பாட்டில்'}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 16px', color: '#64748b', fontSize: '12.5px' }}>
+                    ℹ️ இதுவரை புதிய சேவைகள் எதும் பதிவு செய்யப்படவில்லை.
+                  </div>
+                )}
+
+                {customer.lastToken && (
+                  <div style={{ background: '#fff7ed', border: '1px solid #ffedd5', borderRadius: '12px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <strong style={{ fontSize: '13.5px', color: '#c2410c', display: 'block' }}>🎫 டோக்கன் சீட்டு பெறப்பட்டது!</strong>
+                      <small style={{ fontSize: '12px', color: '#9a3412' }}>Token No: {customer.lastToken.tokenNo} ({customer.lastToken.slot || 'Active'})</small>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ background: '#ffedd5', color: '#c2410c', fontSize: '11px', fontWeight: 900, padding: '4px 10px', borderRadius: '12px' }}>
+                        ACTIVE
+                      </span>
+                      <button
+                        onClick={() => handleDeleteCustomerToken(customer.lastToken.tokenNo)}
+                        title="Delete/Cancel Token"
+                        style={{
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          border: '1px solid #fca5a5',
+                          borderRadius: '6px',
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <Trash2 size={12} /> ரத்து செய்
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setShowNotifications(false)}
+                  style={{ background: '#0052cc', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  அனைத்தும் சரி (Mark as Read)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {activeTab === 'overview' && (
           <>
             <div className="dashboard-stats" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-              <div><span className="stat-icon yellow"><FileText /></span><span><strong>{applications.length}</strong><small>My services</small></span></div>
-              <div><span className="stat-icon green"><Check /></span><span><strong>{customer.documents.length}</strong><small>My documents</small></span></div>
-              <div><span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><Ticket /></span><span><strong>{customer.lastToken?.tokenNo || 'Get Token'}</strong><small>Token Slip</small></span></div>
+              <div
+                onClick={() => {
+                  const el = document.querySelector('.application-panel');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  else setActiveTab('documents');
+                }}
+                style={{ cursor: 'pointer' }}
+                title="Click to view My selected services"
+              >
+                <span className="stat-icon yellow"><FileText /></span>
+                <span><strong>{applications.length}</strong><small>My services</small></span>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('documents')}
+                style={{ cursor: 'pointer' }}
+                title="Click to open My documents vault"
+              >
+                <span className="stat-icon green"><Check /></span>
+                <span><strong>{uploadedCount}</strong><small>My documents</small></span>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('token-slip')}
+                style={{ cursor: 'pointer' }}
+                title="Click to generate Token Slip"
+              >
+                <span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><Ticket /></span>
+                <span><strong>{customer.lastToken?.tokenNo || 'Get Token'}</strong><small>Token Slip</small></span>
+              </div>
             </div>
 
             {/* Quick Compressor Promo Card on Overview */}
@@ -2725,7 +4150,13 @@ const getServiceVisual = (group, title = '') => {
                   <div><span className="section-kicker">YOUR ACTIVITY</span><h2>My selected services</h2></div>
                   <button className="text-button" onClick={() => setActiveTab('token-slip')}>Get Token Slip <Ticket size={15} /></button>
                 </div>
-                {applications.length ? applications.map((application) => <ApplicationRow application={application} key={application.id} />) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
+                {applications.length ? applications.map((application) => (
+                  <ApplicationRow
+                    application={application}
+                    customerDocs={customer.documents}
+                    key={application.id}
+                  />
+                )) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
               </div>
               <div className="quick-panel">
                 <span className="section-kicker">SELECT A SERVICE</span><h2>Start your request</h2><p>We will show only the documents required for the service you choose.</p>
@@ -2743,7 +4174,7 @@ const getServiceVisual = (group, title = '') => {
         {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} cloudExpiryDocs={cloudExpiryDocs} />}
         {activeTab === 'compressor' && (
           <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
-            <CustomerImageCompressorWidget notify={notify} customer={customer} updateCustomer={updateCustomer} />
+            <GovernmentPhotoCropperTool />
           </div>
         )}
         {activeTab === 'token-slip' && (
@@ -2757,7 +4188,85 @@ const getServiceVisual = (group, title = '') => {
                 updateCustomer((curr) => ({ ...curr, lastToken: tok }));
                 notify(`Token ${tok.tokenNo} generated and saved to your customer portal!`);
               }}
+              onTokenDeleted={(tokNo) => {
+                handleDeleteCustomerToken(tokNo);
+              }}
             />
+          </div>
+        )}
+
+        {activeTab === 'profile-settings' && (
+          <div style={{ marginTop: '20px' }}>
+            <div style={{ background: '#ffffff', border: '1.5px solid #cbd5e1', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', marginBottom: '20px' }}>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 900, color: '#0052cc', letterSpacing: '1px', textTransform: 'uppercase' }}>CUSTOMER ACCOUNT SETTINGS</span>
+                  <h2 style={{ margin: '4px 0 0', fontSize: '20px', color: '#0f172a' }}>👤 எனது விவரங்கள் & கணக்கு அமைப்புகள்</h2>
+                  <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#64748b' }}>
+                    உங்கள் பெயர், பிறந்த தேதி, ஆதார் எண் விவரங்களைப் பார்வையிடலாம் அல்லது புதுப்பிக்கலாம்.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                  <small style={{ color: '#64748b', fontWeight: 800, fontSize: '11px', display: 'block' }}>வாடிக்கையாளர் பெயர் (Name)</small>
+                  <strong style={{ fontSize: '16px', color: '#0f172a', display: 'block', marginTop: '4px' }}>{customer.profile.name}</strong>
+                </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                  <small style={{ color: '#64748b', fontWeight: 800, fontSize: '11px', display: 'block' }}>மொபைல் எண் (Mobile)</small>
+                  <strong style={{ fontSize: '16px', color: '#16a34a', display: 'block', marginTop: '4px' }}>+91 {customer.phone}</strong>
+                </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                  <small style={{ color: '#64748b', fontWeight: 800, fontSize: '11px', display: 'block' }}>பிறந்த தேதி (DOB)</small>
+                  <strong style={{ fontSize: '16px', color: '#d97706', display: 'block', marginTop: '4px' }}>{customer.profile.dob || customer.dob || 'பதிவாகவில்லை'}</strong>
+                </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px' }}>
+                  <small style={{ color: '#64748b', fontWeight: 800, fontSize: '11px', display: 'block' }}>ஆதார் எண் (Aadhaar Number)</small>
+                  <strong style={{ fontSize: '16px', color: '#0052cc', display: 'block', marginTop: '4px' }}>{customer.profile.aadhaarNo || customer.profile.aadhar || customer.aadhaarNo || customer.aadhar || 'பதிவாகவில்லை'}</strong>
+                </div>
+              </div>
+
+              <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: '12px', padding: '18px', marginBottom: '28px' }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '15px', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>✏️ விவரங்களை மாற்று / Update DOB & Aadhaar</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                    பெயர் (Name):
+                    <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
+                  </label>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                    பிறந்த தேதி (DOB):
+                    <input type="date" value={editDob} onChange={(e) => setEditDob(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
+                  </label>
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                    ஆதார் எண் (Aadhaar No):
+                    <input type="text" maxLength="14" value={editAadhaar} onChange={(e) => setEditAadhaar(e.target.value)} placeholder="12-digit Aadhaar" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
+                  </label>
+                </div>
+                <button onClick={handleSaveSelfProfile} style={{ background: '#0052cc', color: 'white', border: 'none', padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', marginTop: '12px' }}>
+                  💾 விவரங்களை சேமிக்க (Save Profile Changes)
+                </button>
+              </div>
+
+              {/* DANGER ZONE: DELETE ACCOUNT */}
+              <div style={{ background: '#fef2f2', border: '1.5px solid #fca5a5', borderRadius: '14px', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 900, color: '#dc2626', letterSpacing: '1px', textTransform: 'uppercase' }}>DANGER ZONE</span>
+                  <h3 style={{ margin: '2px 0 0', fontSize: '16px', color: '#991b1b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    🗑️ கணக்கை நிரந்தரமாக நீக்குக (Delete Customer Account)
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#7f1d1d' }}>
+                    உங்களுக்கு கணக்கு தேவையில்லையெனில், உங்கள் கணக்கு மற்றும் ஆவணங்களை நிரந்தரமாக நீக்கலாம்.
+                  </p>
+                </div>
+                <button
+                  onClick={handleDeleteSelfAccount}
+                  style={{ background: '#dc2626', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(220,38,38,0.25)' }}
+                >
+                  <Trash2 size={15} /> எனது கணக்கை நீக்குக (Delete Account)
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2770,7 +4279,94 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
-  function ApplicationRow({ application }) { return <div className="application-row"><span className={`app-icon ${application.status === 'Completed' ? 'done' : ''}`}>{application.status === 'Completed' ? <Check size={19} /> : <Clock3 size={19} />}</span><span className="app-info"><strong>{application.name}</strong><small>{application.id} · Started {application.date}</small></span><span className={`status-text ${application.status.toLowerCase().replace(' ', '-')}`}>{application.status}</span><span className="row-arrow"><ChevronRight size={17} /></span></div>; }
+  function ApplicationRow({ application, customerDocs = [] }) {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    const appDocs = (customerDocs || []).filter((d) => {
+      if (!d) return false;
+      const appIdMatch = d.applicationId && application.id && (String(d.applicationId) === String(application.id));
+      const appNameMatch = d.requirement && application.requirements && application.requirements.some(r => String(r).toLowerCase().includes(String(d.requirement).toLowerCase()) || String(d.requirement).toLowerCase().includes(String(r).toLowerCase()));
+      const reqNameMatch = d.name && application.requirements && application.requirements.some(r => String(r).toLowerCase().includes(String(d.name).toLowerCase()) || String(d.name).toLowerCase().includes(String(r).toLowerCase()));
+      return appIdMatch || appNameMatch || reqNameMatch;
+    });
+
+    const isAppComplete = appDocs.length > 0 && application.requirements && appDocs.length >= application.requirements.length;
+
+    return (
+      <div style={{ marginBottom: '10px', borderRadius: '12px', border: isExpanded ? '2px solid #0052cc' : '1px solid #e2e8f0', overflow: 'hidden', background: '#ffffff', transition: 'all 0.2s ease' }}>
+        <div
+          className="application-row"
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{ cursor: 'pointer', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: isExpanded ? '#eff6ff' : '#ffffff' }}
+          title="Click to view uploaded documents for this service"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span className={`app-icon ${isAppComplete ? 'done' : ''}`} style={{ width: '40px', height: '40px', borderRadius: '50%', background: isAppComplete ? '#dcfce7' : '#fef3c7', color: isAppComplete ? '#16a34a' : '#d97706', display: 'grid', placeItems: 'center' }}>
+              {isAppComplete ? <Check size={18} /> : <Clock3 size={18} />}
+            </span>
+            <span className="app-info">
+              <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block' }}>{application.name}</strong>
+              <small style={{ fontSize: '12px', color: '#64748b' }}>{application.id} · Started {application.date}</small>
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+            <span className={`status-text ${application.status?.toLowerCase().replace(' ', '-')}`} style={{ fontWeight: 800, fontSize: '13px', color: isAppComplete ? '#16a34a' : '#d97706', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              {application.status || 'Submitted'} {isExpanded ? <ChevronUp size={16} /> : <ChevronRight size={16} />}
+            </span>
+          </div>
+        </div>
+
+        {/* Expandable Document Checklist Section directly below the row */}
+        {isExpanded && (
+          <div style={{ padding: '14px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+            <h5 style={{ margin: '0 0 10px', font: '800 13px Manrope', color: '#022c7a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <FileCheck2 size={16} color="#16a34a" /> 📑 {application.name} — பதிவேற்றப்பட்ட ஆவணங்கள் ({appDocs.length} Files):
+            </h5>
+
+            {appDocs.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {appDocs.map((doc, idx) => (
+                  <div
+                    key={doc.id || idx}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #86efac',
+                      borderRadius: '8px',
+                      padding: '10px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}
+                  >
+                    <div>
+                      <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>
+                        📄 {doc.requirement || doc.name}
+                      </strong>
+                      <small style={{ fontSize: '11px', color: '#166534', fontWeight: 700 }}>
+                        File: {doc.name} · Uploaded: {doc.uploadedAt || 'Recently'}
+                      </small>
+                    </div>
+                    <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 900 }}>
+                      ✓ பதிவேற்றப்பட்டது (Uploaded)
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ background: '#ffffff', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                <p style={{ margin: 0, fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                  இச்சேவைக்கு ஆவணங்கள் எதுவும் இன்னும் பதிவேற்றப்படவில்லை. "My documents" பக்கத்தில் சென்று பதிவேற்றலாம்!
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
   function DocumentsTab({ customer, updateCustomer, notify, cloudExpiryDocs = [] }) {
     const activeApps = customer.applications && customer.applications.length > 0 ? customer.applications : [{
       id: `AK-${Date.now().toString().slice(-8)}`,
@@ -2786,8 +4382,18 @@ const getServiceVisual = (group, title = '') => {
       const file = event.target.files?.[0];
       if (!file || !application) return;
 
-      let targetMaxKb = 200;
+      let targetMaxKb = 300;
       const reqLower = String(requirement || '').toLowerCase();
+      const isPhotoOrImage = reqLower.includes('photo') || file.type.startsWith('image/');
+
+      if (isPhotoOrImage) {
+        const val = validatePhotoUpload(file, 1);
+        if (!val.valid) {
+          notify(val.error);
+          event.target.value = '';
+          return;
+        }
+      }
       if (reqLower.includes('photo') || reqLower.includes('signature') || reqLower.includes('thumb')) {
         targetMaxKb = 100;
       } else if (reqLower.includes('pdf') || reqLower.includes('certificate') || reqLower.includes('card') || reqLower.includes('aadhaar')) {
@@ -2799,6 +4405,7 @@ const getServiceVisual = (group, title = '') => {
       const rawKb = Math.round(file.size / 1024);
       if (rawKb > 5 * 1024 && !file.type.startsWith('image/')) {
         notify(`⚠️ Size High! (${rawKb} KB) — PDF file is too large! Please upload a file under 5 MB.`);
+        event.target.value = '';
         return;
       }
 
@@ -2818,6 +4425,7 @@ const getServiceVisual = (group, title = '') => {
 
       if (!rawDataUrl) {
         notify('❌ Failed to read file. Please try again.');
+        event.target.value = '';
         return;
       }
 
@@ -2827,7 +4435,6 @@ const getServiceVisual = (group, title = '') => {
           localDataUrl = await new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
-              let quality = 0.85;
               let w = img.width;
               let h = img.height;
               const maxDim = targetMaxKb <= 100 ? 800 : 1200;
@@ -2840,16 +4447,8 @@ const getServiceVisual = (group, title = '') => {
               canvas.height = h;
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0, w, h);
-
-              let resUrl = canvas.toDataURL('image/jpeg', quality);
-              let kb = Math.round((resUrl.length * 3) / 4 / 1024);
-
-              while (kb > targetMaxKb && quality > 0.1) {
-                quality -= 0.08;
-                resUrl = canvas.toDataURL('image/jpeg', quality);
-                kb = Math.round((resUrl.length * 3) / 4 / 1024);
-              }
-              resolve(resUrl);
+              const quality = targetMaxKb <= 100 ? 0.65 : 0.78;
+              resolve(canvas.toDataURL('image/jpeg', quality));
             };
             img.onerror = () => resolve(rawDataUrl);
             img.src = rawDataUrl;
@@ -2874,77 +4473,35 @@ const getServiceVisual = (group, title = '') => {
         storagePath: ''
       };
 
-      // Avoid sending massive base64 payload to Firestore to prevent 1MB limit rejection
-      const cloudDataUrl = (localDataUrl.length > 250000) ? '' : localDataUrl;
+      const existingDocs = customer?.documents || [];
+      const filteredDocs = existingDocs.filter(
+        (item) => item.id !== docId && item.requirement !== requirement && item.requirement?.toLowerCase() !== requirement.toLowerCase()
+      );
 
-      // 2. UPDATE REACT STATE & FIRESTORE CLOUD INSTANTLY using FUNCTIONAL UPDATE to avoid stale closures
-      let latestUpdatedCustomer = null;
-      updateCustomer((prevCustomer) => {
-        const existingDocs = prevCustomer?.documents || [];
-        const filteredDocs = existingDocs.filter((item) => item.id !== docId && item.requirement !== requirement);
-        latestUpdatedCustomer = {
-          ...prevCustomer,
-          documents: [...filteredDocs, documentObj]
-        };
-        return latestUpdatedCustomer;
-      });
+      const updatedCustomerRecord = {
+        ...customer,
+        documents: [...filteredDocs, documentObj]
+      };
 
+      // 1. Update React state immediately with full documentObj for 0ms green card display
+      updateCustomer(updatedCustomerRecord);
+
+      // 2. Persist to MongoDB backend and localStorage
       saveExpiryDocumentCloud({
         id: docId,
         applicationId: application.id,
         name: file.name,
         requirement,
-        url: cloudDataUrl,
-        data: cloudDataUrl,
+        url: localDataUrl,
+        data: localDataUrl,
         customerPhone: customer.phone,
         uploadedAt: new Date().toISOString()
       });
 
-      if (latestUpdatedCustomer) {
-        saveCustomerProfileCloud(customer.phone, latestUpdatedCustomer);
-      }
-
       notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`);
-
-      // 3. Background Cloud Storage Upload for permanent CDN URL
-      (async () => {
-        try {
-          const docRecord = await uploadFileToFirebaseStorage(file, 'customer_documents', customer.phone || 'guest');
-          if (docRecord && docRecord.url) {
-            const finalUrl = docRecord.url;
-            const storagePath = docRecord.storagePath || '';
-
-            updateCustomer((prevCustomer) => {
-              const prevDocs = prevCustomer?.documents || [];
-              const updatedDocs = prevDocs.map((doc) => {
-                if (doc.id === docId) {
-                  return { ...doc, data: finalUrl, url: finalUrl, storagePath };
-                }
-                return doc;
-              });
-              const cloudUpdated = {
-                ...prevCustomer,
-                documents: updatedDocs
-              };
-              saveCustomerProfileCloud(prevCustomer?.phone || customer.phone, cloudUpdated);
-              return cloudUpdated;
-            });
-
-            saveExpiryDocumentCloud({
-              id: docId,
-              applicationId: application.id,
-              name: file.name,
-              requirement,
-              url: finalUrl,
-              data: finalUrl,
-              customerPhone: customer.phone,
-              uploadedAt: new Date().toISOString()
-            });
-          }
-        } catch (err) {
-          console.warn('Background Cloud Storage upload notice:', err);
-        }
-      })();
+      try {
+        event.target.value = '';
+      } catch (e) {}
     };
 
     const deleteDocument = async (requirement, documentObj) => {
@@ -3009,7 +4566,8 @@ const getServiceVisual = (group, title = '') => {
               (item) =>
                 item.requirement === requirement ||
                 item.id === `${application.id}-${requirement}` ||
-                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase())
+                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()) ||
+                (item.name && requirement && item.name.trim().toLowerCase().includes(requirement.trim().toLowerCase()))
             ) || globalExpiryDocs.filter(d => {
               const docPhone = (d.customerPhone || '').replace(/\D/g, '');
               return cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
@@ -3023,7 +4581,8 @@ const getServiceVisual = (group, title = '') => {
               (item) =>
                 item.requirement === requirement ||
                 item.id === `${application.id}-${requirement}` ||
-                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase())
+                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()) ||
+                (item.name && requirement && item.name.trim().toLowerCase().includes(requirement.trim().toLowerCase()))
             );
 
             return (
@@ -3064,13 +4623,13 @@ const getServiceVisual = (group, title = '') => {
 
                     <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
                       Change
-                      <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                      <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
                     </label>
                   </div>
                 ) : (
                   <label className="document-upload" style={{ marginLeft: 'auto', background: '#0052cc', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
                     📤 Upload PDF / JPG
-                    <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                    <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
                   </label>
                 )}
               </div>

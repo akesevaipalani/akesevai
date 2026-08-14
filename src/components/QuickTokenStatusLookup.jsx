@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Ticket, CheckCircle2, Clock, AlertCircle, Sparkles, ArrowRight, UserCheck, Users, Hourglass, Bell, Play } from 'lucide-react';
-import { subscribeLiveQueue } from '../utils/firebaseService';
+import { subscribeLiveQueue } from '../utils/dataService';
 import { getStoredApplications } from '../utils/statusStore';
 
 export default function QuickTokenStatusLookup({ navigate }) {
@@ -157,7 +157,14 @@ export default function QuickTokenStatusLookup({ navigate }) {
               <input
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                const val = e.target.value;
+                setQuery(val);
+                if (!val.trim()) {
+                  setHasSearched(false);
+                  setSearchResult(null);
+                }
+              }}
                 placeholder="Enter Mobile No (9876543210) or Token No (TOK-105)..."
                 className="search-input-field"
                 style={{ width: '100%', paddingLeft: '48px', paddingRight: '16px', height: '52px', borderRadius: '12px', border: '2px solid #cbd5e1', fontSize: '14px', fontWeight: 700, outline: 'none' }}

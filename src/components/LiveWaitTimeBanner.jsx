@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Clock, ArrowRight } from 'lucide-react';
-import { subscribeLiveQueue } from '../utils/firebaseService';
+import { subscribeLiveQueue } from '../utils/dataService';
 
 export default function LiveWaitTimeBanner({ lang = 'ta', navigate }) {
   const [queueData, setQueueData] = useState({});

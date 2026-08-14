@@ -67,7 +67,7 @@ export default function HeroBannerSlider({ navigate }) {
         </button>
 
         {/* SLIDE CONTENT CONTAINER */}
-        <div className="banner-slide-content">
+        <div key={slide.id} className="banner-slide-content esevai-slide-active">
           {/* LEFT CONTENT BLOCK */}
           <div className="slide-left-block">
             <div className="slide-title-primary">

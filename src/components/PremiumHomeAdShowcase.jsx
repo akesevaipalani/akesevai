@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Megaphone, Sparkles, Phone, MessageCircle, ArrowRight, ShieldCheck, MapPin, Star, ExternalLink, Tag } from 'lucide-react';
-import { subscribeSponsoredAds } from '../utils/firebaseService';
+import { subscribeSponsoredAds } from '../utils/dataService';
 
 const MOCK_SPONSORED_ADS = [
   {
@@ -43,7 +43,7 @@ export default function PremiumHomeAdShowcase({ navigate }) {
 
   useEffect(() => {
     const unsubscribe = subscribeSponsoredAds((cloudAds) => {
-      if (Array.isArray(cloudAds) && cloudAds.length > 0) {
+      if (Array.isArray(cloudAds)) {
         setAdList(cloudAds);
       } else {
         setAdList(MOCK_SPONSORED_ADS);
@@ -56,13 +56,14 @@ export default function PremiumHomeAdShowcase({ navigate }) {
 
   // Filter only active non-expired ads (or unlimited duration)
   const isAdActive = (ad) => {
+    if (!ad || !ad.id) return false;
     if (!ad.endTime || ad.runDurationHours === 0) return true;
     const endMs = new Date(ad.endTime).getTime();
     return endMs > Date.now();
   };
 
   const activeAdsList = adList.filter(isAdActive);
-  const displayAds = activeAdsList.length > 0 ? activeAdsList : adList;
+  const displayAds = activeAdsList;
 
   // Auto rotate ad banner every 6 seconds
   useEffect(() => {
@@ -72,8 +73,6 @@ export default function PremiumHomeAdShowcase({ navigate }) {
     }, 6000);
     return () => clearInterval(timer);
   }, [displayAds]);
-
-  const activeAd = displayAds[activeAdIndex % displayAds.length] || MOCK_SPONSORED_ADS[0];
 
   const handleSendAdEnquiry = (e) => {
     e.preventDefault();
@@ -94,6 +93,42 @@ I want to feature my business advertisement banner on the AkEsevai Home Page. Pl
     setBusinessName('');
     setContactPhone('');
   };
+
+  const activeAd = displayAds[activeAdIndex % displayAds.length] || null;
+
+  if (!activeAd || displayAds.length === 0) {
+    return (
+      <div className="premium-ad-showcase-wrapper" style={{ margin: '24px 0' }}>
+        <div style={{
+          background: 'linear-gradient(135deg, #022c7a 0%, #1e1b4b 100%)',
+          borderRadius: '20px',
+          padding: '20px 24px',
+          color: 'white',
+          boxShadow: '0 12px 35px rgba(2, 44, 122, 0.25)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Megaphone size={20} color="#fbbf24" />
+            <div>
+              <strong style={{ fontSize: '14px', display: 'block' }}>📢 உங்கள் வணிக விளம்பரம் இங்கே காட்சிப்படுத்த! (Book Ad Space)</strong>
+              <span style={{ fontSize: '12px', color: '#cbd5e1' }}>பழனி AkEsevai Home Page-ல் உங்கள் விளம்பரத்தை இப்போதே பதிவேற்றுங்கள்.</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowEnquiryModal(true)}
+            style={{ background: '#fbbf24', color: '#022c7a', border: 'none', borderRadius: '12px', padding: '10px 18px', fontSize: '13px', fontWeight: 900, cursor: 'pointer' }}
+          >
+            📢 விளம்பரம் பதிவு செய்ய
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="premium-ad-showcase-wrapper" style={{ margin: '24px 0' }}>
@@ -163,16 +198,50 @@ I want to feature my business advertisement banner on the AkEsevai Home Page. Pl
           </div>
         </div>
 
-        {/* CUSTOM UPLOADED AD IMAGE DISPLAY IF PRESENT */}
+        {/* CUSTOM UPLOADED AD IMAGE DISPLAY IF PRESENT - 100% PERFECT FIT */}
         {activeAd.image && (
-          <div style={{ marginTop: '14px', borderRadius: '14px', overflow: 'hidden', border: '1.5px solid rgba(255,255,255,0.2)' }}>
+          <div style={{
+            marginTop: '14px',
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: '1.5px solid rgba(255,255,255,0.25)',
+            position: 'relative',
+            background: '#090d16',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '160px',
+            maxHeight: activeAd.bannerSize === 'hero' ? '360px' : activeAd.bannerSize === 'story' ? '480px' : '320px'
+          }}>
+            {/* Ambient Blurred Background Glow */}
+            <img
+              src={activeAd.image}
+              alt=""
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                filter: 'blur(20px) opacity(0.35)',
+                transform: 'scale(1.1)',
+                pointerEvents: 'none'
+              }}
+            />
+
+            {/* Main Foreground Image - 100% Uncropped & Perfectly Fitted */}
             <img
               src={activeAd.image}
               alt={activeAd.title}
               style={{
+                position: 'relative',
+                zIndex: 2,
                 width: '100%',
-                height: activeAd.bannerSize === 'large' ? '280px' : activeAd.bannerSize === 'compact' ? '140px' : '200px',
-                objectFit: 'cover',
+                maxHeight: activeAd.bannerSize === 'hero' ? '360px' : activeAd.bannerSize === 'story' ? '480px' : '320px',
+                objectFit: 'contain',
                 display: 'block'
               }}
             />

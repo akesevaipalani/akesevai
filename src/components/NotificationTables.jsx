@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BriefcaseBusiness, CalendarDays, GraduationCap, ExternalLink, FileText, Search, Download, Trash2, Plus, X, Check, ShieldAlert } from 'lucide-react';
-import { saveLiveQueueCloud, deleteNotificationCloud } from '../utils/firebaseService';
+import { saveLiveQueueCloud, deleteNotificationCloud } from '../utils/dataService';
 
 export function parseDateString(dateStr) {
   if (!dateStr) return null;

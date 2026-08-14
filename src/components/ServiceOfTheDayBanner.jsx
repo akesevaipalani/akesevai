@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Star, Zap, ArrowRight } from 'lucide-react';
-import { subscribeServiceOfDay } from '../utils/firebaseService';
+import { subscribeServiceOfDay } from '../utils/dataService';
 
 const SERVICE_OF_DAY = [
   { tamil: 'வருமானச் சான்றிதழ்', english: 'Income Certificate', emoji: '📋', color: '#3b82f6', bg: '#eff6ff', desc: 'கல்வி உதவித்தொகை மற்றும் அரசு திட்டங்களுக்கு அவசியமானது.', fee: '₹60', days: '3-7 நாட்கள்' },

@@ -86,10 +86,10 @@ export default function GoogleMapEmbed() {
             <MapPin size={14} /> LIVE GPS LOCATION • பழனி மையம்
           </span>
           <h3 style={{ font: '800 20px Manrope', margin: '6px 0 2px', color: 'white' }}>
-            📍 AkEsevai மையத்தின் <span>அκριவு இடம் (Google Map Location)</span>
+            📍 AkEsevai மையத்தின் <span>துல்லியமான இடம் (Google Map Location)</span>
           </h3>
           <p style={{ fontSize: '13px', opacity: 0.9, margin: 0 }}>
-            மில் ரோடு, சண்முகபுரம், பழனி - 624601 (பழனி பேருந்து நிலையத்திலிருந்து 500 மீட்டர்)
+            AK Esevai, Mill Rd, Sanmugapuram, Anna Nagar, Palani, Tamil Nadu 624601
           </p>
         </div>
 
@@ -119,8 +119,8 @@ export default function GoogleMapEmbed() {
           <a
             href={
               userDistance
-                ? `https://www.google.com/maps/dir/?api=1&origin=${userDistance.userLat},${userDistance.userLng}&destination=${AKESEVAI_LAT},${AKESEVAI_LNG}`
-                : `https://www.google.com/maps/dir/?api=1&destination=AkEsevai+Digital+Service+Centre+Mill+Road+Sanmugapuram+Palani+624601`
+                ? `https://www.google.com/maps/dir/?api=1&origin=${userDistance.userLat},${userDistance.userLng}&destination=AK+Esevai%2C+Mill+Rd%2C+Sanmugapuram%2C+Anna+Nagar%2C+Palani%2C+Tamil+Nadu+624601`
+                : `https://www.google.com/maps/search/?api=1&query=AK+Esevai%2C+Mill+Rd%2C+Sanmugapuram%2C+Anna+Nagar%2C+Palani%2C+Tamil+Nadu+624601`
             }
             target="_blank"
             rel="noreferrer"
@@ -161,7 +161,7 @@ export default function GoogleMapEmbed() {
             </span>
           </div>
           <a
-            href={`https://www.google.com/maps/dir/?api=1&origin=${userDistance.userLat},${userDistance.userLng}&destination=${AKESEVAI_LAT},${AKESEVAI_LNG}`}
+            href={`https://www.google.com/maps/dir/?api=1&origin=${userDistance.userLat},${userDistance.userLng}&destination=AK+Esevai%2C+Mill+Rd%2C+Sanmugapuram%2C+Anna+Nagar%2C+Palani%2C+Tamil+Nadu+624601`}
             target="_blank"
             rel="noreferrer"
             style={{
@@ -186,7 +186,7 @@ export default function GoogleMapEmbed() {
       <div style={{ position: 'relative', height: '360px', background: '#f1f5f9' }}>
         <iframe
           title="AkEsevai Location Map"
-          src="https://maps.google.com/maps?q=10.4503,77.5186&hl=en&z=17&output=embed"
+          src="https://maps.google.com/maps?q=AK+Esevai%2C+Mill+Rd%2C+Sanmugapuram%2C+Anna+Nagar%2C+Palani%2C+Tamil+Nadu+624601&t=&z=17&ie=UTF8&iwloc=&output=embed"
           width="100%"
           height="360"
           style={{ border: 0, display: 'block' }}
@@ -212,10 +212,10 @@ export default function GoogleMapEmbed() {
             📌 Marked Centre Location
           </div>
           <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
-            AkEsevai Digital Service Centre
+            AK Esevai Digital Service Centre
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-            Mill Road, Sanmugapuram, Palani (Opp. Old Bus Stand Junction)
+            Mill Rd, Sanmugapuram, Anna Nagar, Palani, Tamil Nadu 624601
           </div>
         </div>
       </div>

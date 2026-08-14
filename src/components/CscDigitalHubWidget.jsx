@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Landmark, Users, Clock, QrCode, Smartphone, Sparkles, CheckCircle2, ShieldCheck, ArrowRight, Zap, Building2, Eye, X, Copy, Check } from 'lucide-react';
-import { subscribeLiveQueue } from '../utils/firebaseService';
+import { subscribeLiveQueue } from '../utils/dataService';
 
 export default function CscDigitalHubWidget({ navigate }) {
   const [showQrModal, setShowQrModal] = useState(false);
