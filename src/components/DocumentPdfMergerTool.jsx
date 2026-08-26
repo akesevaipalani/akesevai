@@ -150,7 +150,7 @@ export default function DocumentPdfMergerTool({ notify }) {
           <Combine size={32} color="#022c7a" style={{ margin: '0 auto 8px' }} />
           <div style={{ fontSize: '14px', fontWeight: 800, color: '#1e40af' }}>ஆவணங்கள் (JPG / PNG / PDF) தேர்ந்தெடுக்க கிளிக் செய்க</div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>ஒன்றிற்கும் மேற்பட்ட கோப்புகளை ஒரே நேரத்தில் தேர்ந்தெடுக்கலாம்</div>
-          <input type="file" multiple accept="image/*,application/pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
+          <input id="pdf-merger-file-input" name="pdf_merger_files" type="file" multiple accept="image/*,application/pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
         </label>
 
         {/* Selected File List */}

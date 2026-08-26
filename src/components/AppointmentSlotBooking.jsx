@@ -2,20 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
 import { subscribeTokens, saveTokenBookingCloud } from '../utils/dataService';
+import { APPOINTMENT_TIME_SLOTS } from '../config/businessHours';
 
-const TIME_SLOTS = [
-  '10:00 AM - 10:30 AM',
-  '10:30 AM - 11:00 AM',
-  '11:00 AM - 11:30 AM',
-  '11:30 AM - 12:00 PM',
-  '12:00 PM - 12:30 PM',
-  '02:00 PM - 02:30 PM',
-  '02:30 PM - 03:00 PM',
-  '03:00 PM - 03:30 PM',
-  '03:30 PM - 04:00 PM',
-  '04:00 PM - 04:30 PM',
-  '04:30 PM - 05:00 PM'
-];
+const TIME_SLOTS = APPOINTMENT_TIME_SLOTS;
 
 const SERVICES_LIST = [
   'வருமானச் சான்றிதழ் (Income Certificate)',
@@ -124,8 +113,10 @@ export default function AppointmentSlotBooking({ notify, onBooked }) {
           <form onSubmit={handleBooking} style={{ display: 'grid', gap: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📅 தேதியைத் தேர்ந்தெடுக்கவும்:</label>
+                <label htmlFor="appointment-booking-date" style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📅 தேதியைத் தேர்ந்தெடுக்கவும்:</label>
                 <input
+                  id="appointment-booking-date"
+                  name="booking_date"
                   type="date"
                   min={new Date().toISOString().split('T')[0]}
                   value={selectedDate}
@@ -135,8 +126,10 @@ export default function AppointmentSlotBooking({ notify, onBooked }) {
               </div>
 
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📋 சேவையைத் தேர்ந்தெடுக்கவும்:</label>
+                <label htmlFor="appointment-booking-service" style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📋 சேவையைத் தேர்ந்தெடுக்கவும்:</label>
                 <select
+                  id="appointment-booking-service"
+                  name="booking_service"
                   value={selectedService}
                   onChange={e => setSelectedService(e.target.value)}
                   style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #cbd5e1', borderRadius: '10px', fontSize: '13px', outline: 'none', background: 'white', boxSizing: 'border-box' }}
@@ -181,8 +174,11 @@ export default function AppointmentSlotBooking({ notify, onBooked }) {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>👤 பெயர் (Applicant Name):</label>
+                <label htmlFor="appointment-applicant-name" style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>👤 பெயர் (Applicant Name):</label>
                 <input
+                  id="appointment-applicant-name"
+                  name="applicant_name"
+                  autoComplete="name"
                   type="text"
                   placeholder="உங்கள் பெயர்"
                   value={name}
@@ -192,8 +188,11 @@ export default function AppointmentSlotBooking({ notify, onBooked }) {
               </div>
 
               <div>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📞 கைபேசி எண் (Mobile Number):</label>
+                <label htmlFor="appointment-applicant-phone" style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📞 கைபேசி எண் (Mobile Number):</label>
                 <input
+                  id="appointment-applicant-phone"
+                  name="applicant_phone"
+                  autoComplete="tel"
                   type="tel"
                   placeholder="10 இலக்க எண்"
                   value={phone}

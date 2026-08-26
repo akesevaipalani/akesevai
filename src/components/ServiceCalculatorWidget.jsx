@@ -71,9 +71,11 @@ export default function ServiceCalculatorWidget({ navigate }) {
       <div className="calculator-body-grid">
         {/* LEFT SELECTOR FORM */}
         <div className="calculator-left-form">
-          <label className="calc-label">
+          <label htmlFor="service-calculator-select" className="calc-label">
             சேவையைத் தேர்ந்தெடுக்கவும் / Select Service:
             <select
+              id="service-calculator-select"
+              name="calculated_service"
               value={selectedService}
               onChange={(e) => {
                 setSelectedService(e.target.value);
@@ -131,13 +133,16 @@ export default function ServiceCalculatorWidget({ navigate }) {
           </h4>
 
           <div className="docs-interactive-list">
-            {info.docs.map((doc) => (
+            {info.docs.map((doc, dIdx) => (
               <label
                 key={doc}
+                htmlFor={`doc-check-item-${dIdx}`}
                 className={`doc-check-item ${checkedDocs[doc] ? 'checked-item' : ''}`}
                 onClick={() => toggleDoc(doc)}
               >
                 <input
+                  id={`doc-check-item-${dIdx}`}
+                  name={`doc_check_${dIdx}`}
                   type="checkbox"
                   checked={!!checkedDocs[doc]}
                   onChange={() => {}}

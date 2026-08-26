@@ -68,10 +68,12 @@ export default function WhatsAppQuickFormWidget() {
 
       <div style={{ display: 'grid', gap: '14px' }}>
         <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
+          <label htmlFor="wa-widget-service-select" style={{ fontSize: '11px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
             📋 உங்கள் தேவையான சேவை தேர்ந்தெடுக்கவும்
           </label>
           <select
+            id="wa-widget-service-select"
+            name="wa_service"
             value={selectedService}
             onChange={e => setSelectedService(e.target.value)}
             style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #d1fae5', borderRadius: '10px', fontSize: '13px', fontWeight: 600, color: '#0f172a', background: '#f0fdf4', outline: 'none', cursor: 'pointer' }}
@@ -83,8 +85,12 @@ export default function WhatsAppQuickFormWidget() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>👤 உங்கள் பெயர்</label>
+            <label htmlFor="wa-widget-user-name" style={{ fontSize: '11px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>👤 உங்கள் பெயர்</label>
             <input
+              id="wa-widget-user-name"
+              name="user_name"
+              autoComplete="name"
+              type="text"
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="உங்கள் முழு பெயர்"
@@ -92,8 +98,12 @@ export default function WhatsAppQuickFormWidget() {
             />
           </div>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📞 கைபேசி எண்</label>
+            <label htmlFor="wa-widget-user-phone" style={{ fontSize: '11px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>📞 கைபேசி எண்</label>
             <input
+              id="wa-widget-user-phone"
+              name="user_phone"
+              autoComplete="tel"
+              type="tel"
               value={phone}
               onChange={e => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
               placeholder="10 இலக்க எண்"

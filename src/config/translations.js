@@ -3,13 +3,16 @@ export const translations = {
     // Navigation
     home: 'Home',
     services: 'Services',
-    statusTrack: 'Track Status',
-    tokenSlip: 'Token Slip',
     notifications: 'Notifications',
+    photoTools: 'Photo & PDF Tools',
+    statusTrack: 'Track Status',
     about: 'About Us',
     contact: 'Contact Us',
-    customerPortal: 'Customer Portal',
+    customerPortal: 'Customer Login / Register',
     admin: 'Admin',
+    weblink: 'Weblinks',
+    photoMaker: 'Photo Maker',
+    tokenSlip: 'Token Slip',
 
     // Hero Section
     eyebrow: 'Your trusted digital service partner in Palani',
@@ -91,13 +94,16 @@ export const translations = {
     // Navigation
     home: 'முகப்பு',
     services: 'சேவைகள்',
-    statusTrack: 'நிலை அறிதல்',
-    tokenSlip: 'டோக்கன்',
     notifications: 'அறிவிப்புகள்',
-    about: 'பற்றி',
+    photoTools: 'போட்டோ & PDF கருவிகள்',
+    statusTrack: 'நிலை அறிதல்',
+    about: 'எங்களைப் பற்றி',
     contact: 'தொடர்பு',
-    customerPortal: 'வாடிக்கையாளர்',
-    admin: 'நிர்வாகம்',
+    customerPortal: 'வாடிக்கையாளர் உள்நுழைவு / பதிவு',
+    admin: 'நிர்வாகி',
+    weblink: 'அரசு இணையதளங்கள்',
+    photoMaker: 'பாஸ்போர்ட் போட்டோ',
+    tokenSlip: 'டோக்கன்',
 
     // Hero Section
     eyebrow: 'பழனியில் உங்களின் நம்பிக்கைக்குரிய டிஜிட்டல் சேவை மையம்',

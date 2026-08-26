@@ -64,10 +64,14 @@ export default function CustomerReferralCard({ customerName = '' }) {
                 உங்கள் பெயரில் ஒரு <strong>unique referral code</strong> உருவாக்கி அதை WhatsApp-ல் share பண்ணுங்கள். நண்பர்களுக்கு AkEsevai-ஐ அறிமுகப்படுத்துங்கள்!
               </div>
             </div>
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
+            <label htmlFor="referral-customer-name" style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
               👤 உங்கள் பெயர்:
             </label>
             <input
+              id="referral-customer-name"
+              name="customer_name"
+              type="text"
+              autoComplete="name"
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="உங்கள் முழு பெயர் உள்ளிடவும்"

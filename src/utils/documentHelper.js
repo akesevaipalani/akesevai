@@ -1,4 +1,4 @@
-// Robust Document Helper for View & Download — Supports PNG, JPG, PDF, SVG, WEBP & Firebase Storage
+// Robust Document Helper for View & Download — Supports PNG, JPG, PDF, SVG, WEBP, Blob URLs & Remote URLs
 
 export const validatePhotoUpload = (file, customMaxMb = 1) => {
   if (!file) return { valid: false, error: 'கோப்பு எதுவும் தேர்ந்தெடுக்கப்படவில்லை (No file selected).' };
@@ -25,7 +25,6 @@ export const validatePhotoUpload = (file, customMaxMb = 1) => {
   return { valid: true };
 };
 
-
 const getMimeType = (docObj, rawUrl = '') => {
   if (docObj?.type && docObj.type !== 'File') return docObj.type;
 
@@ -46,21 +45,67 @@ const getMimeType = (docObj, rawUrl = '') => {
   return 'image/png';
 };
 
-const createBlobFromDataUrl = (dataUrl, defaultMime = 'image/png') => {
+export const createBlobFromDataUrl = (dataUrl, defaultMime = 'image/png') => {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+
+  // If already a blob URL, return null (caller should use dataUrl directly)
+  if (dataUrl.startsWith('blob:')) {
+    return null;
+  }
+
   try {
-    const parts = dataUrl.split(',');
-    const headerMime = parts[0]?.match(/:(.*?);/)?.[1];
-    const mime = headerMime || defaultMime;
-    const base64Data = parts[1] || parts[0];
-    const bstr = atob(base64Data);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
+    // 1. Handle data: URLs
+    if (dataUrl.startsWith('data:')) {
+      const parts = dataUrl.split(',');
+      const header = parts[0] || '';
+      const headerMime = header.match(/:(.*?);/)?.[1] || header.match(/data:([^,;]+)/)?.[1];
+      const mime = headerMime || defaultMime;
+      const isBase64 = header.includes(';base64');
+      const rawContent = parts.slice(1).join(',');
+
+      if (isBase64) {
+        // Clean base64 string (strip whitespace/newlines)
+        const cleanBase64 = rawContent.replace(/\s/g, '');
+        try {
+          const bstr = atob(cleanBase64);
+          let n = bstr.length;
+          const u8arr = new Uint8Array(n);
+          while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+          }
+          return new Blob([u8arr], { type: mime });
+        } catch (atobErr) {
+          console.warn('Base64 decode warning, falling back to text Blob:', atobErr.message);
+          return new Blob([cleanBase64], { type: mime });
+        }
+      } else {
+        // Plain URI-encoded content (e.g. SVG)
+        try {
+          const decoded = decodeURIComponent(rawContent);
+          return new Blob([decoded], { type: mime });
+        } catch (decErr) {
+          return new Blob([rawContent], { type: mime });
+        }
+      }
     }
-    return new Blob([u8arr], { type: mime });
+
+    // 2. Handle raw base64 string without data: prefix
+    if (/^[A-Za-z0-9+/=_\-\s]+$/.test(dataUrl) && dataUrl.length > 50) {
+      try {
+        const clean = dataUrl.replace(/\s/g, '');
+        const bstr = atob(clean);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: defaultMime });
+      } catch (e) {}
+    }
+
+    return null;
   } catch (e) {
-    console.error('Blob creation error:', e);
+    console.warn('Safe blob creation notice:', e.message);
     return null;
   }
 };
@@ -69,7 +114,7 @@ export const handleViewDocument = (docObj, notify) => {
   let rawUrl = typeof docObj === 'string' ? docObj : (docObj?.data || docObj?.url || docObj?.fileUrl || docObj?.dataUrl || '');
   const docName = docObj?.name || docObj?.requirement || 'Document';
 
-  // Fallback for missing/empty/LOCAL_DATA_URL document placeholders
+  // 1. Fallback for missing or placeholder documents
   if (!rawUrl || rawUrl.startsWith('LOCAL_DATA_URL') || rawUrl.length < 10) {
     const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
       <rect width="100%" height="100%" fill="#f8fafc"/>
@@ -88,59 +133,114 @@ export const handleViewDocument = (docObj, notify) => {
   }
 
   const mime = getMimeType(docObj, rawUrl);
+  const isPdf = mime === 'application/pdf' || (docName && docName.toLowerCase().endsWith('.pdf'));
 
-  // If HTTPS URL or Firebase Storage URL
-  if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://') || rawUrl.startsWith('blob:')) {
-    const win = window.open(rawUrl, '_blank');
-    if (!win) window.location.href = rawUrl;
+  // 2. Handle PDF Documents
+  if (isPdf) {
+    let pdfBlobUrl = rawUrl;
+    if (rawUrl.startsWith('data:')) {
+      const blob = createBlobFromDataUrl(rawUrl, 'application/pdf');
+      if (blob) {
+        pdfBlobUrl = URL.createObjectURL(blob);
+      }
+    }
+
+    const pdfViewerHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${docName} — AK e-Sevai PDF Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .viewer-header { background: #1e293b; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .doc-info { display: flex; align-items: center; gap: 10px; }
+    .badge { background: #dc2626; color: white; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 4px; }
+    .title { font-size: 14.5px; font-weight: 700; color: #f8fafc; max-width: 50vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 700; text-decoration: none; border: none; cursor: pointer; }
+    .btn-download { background: #16a34a; color: white; }
+    .btn-download:hover { background: #15803d; }
+    .btn-close { background: #334155; color: white; }
+    .btn-close:hover { background: #475569; }
+    .pdf-frame { flex: 1; width: 100%; height: calc(100vh - 54px); border: none; background: #525659; }
+  </style>
+</head>
+<body>
+  <header class="viewer-header">
+    <div class="doc-info">
+      <span class="badge">PDF DOCUMENT</span>
+      <span class="title">📄 ${docName}</span>
+    </div>
+    <div class="actions">
+      <a href="${pdfBlobUrl}" download="${docName}" class="btn btn-download">📥 Download (பதிவிறக்கு)</a>
+      <button onclick="window.close()" class="btn btn-close">✕ Close</button>
+    </div>
+  </header>
+  <iframe src="${pdfBlobUrl}#toolbar=1" class="pdf-frame" title="${docName}"></iframe>
+</body>
+</html>`;
+    const htmlBlob = new Blob([pdfViewerHtml], { type: 'text/html;charset=utf-8' });
+    const viewerUrl = URL.createObjectURL(htmlBlob);
+    const win = window.open(viewerUrl, '_blank');
+    if (!win) window.location.href = viewerUrl;
     return;
   }
 
-  // Handle Base64 Data URL
-  if (rawUrl.startsWith('data:')) {
+  // 3. Handle Image Documents (JPG, PNG, WEBP, SVG)
+  let imageDisplayUrl = rawUrl;
+  if (rawUrl.startsWith('data:') && rawUrl.includes(';base64')) {
     const blob = createBlobFromDataUrl(rawUrl, mime);
     if (blob) {
-      const blobUrl = URL.createObjectURL(blob);
-
-      // For Images (PNG, JPG, WEBP), open a clean viewer window with full image display
-      if (mime.startsWith('image/')) {
-        const viewWindow = window.open('', '_blank');
-        if (viewWindow) {
-          viewWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-              <head>
-                <title>${docName} — AkEsevai Document Viewer</title>
-                <style>
-                  body { margin: 0; background: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: system-ui, sans-serif; color: white; }
-                  .header { position: fixed; top: 0; left: 0; right: 0; background: rgba(15,23,42,0.9); backdrop-filter: blur(8px); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; z-index: 100; }
-                  .title { font-weight: 700; font-size: 15px; color: #f8fafc; }
-                  .btn { background: #0052cc; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 700; font-size: 13px; cursor: pointer; text-decoration: none; }
-                  img { max-width: 90vw; max-height: 85vh; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); margin-top: 70px; object-fit: contain; }
-                </style>
-              </head>
-              <body>
-                <div class="header">
-                  <div class="title">📄 ${docName}</div>
-                  <a href="${blobUrl}" download="${docName}" class="btn">📥 Download File</a>
-                </div>
-                <img src="${blobUrl}" alt="${docName}" />
-              </body>
-            </html>
-          `);
-          viewWindow.document.close();
-          return;
-        }
-      }
-
-      // For PDF or SVG, open blob URL directly in new tab
-      const win = window.open(blobUrl, '_blank');
-      if (!win) window.location.href = blobUrl;
-      return;
+      imageDisplayUrl = URL.createObjectURL(blob);
     }
   }
 
-  window.open(rawUrl, '_blank');
+  const imageViewerHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${docName} — AK e-Sevai Document Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+    .viewer-header { background: #1e293b; color: white; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; position: sticky; top: 0; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .doc-info { display: flex; align-items: center; gap: 10px; }
+    .badge { background: #0052cc; color: white; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 4px; }
+    .title { font-size: 14.5px; font-weight: 700; color: #f8fafc; max-width: 55vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .actions { display: flex; gap: 8px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 700; text-decoration: none; border: none; cursor: pointer; transition: background 0.15s; }
+    .btn-download { background: #16a34a; color: white; }
+    .btn-download:hover { background: #15803d; }
+    .btn-close { background: #334155; color: white; }
+    .btn-close:hover { background: #475569; }
+    .image-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    img { max-width: 95vw; max-height: calc(100vh - 100px); object-fit: contain; border-radius: 8px; box-shadow: 0 12px 36px rgba(0,0,0,0.7); background: white; border: 1px solid #334155; }
+  </style>
+</head>
+<body>
+  <header class="viewer-header">
+    <div class="doc-info">
+      <span class="badge">AK e-SEVAI VAULT</span>
+      <span class="title">📄 ${docName}</span>
+    </div>
+    <div class="actions">
+      <a href="${imageDisplayUrl}" download="${docName}" class="btn btn-download">📥 Download (பதிவிறக்கு)</a>
+      <button onclick="window.close()" class="btn btn-close">✕ Close</button>
+    </div>
+  </header>
+  <main class="image-container">
+    <img src="${imageDisplayUrl}" alt="${docName}" />
+  </main>
+</body>
+</html>`;
+
+  const htmlBlob = new Blob([imageViewerHtml], { type: 'text/html;charset=utf-8' });
+  const viewerUrl = URL.createObjectURL(htmlBlob);
+  const win = window.open(viewerUrl, '_blank');
+  if (!win) window.location.href = viewerUrl;
 };
 
 export const handleDownloadDocument = async (docObj, notify) => {
@@ -172,7 +272,19 @@ export const handleDownloadDocument = async (docObj, notify) => {
     else fileName += '.png';
   }
 
-  // Handle Base64 Data URL
+  // Handle Blob URL
+  if (rawUrl.startsWith('blob:')) {
+    const link = document.createElement('a');
+    link.href = rawUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    if (typeof notify === 'function') notify(`✅ ${fileName} பதிவிறக்கம் தொடங்கப்பட்டது!`);
+    return;
+  }
+
+  // Handle Data URL
   if (rawUrl.startsWith('data:')) {
     const blob = createBlobFromDataUrl(rawUrl, mime);
     if (blob) {
@@ -189,7 +301,7 @@ export const handleDownloadDocument = async (docObj, notify) => {
     }
   }
 
-  // Handle HTTP / HTTPS / Firebase Storage URLs via fetch + blob download to prevent CORS format errors!
+  // Handle HTTP / HTTPS / Remote URLs via fetch + blob download
   if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
     try {
       if (typeof notify === 'function') notify(`⏳ ${fileName} பதிவிறக்கப்படுகிறது... (Downloading...)`);

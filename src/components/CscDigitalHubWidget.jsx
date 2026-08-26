@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Landmark, Users, Clock, QrCode, Smartphone, Sparkles, CheckCircle2, ShieldCheck, ArrowRight, Zap, Building2, Eye, X, Copy, Check } from 'lucide-react';
 import { subscribeLiveQueue } from '../utils/dataService';
+import { getOperationalStatus } from '../config/businessHours';
 
 export default function CscDigitalHubWidget({ navigate }) {
   const [showQrModal, setShowQrModal] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const [queueStatus, setQueueStatus] = useState({
-    queueCount: '0 நபர்கள் (In Queue)',
-    waitTime: '~ 0 நிமிடங்கள்',
-    statusText: '🟢 மையம் திறந்துள்ளது (Open Now)',
-    upiId: 'alakesh.kumar7@okhdfcbank'
+  const [queueStatus, setQueueStatus] = useState(() => {
+    const op = getOperationalStatus('ta');
+    return {
+      queueCount: '0 நபர்கள் (In Queue)',
+      waitTime: '~ 0 நிமிடங்கள்',
+      statusText: op.statusText,
+      upiId: 'alakesh.kumar7@okhdfcbank'
+    };
   });
 
   useEffect(() => {

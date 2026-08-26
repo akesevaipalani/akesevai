@@ -9,7 +9,8 @@ import {
   subscribeExpiryDocuments, deleteExpiryDocumentCloud, 
   subscribeTokens, deleteTokenBookingCloud, 
   subscribeCustomerProfiles, deleteCustomerProfileCloud, subscribeApplications,
-  fetchAllCloudRecords, subscribeDailyVisitorLogsCloud, isDocumentDeletedByBlacklist
+  fetchAllCloudRecords, subscribeDailyVisitorLogsCloud, isDocumentDeletedByBlacklist,
+  verifyTokenPaymentCloud, rejectTokenPaymentCloud
 } from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
 import AdminAutoFillProfileDrawer from './AdminAutoFillProfileDrawer';
@@ -128,17 +129,16 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
           if (phoneNo && itemPhone && phoneNo !== itemPhone) continue;
 
           const idMatch = d.id && item.id && String(d.id) === String(item.id);
-          const urlMatch = validUrl && item.url && (validUrl === item.url || validUrl === item.data);
-          const nameMatch = docName && item.name && docName.trim().toLowerCase() === item.name.trim().toLowerCase() && docName !== 'Uploaded Document';
-          const reqMatch = d.requirement && item.requirement && d.requirement.trim().toLowerCase() === item.requirement.trim().toLowerCase();
+          const urlMatch = validUrl && item.url && validUrl.length > 50 && (validUrl === item.url || validUrl === item.data);
+          const reqAppMatch = d.requirement && item.requirement && d.requirement.trim().toLowerCase() === item.requirement.trim().toLowerCase() && d.applicationId && item.applicationId && d.applicationId === item.applicationId;
 
-          if (idMatch || urlMatch || nameMatch || reqMatch) {
+          if (idMatch || urlMatch || reqAppMatch) {
             matchingKey = k;
             break;
           }
         }
 
-        const key = matchingKey || String(d.id || `${phoneNo}_${docName.replace(/\s+/g, '_')}`);
+        const key = matchingKey || String(d.id || `${phoneNo}_${d.applicationId || 'app'}_${(d.requirement || docName || 'doc').replace(/\s+/g, '_')}_${Math.random()}`);
 
         const existing = allDocsMap.get(key);
         if (!existing) {
@@ -565,11 +565,8 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
       const filtered = existingToks.filter(t => String(t.tokenNo || t.id) !== ackNo);
       localStorage.setItem('akesevai-token-bookings', JSON.stringify([tokenEntry, ...filtered]));
     } catch (e) {}
-    // Also save to Firebase tokens collection
     try {
-      import('../utils/firebaseService').then(({ saveTokenBookingCloud }) => {
-        saveTokenBookingCloud(tokenEntry);
-      }).catch(() => {});
+      saveTokenBookingCloud(tokenEntry);
     } catch (e) {}
 
     if (typeof window !== 'undefined') {
@@ -622,6 +619,45 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
     );
     const targetPhone = String(tok.phone || tok.customerPhone || '').replace(/\D/g, '');
     window.open(`https://wa.me/91${targetPhone}?text=${text}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleVerifyTokenPayment = async (tokenItem) => {
+    const reqId = tokenItem.id || tokenItem.tokenNo || tokenItem.utr;
+    if (!reqId) return;
+    try {
+      const res = await verifyTokenPaymentCloud(reqId);
+      if (res && (res.success || res.token)) {
+        if (typeof notify === 'function') {
+          notify(`✅ ${tokenItem.customerName || 'வாடிக்கையாளர்'} கட்டணம் ₹50 சரிபார்க்கப்பட்டது! புதிய டோக்கன் எண்: ${res.token?.tokenNo || 'TOK'} வழங்கப்பட்டது.`);
+        }
+      } else {
+        if (typeof notify === 'function') notify(`⚠️ சரிபார்ப்பதில் பிழை: ${res?.error || 'மீண்டும் முயற்சிக்கவும்'}`);
+      }
+    } catch (err) {
+      if (typeof notify === 'function') notify(`⚠️ பிழை: ${err.message}`);
+    }
+  };
+
+  const handleRejectTokenPayment = async (tokenItem) => {
+    const reqId = tokenItem.id || tokenItem.tokenNo || tokenItem.utr;
+    if (!reqId) return;
+    const reason = window.prompt(`❌ கட்டணத்தை நிராகரிக்க காரணம் உள்ளிடவும் (Reason for rejection):`, 'Invalid UTR / Payment not received');
+    if (reason === null) return;
+    const trimmedReason = String(reason).trim();
+    if (!trimmedReason) {
+      if (typeof notify === 'function') notify('⚠️ நிராகரிக்க காரணம் அவசியம் உள்ளிட வேண்டும் (Reason is mandatory)');
+      return;
+    }
+    try {
+      const res = await rejectTokenPaymentCloud(reqId, trimmedReason);
+      if (res && res.success) {
+        if (typeof notify === 'function') notify(`❌ ${tokenItem.customerName || 'வாடிக்கையாளர்'} டோக்கன் கட்டணம் நிராகரிக்கப்பட்டது.`);
+      } else {
+        if (typeof notify === 'function') notify(`⚠️ பிழை: ${res?.error || 'மீண்டும் முயற்சிக்கவும்'}`);
+      }
+    } catch (err) {
+      if (typeof notify === 'function') notify(`⚠️ பிழை: ${err.message}`);
+    }
   };
 
   const customerListMap = new Map();
@@ -680,7 +716,7 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
   const customerListArray = Array.from(customerListMap.values());
 
   return (
-    <div style={{ background: '#f8fafc', border: '2px solid #0052cc', borderRadius: '18px', padding: '28px', textAlign: 'left', margin: '20px 0' }}>
+    <div id="admin-smartdesk-console" style={{ background: '#f8fafc', border: '2px solid #0052cc', borderRadius: '18px', padding: '28px', textAlign: 'left', margin: '20px 0' }}>
       {/* HEADER */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
         <div>
@@ -758,6 +794,30 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
         </button>
         <button
           type="button"
+          onClick={() => setDeskTab('payments')}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '10px',
+            fontSize: '12px',
+            fontWeight: 800,
+            border: 'none',
+            cursor: 'pointer',
+            background: deskTab === 'payments' ? '#d97706' : '#f1f5f9',
+            color: deskTab === 'payments' ? 'white' : '#475569',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          💳 கட்டண சரிபார்ப்பு (Payment Approvals)
+          {customerTokens.filter(t => t && (t.paymentStatus === 'PENDING_VERIFICATION' || (t.utr && !t.tokenNo && t.paymentStatus !== 'REJECTED'))).length > 0 && (
+            <span style={{ background: '#ef4444', color: 'white', padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 900 }}>
+              {customerTokens.filter(t => t && (t.paymentStatus === 'PENDING_VERIFICATION' || (t.utr && !t.tokenNo && t.paymentStatus !== 'REJECTED'))).length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
           onClick={() => setDeskTab('ads')}
           style={{
             padding: '8px 14px',
@@ -773,6 +833,139 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
           📢 விளம்பர ஸ்டுடியோ (Ad Studio)
         </button>
       </div>
+
+      {/* 💳 PRIORITY TOKEN PAYMENT VERIFICATION & TOKEN APPROVAL DESK */}
+      {(deskTab === 'all' || deskTab === 'payments') && (() => {
+        const pendingTokens = customerTokens.filter(t => t && (t.paymentStatus === 'PENDING_VERIFICATION' || (t.utr && !t.tokenNo && t.paymentStatus !== 'REJECTED')));
+        const verifiedTokens = customerTokens.filter(t => t && t.paymentStatus === 'VERIFIED' && Boolean(t.tokenNo));
+        const rejectedTokens = customerTokens.filter(t => t && t.paymentStatus === 'REJECTED');
+        const verifiedRevenue = verifiedTokens.length * 50;
+
+        return (
+          <div style={{ background: '#ffffff', border: '2px solid #f59e0b', borderRadius: '18px', padding: '24px', marginBottom: '24px', boxShadow: '0 8px 24px rgba(245, 158, 11, 0.08)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1.5px solid #fde68a', paddingBottom: '14px', marginBottom: '18px' }}>
+              <div>
+                <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <CreditCard size={14} /> PRIORITY TOKEN PAYMENT VERIFICATION DESK
+                </span>
+                <h3 style={{ font: '800 20px Manrope', color: '#78350f', margin: '6px 0 0' }}>
+                  💳 டோக்கன் கட்டணம் சரிபார்ப்பு & டோக்கன் அனுமதி மையம்
+                </h3>
+                <p style={{ fontSize: '12.5px', color: '#92400e', margin: '4px 0 0' }}>
+                  வாடிக்கையாளர்கள் செலுத்திய ₹50 கட்டணத்தின் UTR எண்ணை சரிபார்த்து, அதிகாரப்பூர்வ டோக்கன் எண் வழங்கவும்.
+                </p>
+              </div>
+
+              {/* Stats Strip */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', padding: '8px 14px', borderRadius: '12px', textAlign: 'center' }}>
+                  <small style={{ fontSize: '10px', color: '#991b1b', fontWeight: 800, display: 'block' }}>⏳ சரிபார்க்க வேண்டியவை</small>
+                  <strong style={{ fontSize: '16px', color: '#dc2626' }}>{pendingTokens.length}</strong>
+                </div>
+                <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', padding: '8px 14px', borderRadius: '12px', textAlign: 'center' }}>
+                  <small style={{ fontSize: '10px', color: '#166534', fontWeight: 800, display: 'block' }}>✅ உறுதிசெய்யப்பட்டவை</small>
+                  <strong style={{ fontSize: '16px', color: '#16a34a' }}>{verifiedTokens.length}</strong>
+                </div>
+                <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', padding: '8px 14px', borderRadius: '12px', textAlign: 'center' }}>
+                  <small style={{ fontSize: '10px', color: '#475569', fontWeight: 800, display: 'block' }}>💰 மொத்த வருவாய்</small>
+                  <strong style={{ fontSize: '16px', color: '#0052cc' }}>₹{verifiedRevenue}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* PENDING APPROVAL REQUESTS */}
+            <h4 style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock size={16} color="#d97706" /> ⏳ சரிபார்ப்பிற்கு காத்திருக்கும் புதிய கட்டணங்கள் ({pendingTokens.length})
+            </h4>
+
+            {pendingTokens.length === 0 ? (
+              <div style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: '12px', padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px', fontWeight: 700 }}>
+                ✅ அனைத்து டோக்கன் கட்டணங்களும் சரிபார்க்கப்பட்டுவிட்டன. நிலுவையில் எதுவும் இல்லை. (No pending token payment requests)
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                {pendingTokens.map((t, idx) => (
+                  <div key={t.id ? `${t.id}_${idx}` : `pending_token_${t.utr || idx}_${idx}`} style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '14px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <div>
+                          <strong style={{ fontSize: '15px', color: '#0f172a', display: 'block' }}>{t.customerName || t.applicantName || 'Applicant'}</strong>
+                          <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 700 }}>📱 +91 {t.phone || t.customerPhone}</span>
+                        </div>
+                        <span style={{ background: '#16a34a', color: 'white', padding: '4px 10px', borderRadius: '8px', fontSize: '13px', fontWeight: 900 }}>
+                          ₹{t.amount || 50}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: '12px', color: '#475569', display: 'grid', gap: '4px', background: '#ffffff', padding: '10px', borderRadius: '8px', border: '1px solid #fef3c7' }}>
+                        <div>🛠️ சேவை: <strong style={{ color: '#0f172a' }}>{t.service}</strong></div>
+                        <div>📅 தேதி: <strong>{t.date}</strong> ({t.slot || 'Morning'})</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px', paddingTop: '4px', borderTop: '1px dashed #e2e8f0' }}>
+                          <span>🔑 UTR / Ref: <strong style={{ color: '#0052cc', letterSpacing: '0.5px' }}>{t.utr || 'N/A'}</strong></span>
+                          {t.utr && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard?.writeText(t.utr);
+                                notify(`📋 UTR ${t.utr} copied!`);
+                              }}
+                              style={{ background: '#f1f5f9', border: 'none', padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 800, cursor: 'pointer' }}
+                            >
+                              Copy
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleVerifyTokenPayment(t)}
+                        style={{
+                          flex: 2,
+                          background: 'linear-gradient(135deg, #16a34a 0%, #059669 100%)',
+                          color: 'white',
+                          border: 'none',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                        }}
+                      >
+                        <CheckCircle2 size={15} /> சரிபார்த்து டோக்கன் வழங்குக
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRejectTokenPayment(t)}
+                        style={{
+                          flex: 1,
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          border: '1.5px solid #fca5a5',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ❌ நிராகரி
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* LIVE CENTER OPERATIONAL STATUS & SERVICE OF THE DAY BANNERS CONTROL DESK */}
       {(deskTab === 'all' || deskTab === 'banners') && <AdminCenterBannersControl notify={notify} />}

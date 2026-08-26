@@ -228,12 +228,85 @@
   width: 100% !important;
   max-width: 430px !important;
   border-radius: 22px !important;
-  padding: 32px 26px !important;
+  padding: 26px 22px !important;
   box-sizing: border-box !important;
   margin: auto !important;
   box-shadow: 0 25px 80px rgba(0, 0, 0, 0.38) !important;
   animation: esevaiSealBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
   position: relative !important;
+}
+
+/* Customer Portal Close / Exit Button */
+.customer-portal-close-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  padding: 6px 12px !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 22px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  text-decoration: none !important;
+  touch-action: manipulation !important;
+  user-select: none !important;
+}
+
+.customer-portal-close-btn:hover {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+  border-color: #fca5a5 !important;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.18) !important;
+  transform: translateY(-1px) !important;
+}
+
+.customer-portal-close-btn:active {
+  transform: translateY(1px) scale(0.96) !important;
+  background: #fecaca !important;
+}
+
+.customer-dashboard-home-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  border: 1px solid #cbd5e1 !important;
+  padding: 6px 12px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  min-height: 38px !important;
+  transition: all 0.2s ease !important;
+  text-decoration: none !important;
+}
+
+.customer-dashboard-home-btn:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+@media (max-width: 480px) {
+  .customer-portal-close-btn {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    width: 44px !important;
+    height: 44px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+  }
+  .customer-portal-close-btn .close-btn-label {
+    display: none !important;
+  }
 }
 
 /* 8. TRENDY HOME PAGE IMAGE SLIDER ANIMATIONS (2026 Edition) */
@@ -304,5 +377,308 @@
 
 .slider-dot-active {
   animation: esevaiDotPulse 2s infinite !important;
+}
+
+/* 9. AK ESEVAI SHOP ENTRANCE & CERTIFICATE CEREMONY ANIMATIONS (2026 Edition) */
+
+@keyframes esevaiShopDoorLeftOpen {
+  0% { transform: translateX(0) scaleX(1); opacity: 1; }
+  100% { transform: translateX(-105%) scaleX(0.85); opacity: 0.1; }
+}
+
+@keyframes esevaiShopDoorRightOpen {
+  0% { transform: translateX(0) scaleX(1); opacity: 1; }
+  100% { transform: translateX(105%) scaleX(0.85); opacity: 0.1; }
+}
+
+@keyframes esevaiShopLightRayExpand {
+  0% { transform: scale(0.2); opacity: 0; filter: blur(20px); }
+  50% { transform: scale(1.4); opacity: 0.9; filter: blur(6px); }
+  100% { transform: scale(2.5); opacity: 0; filter: blur(30px); }
+}
+
+@keyframes esevaiCertFloatIn {
+  0% {
+    transform: perspective(1000px) rotateX(32deg) rotateY(-10deg) translateY(-120px) scale(0.65);
+    opacity: 0;
+    filter: blur(12px);
+  }
+  65% {
+    transform: perspective(1000px) rotateX(-6deg) rotateY(3deg) translateY(12px) scale(1.04);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0) scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes esevaiCertGlowPulse {
+  0%, 100% {
+    box-shadow: 0 25px 70px rgba(245, 158, 11, 0.4), 0 0 35px rgba(251, 191, 36, 0.45), inset 0 0 20px rgba(255, 255, 255, 0.7);
+  }
+  50% {
+    box-shadow: 0 35px 100px rgba(245, 158, 11, 0.7), 0 0 60px rgba(251, 191, 36, 0.85), inset 0 0 35px rgba(255, 255, 255, 0.95);
+  }
+}
+
+@keyframes esevaiSparkleSpin {
+  0% { transform: rotate(0deg) scale(0.8); opacity: 0.4; }
+  50% { transform: rotate(180deg) scale(1.3); opacity: 1; }
+  100% { transform: rotate(360deg) scale(0.8); opacity: 0.4; }
+}
+
+.esevai-door-left {
+  animation: esevaiShopDoorLeftOpen 1.4s cubic-bezier(0.77, 0, 0.175, 1) 0.6s forwards;
+}
+
+.esevai-door-right {
+  animation: esevaiShopDoorRightOpen 1.4s cubic-bezier(0.77, 0, 0.175, 1) 0.6s forwards;
+}
+
+.esevai-light-ray {
+  animation: esevaiShopLightRayExpand 2s ease-out 0.8s forwards;
+}
+
+.esevai-cert-card-animate {
+  animation: esevaiCertFloatIn 0.85s cubic-bezier(0.34, 1.56, 0.64, 1) 1.6s forwards, esevaiCertGlowPulse 3s ease-in-out 2.4s infinite;
+}
+
+.esevai-sparkle-spin {
+  animation: esevaiSparkleSpin 4s linear infinite;
+}
+
+/* 10. TWO-PERSON FULL-BODY WALK-IN, TALK, HANDSHAKE & CERTIFICATE HANDOVER ANIMATIONS */
+
+@keyframes esevaiWalkInLeftToCenter {
+  0% { transform: translateX(-100vw) translateY(0); opacity: 0; }
+  30% { transform: translateX(-40vw) translateY(-8px); opacity: 0.8; }
+  60% { transform: translateX(-20vw) translateY(0); opacity: 1; }
+  85% { transform: translateX(-40px) translateY(-4px); opacity: 1; }
+  100% { transform: translateX(-20px) translateY(0); opacity: 1; }
+}
+
+@keyframes esevaiWalkInRightToCenter {
+  0% { transform: translateX(100vw) translateY(0); opacity: 0; }
+  30% { transform: translateX(40vw) translateY(-8px); opacity: 0.8; }
+  60% { transform: translateX(20vw) translateY(0); opacity: 1; }
+  85% { transform: translateX(40px) translateY(-4px); opacity: 1; }
+  100% { transform: translateX(20px) translateY(0); opacity: 1; }
+}
+
+@keyframes esevaiSpeechBubblePop {
+  0% { transform: scale(0) translateY(15px); opacity: 0; }
+  70% { transform: scale(1.1) translateY(-5px); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@keyframes esevaiHandshakePulse {
+  0% { transform: scale(0) rotate(-20deg); opacity: 0; }
+  50% { transform: scale(1.4) rotate(10deg); opacity: 1; box-shadow: 0 0 50px #fbbf24; }
+  75% { transform: scale(0.95) rotate(-5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+@keyframes esevaiCertHandoverTransfer {
+  0% { transform: perspective(800px) scale(0.3) translateY(60px); opacity: 0; }
+  60% { transform: perspective(800px) scale(1.08) translateY(-10px); opacity: 1; }
+  100% { transform: perspective(800px) scale(1) translateY(0); opacity: 1; }
+}
+
+/* 11. REALISTIC FOOTSTEP WALKING GAIT & TRANSPARENT CHARACTER ANIMATIONS */
+
+@keyframes esevaiNaturalPersonWalkRight {
+  0% { transform: translateX(90vw) translateY(0) rotate(0deg); opacity: 0; }
+  15% { transform: translateX(65vw) translateY(-18px) rotate(4deg); opacity: 1; }
+  30% { transform: translateX(45vw) translateY(0) rotate(-4deg); }
+  45% { transform: translateX(30vw) translateY(-18px) rotate(4deg); }
+  60% { transform: translateX(18vw) translateY(0) rotate(-3deg); }
+  75% { transform: translateX(8vw) translateY(-12px) rotate(2deg); }
+  90% { transform: translateX(40px) translateY(-4px) rotate(-1deg); }
+  100% { transform: translateX(20px) translateY(0) rotate(0deg); opacity: 1; }
+}
+
+@keyframes esevaiNaturalPersonWalkLeft {
+  0% { transform: translateX(-90vw) translateY(0) rotate(0deg); opacity: 0; }
+  20% { transform: translateX(-60vw) translateY(-18px) rotate(-4deg); opacity: 1; }
+  40% { transform: translateX(-35vw) translateY(0) rotate(4deg); }
+  60% { transform: translateX(-18vw) translateY(-18px) rotate(-3deg); }
+  80% { transform: translateX(-8vw) translateY(0) rotate(2deg); }
+  100% { transform: translateX(-20px) translateY(0) rotate(0deg); opacity: 1; }
+}
+
+.esevai-road-customer-walk {
+  animation: esevaiNaturalPersonWalkRight 2.2s cubic-bezier(0.25, 1, 0.5, 1) 0.2s forwards;
+}
+
+.esevai-street-owner-walk {
+  animation: esevaiNaturalPersonWalkLeft 1.8s cubic-bezier(0.25, 1, 0.5, 1) 0.1s forwards;
+}
+
+.esevai-transparent-char {
+  mix-blend-mode: multiply;
+  filter: contrast(1.15) brightness(1.05);
+}
+
+.esevai-walk-left {
+  animation: esevaiWalkInLeftToCenter 1.2s cubic-bezier(0.25, 1, 0.5, 1) 0.1s forwards;
+}
+
+.esevai-walk-right {
+  animation: esevaiWalkInRightToCenter 1.2s cubic-bezier(0.25, 1, 0.5, 1) 0.2s forwards;
+}
+
+.esevai-speech-left {
+  animation: esevaiSpeechBubblePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 1.3s forwards;
+}
+
+.esevai-speech-right {
+  animation: esevaiSpeechBubblePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 1.7s forwards;
+}
+
+.esevai-handshake-badge {
+  animation: esevaiHandshakePulse 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) 2.2s forwards;
+}
+
+.esevai-cert-pass-handover {
+  animation: esevaiCertHandoverTransfer 0.85s cubic-bezier(0.34, 1.56, 0.64, 1) 3.0s forwards, esevaiCertGlowPulse 3s ease-in-out 3.8s infinite;
+}
+
+/* 12. FULL RIGGED 2D/3D WALKING CYCLE ANIMATIONS (REAL LEG STEPS & ARM SWINGS) */
+
+@keyframes walkCycleLeg1 {
+  0% { transform: rotate(-28deg); }
+  50% { transform: rotate(28deg); }
+  100% { transform: rotate(-28deg); }
+}
+
+@keyframes walkCycleLeg2 {
+  0% { transform: rotate(28deg); }
+  50% { transform: rotate(-28deg); }
+  100% { transform: rotate(28deg); }
+}
+
+@keyframes walkCycleArm1 {
+  0% { transform: rotate(24deg); }
+  50% { transform: rotate(-24deg); }
+  100% { transform: rotate(24deg); }
+}
+
+@keyframes walkCycleArm2 {
+  0% { transform: rotate(-24deg); }
+  50% { transform: rotate(24deg); }
+  100% { transform: rotate(-24deg); }
+}
+
+@keyframes walkCycleTorsoBob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-7px) rotate(1.5deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-7px) rotate(-1.5deg); }
+}
+
+@keyframes walkAcrossFromRight {
+  0% { transform: translateX(80vw); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateX(60px); opacity: 1; }
+}
+
+@keyframes walkAcrossFromLeft {
+  0% { transform: translateX(-80vw); opacity: 0; }
+  15% { opacity: 1; }
+  100% { transform: translateX(-60px); opacity: 1; }
+}
+
+.anim-walk-leg-1 {
+  transform-origin: 20px 10px;
+  animation: walkCycleLeg1 0.65s ease-in-out infinite;
+}
+
+.anim-walk-leg-2 {
+  transform-origin: 20px 10px;
+  animation: walkCycleLeg2 0.65s ease-in-out infinite;
+}
+
+.anim-walk-arm-1 {
+  transform-origin: 15px 8px;
+  animation: walkCycleArm1 0.65s ease-in-out infinite;
+}
+
+.anim-walk-arm-2 {
+  transform-origin: 15px 8px;
+  animation: walkCycleArm2 0.65s ease-in-out infinite;
+}
+
+.anim-walk-body-bob {
+  animation: walkCycleTorsoBob 0.65s ease-in-out infinite;
+}
+
+.anim-customer-walking-stage {
+  animation: walkAcrossFromRight 2.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.anim-officer-walking-stage {
+  animation: walkAcrossFromLeft 2.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+/* 13. 3D PIXAR DOLL REALISTIC STEPPING WALK CYCLE */
+
+@keyframes pixarWalkStrideCustomer {
+  0% { transform: translateX(85vw) translateY(0) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  15% { transform: translateX(70vw) translateY(-16px) rotate(4.5deg); }
+  25% { transform: translateX(55vw) translateY(0) rotate(-4.5deg); }
+  35% { transform: translateX(42vw) translateY(-16px) rotate(4.5deg); }
+  45% { transform: translateX(30vw) translateY(0) rotate(-4.5deg); }
+  55% { transform: translateX(20vw) translateY(-16px) rotate(4deg); }
+  65% { transform: translateX(12vw) translateY(0) rotate(-3.5deg); }
+  75% { transform: translateX(5vw) translateY(-12px) rotate(3deg); }
+  85% { transform: translateX(30px) translateY(0) rotate(-2deg); }
+  95% { transform: translateX(10px) translateY(-6px) rotate(1deg); }
+  100% { transform: translateX(0) translateY(0) rotate(0deg); opacity: 1; }
+}
+
+@keyframes pixarWalkStrideOfficer {
+  0% { transform: translateX(-85vw) translateY(0) rotate(0deg); opacity: 0; }
+  15% { opacity: 1; transform: translateX(-55vw) translateY(-16px) rotate(-4.5deg); }
+  30% { transform: translateX(-35vw) translateY(0) rotate(4.5deg); }
+  45% { transform: translateX(-20vw) translateY(-16px) rotate(-4deg); }
+  60% { transform: translateX(-10vw) translateY(0) rotate(3deg); }
+  75% { transform: translateX(-30px) translateY(-10px) rotate(-2deg); }
+  100% { transform: translateX(0) translateY(0) rotate(0deg); opacity: 1; }
+}
+
+@keyframes pixarFootstepShadowPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(0.65); opacity: 0.35; }
+}
+
+.esevai-pixar-customer-walk {
+  animation: pixarWalkStrideCustomer 3.0s cubic-bezier(0.25, 1, 0.5, 1) 0.1s forwards;
+}
+
+.esevai-pixar-officer-walk {
+  animation: pixarWalkStrideOfficer 2.4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.esevai-pixar-shadow {
+  width: 140px;
+  height: 24px;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.75) 0%, transparent 75%);
+  border-radius: 50%;
+  animation: pixarFootstepShadowPulse 0.45s ease-in-out infinite;
+  margin-top: -15px;
+}
+
+@keyframes esevaiCartoonBobbing {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(2deg); }
+}
+
+.esevai-3d-character-img {
+  animation: esevaiCartoonBobbing 2.5s ease-in-out infinite;
+  filter: drop-shadow(0 15px 30px rgba(0,0,0,0.6));
 }
 

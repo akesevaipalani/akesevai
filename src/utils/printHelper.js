@@ -1,9 +1,9 @@
 /**
- * printHelper.js — AkEsevai Print Utility
+ * printHelper.js — AkEsevai Direct Browser Print Utility
  * 
- * Prints ONLY the target element content without printing the full page.
- * Works by injecting a temporary <style> tag that hides everything except
- * the target element's content during printing.
+ * Invokes native browser print dialog (window.print()) directly on the active window.
+ * Bypasses detached iframes to prevent "Waiting for printer connection..." delays.
+ * Isolates and renders only the target element with exact print styling.
  * 
  * Usage:
  *   printElement('my-element-id')
@@ -19,122 +19,96 @@ export function printElement(elementOrId) {
   }
 
   if (!el) {
-    console.warn('[printHelper] Element not found:', elementOrId);
+    console.warn('[printHelper] Target element not found:', elementOrId);
+    window.focus();
     window.print();
     return;
   }
 
-  // Get inner HTML of the element
-  const printContent = el.innerHTML;
-  const outerStyle = window.getComputedStyle(el);
+  // 1. Remove any previous lingering print container or styles
+  const prevContainer = document.getElementById('ake-print-isolated-container');
+  if (prevContainer) prevContainer.remove();
+  const prevStyle = document.getElementById('ake-print-dynamic-style');
+  if (prevStyle) prevStyle.remove();
 
-  // Collect all stylesheets from the page
-  const styleLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
-    .map(link => `<link rel="stylesheet" href="${link.href}" />`)
-    .join('\n');
+  // 2. Clone the element's content for direct main-window print isolation
+  const printContainer = document.createElement('div');
+  printContainer.id = 'ake-print-isolated-container';
+  printContainer.appendChild(el.cloneNode(true));
+  document.body.appendChild(printContainer);
 
-  const styleBlocks = Array.from(document.querySelectorAll('style'))
-    .map(s => `<style>${s.innerHTML}</style>`)
-    .join('\n');
-
-  // Open a hidden iframe for isolated printing
-  const iframe = document.createElement('iframe');
-  iframe.style.cssText = `
-    position: fixed;
-    top: -10000px;
-    left: -10000px;
-    width: 210mm;
-    height: 297mm;
-    border: none;
-    visibility: hidden;
-  `;
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentDocument || iframe.contentWindow.document;
-  doc.open();
-  doc.write(`<!DOCTYPE html>
-<html lang="ta">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AkEsevai Print</title>
-  ${styleLinks}
-  ${styleBlocks}
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800;900&display=swap');
-
-    * {
-      box-sizing: border-box;
+  // 3. Inject print-only stylesheet into current document
+  const styleTag = document.createElement('style');
+  styleTag.id = 'ake-print-dynamic-style';
+  styleTag.textContent = `
+    @media screen {
+      #ake-print-isolated-container {
+        display: none !important;
+      }
     }
-
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: white;
-      font-family: 'Manrope', sans-serif;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-
-    body {
-      padding: 8mm;
-    }
-
-    /* Make the printed content fit the page nicely */
-    .print-root {
-      max-width: 190mm;
-      margin: 0 auto;
-    }
-
-    /* Hide action buttons, footer buttons, etc. */
-    button,
-    .no-print,
-    [data-no-print],
-    .token-action-footer,
-    .print-hide {
-      display: none !important;
-    }
-
-    /* Ensure gradients and colors print */
-    * {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-
     @media print {
+      @page {
+        margin: 8mm;
+        size: auto;
+      }
       html, body {
-        margin: 0;
-        padding: 4mm;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        color: #000000 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
-
-      .print-root {
-        max-width: 100%;
+      body > *:not(#ake-print-isolated-container) {
+        display: none !important;
+      }
+      #ake-print-isolated-container {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        max-width: 190mm !important;
+        margin: 0 auto !important;
+        padding: 4mm !important;
+        visibility: visible !important;
+      }
+      #ake-print-isolated-container * {
+        visibility: visible !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      #ake-print-isolated-container button,
+      #ake-print-isolated-container .no-print,
+      #ake-print-isolated-container [data-no-print],
+      #ake-print-isolated-container .token-action-footer,
+      #ake-print-isolated-container .print-hide {
+        display: none !important;
       }
     }
-  </style>
-</head>
-<body>
-  <div class="print-root">
-    ${printContent}
-  </div>
-</body>
-</html>`);
-  doc.close();
+  `;
+  document.head.appendChild(styleTag);
 
-  // Instant print execution with clean fallback
-  const triggerPrint = () => {
+  // 4. Cleanup function after print preview closes
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
     try {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    } catch (e) {
-      console.error('[printHelper] Print failed:', e);
-    }
-    setTimeout(() => {
-      try {
-        if (iframe.parentNode) document.body.removeChild(iframe);
-      } catch (e) {}
-    }, 1500);
+      if (printContainer && printContainer.parentNode) printContainer.remove();
+      if (styleTag && styleTag.parentNode) styleTag.remove();
+    } catch (e) {}
   };
 
-  setTimeout(triggerPrint, 100);
+  window.addEventListener('afterprint', cleanup, { once: true });
+
+  // 5. Trigger direct main window print
+  try {
+    window.focus();
+    window.print();
+  } catch (err) {
+    console.error('[printHelper] window.print error:', err);
+  }
+
+  // Fallback cleanup in case afterprint does not fire in some environments
+  setTimeout(cleanup, 2500);
 }
+

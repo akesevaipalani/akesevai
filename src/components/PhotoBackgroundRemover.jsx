@@ -147,7 +147,7 @@ export default function PhotoBackgroundRemover() {
 
       <div style={{ padding: '22px 24px' }}>
         {/* Upload */}
-        <input type="file" accept="image/jpeg,.jpg,.jpeg" ref={fileRef} onChange={handleUpload} style={{ display: 'none' }} />
+        <input id="photo-bg-file-input" name="photo_bg_file" type="file" accept="image/jpeg,.jpg,.jpeg" ref={fileRef} onChange={handleUpload} style={{ display: 'none' }} />
         <div
           onClick={() => fileRef.current?.click()}
           style={{
@@ -196,11 +196,19 @@ export default function PhotoBackgroundRemover() {
 
             {/* Tolerance */}
             <div style={{ marginBottom: '18px' }}>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px' }}>
+              <label htmlFor="photo-bg-tolerance-range" style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
                 🎯 sensitivity: {tolerance} (குறைவு = precise, அதிகம் = broad)
-              </div>
-              <input type="range" min={20} max={130} value={tolerance} onChange={e => setTolerance(Number(e.target.value))}
-                style={{ width: '100%', accentColor: '#7c3aed' }} />
+              </label>
+              <input
+                id="photo-bg-tolerance-range"
+                name="tolerance_range"
+                type="range"
+                min={20}
+                max={130}
+                value={tolerance}
+                onChange={e => setTolerance(Number(e.target.value))}
+                style={{ width: '100%', accentColor: '#7c3aed' }}
+              />
             </div>
 
             {/* Preview row */}

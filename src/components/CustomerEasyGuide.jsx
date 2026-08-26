@@ -69,7 +69,7 @@ const EASY_GUIDE_STEPS = [
 const QUICK_FAQS = [
   {
     q: '⏰ மையம் எத்தனை மணிக்கு திறக்கும்?',
-    a: 'திங்கள் முதல் சனி வரை காலை 9:00 மணி முதல் மாலை 7:00 மணி வரை திறந்திருக்கும்.'
+    a: 'திங்கள் முதல் சனி வரை காலை 10:00 மணி முதல் இரவு 8:00 மணி வரை திறந்திருக்கும்.'
   },
   {
     q: '💰 கட்டணம் எவ்வளவு?',
@@ -384,6 +384,7 @@ export default function CustomerEasyGuide({ navigate }) {
                     { emoji: '🎫', label: 'டோக்கன் சீட்டு', sub: 'Token Slip', page: 'token-generator', color: '#d97706', bg: '#fffbeb' },
                     { emoji: '📍', label: 'நிலை கண்டறிய', sub: 'Track Status', page: 'status-track', color: '#7c3aed', bg: '#f5f3ff' },
                     { emoji: '📋', label: 'சேவைகள்', sub: 'All Services', page: 'services', color: '#0052cc', bg: '#eff6ff' },
+                    { emoji: '🌐', label: 'இணைய இணைப்புகள்', sub: '359+ Web Portals', page: 'weblink', color: '#0284c7', bg: '#e0f2fe' },
                     { emoji: '📞', label: 'தொடர்பு கொள்ள', sub: 'Contact Us', page: 'contact', color: '#16a34a', bg: '#f0fdf4' },
                   ].map(btn => (
                     <button
@@ -428,7 +429,7 @@ export default function CustomerEasyGuide({ navigate }) {
                     🟢 மையம் திறந்திருக்கும் நேரம்
                   </div>
                   <div style={{ fontSize: '11px', color: '#166534', fontWeight: 600, marginTop: '2px' }}>
-                    திங்கள் – சனி: காலை 9:00 – மாலை 7:00 | 📞 93423 18844
+                    திங்கள் – சனி: காலை 10:00 – இரவு 8:00 | 📞 93423 18844
                   </div>
                 </div>
               </div>

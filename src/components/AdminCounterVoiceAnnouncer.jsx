@@ -575,6 +575,8 @@ export default function AdminCounterVoiceAnnouncer() {
             📱 மொபைல் டோக்கன் சேர்க்க:
           </span>
           <input
+            id="announcer-quick-token-no"
+            name="quick_token_no"
             type="text"
             required
             placeholder="டோக்கன் (எ.கா: TOK-109)"
@@ -583,6 +585,8 @@ export default function AdminCounterVoiceAnnouncer() {
             style={{ padding: '7px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.1)', color: 'white', fontSize: '12px', fontWeight: 800 }}
           />
           <input
+            id="announcer-quick-customer-name"
+            name="quick_customer_name"
             type="text"
             required
             placeholder="பெயர் (எ.கா: Kandasamy)"
@@ -605,16 +609,18 @@ export default function AdminCounterVoiceAnnouncer() {
         marginBottom: '16px',
         display: 'flex',
         alignItems: 'center',
-        justify: 'space-between',
+        justifyContent: 'space-between',
         gap: '14px',
         flexWrap: 'wrap'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <ListOrdered size={18} color="#fbbf24" />
-          <span style={{ fontSize: '12px', fontWeight: 800, color: '#fbbf24' }}>
+          <label htmlFor="announcer-queue-index-select" style={{ fontSize: '12px', fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
             டோக்கன் வரிசை ({tokenQueue.length} பதிவுகள்):
-          </span>
+          </label>
           <select
+            id="announcer-queue-index-select"
+            name="queue_index"
             value={currentIndex}
             onChange={(e) => selectTokenAtIndex(parseInt(e.target.value))}
             style={{
@@ -685,10 +691,12 @@ export default function AdminCounterVoiceAnnouncer() {
       <form onSubmit={handleAnnounceToken} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr auto', gap: '12px', alignItems: 'end' }}>
         {/* CUSTOMER NAME */}
         <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, opacity: 0.95 }}>
+          <label htmlFor="announcer-customer-name-input" style={{ fontSize: '11px', fontWeight: 700, opacity: 0.95, display: 'block' }}>
             👤 வாடிக்கையாளர் பெயர்:
           </label>
           <input
+            id="announcer-customer-name-input"
+            name="announcer_customer_name"
             type="text"
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
@@ -710,10 +718,12 @@ export default function AdminCounterVoiceAnnouncer() {
 
         {/* TOKEN NUMBER */}
         <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, opacity: 0.95 }}>
+          <label htmlFor="announcer-token-no-input" style={{ fontSize: '11px', fontWeight: 700, opacity: 0.95, display: 'block' }}>
             🎫 டோக்கன் எண்:
           </label>
           <input
+            id="announcer-token-no-input"
+            name="announcer_token_no"
             type="text"
             required
             value={tokenNo}
@@ -736,10 +746,12 @@ export default function AdminCounterVoiceAnnouncer() {
 
         {/* COUNTER NUMBER */}
         <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, opacity: 0.95 }}>
+          <label htmlFor="announcer-counter-no-select" style={{ fontSize: '11px', fontWeight: 700, opacity: 0.95, display: 'block' }}>
             🏢 கவுண்டர்:
           </label>
           <select
+            id="announcer-counter-no-select"
+            name="announcer_counter_no"
             value={counterNo}
             onChange={(e) => setCounterNo(e.target.value)}
             style={{
@@ -809,15 +821,17 @@ export default function AdminCounterVoiceAnnouncer() {
         paddingTop: '12px',
         borderTop: '1px solid rgba(255, 255, 255, 0.15)',
         display: 'flex',
-        justify: 'space-between',
+        justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: '12px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '11px', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+          <label htmlFor="announcer-speech-speed-select" style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
             <span>வேகம்:</span>
             <select
+              id="announcer-speech-speed-select"
+              name="speech_speed"
               value={speechSpeed}
               onChange={(e) => setSpeechSpeed(parseFloat(e.target.value))}
               style={{ background: '#002266', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', padding: '3px 6px', fontSize: '11px' }}
@@ -827,9 +841,11 @@ export default function AdminCounterVoiceAnnouncer() {
             </select>
           </label>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+          <label htmlFor="announcer-repeat-count-select" style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
             <span>திரும்பப் பேசு:</span>
             <select
+              id="announcer-repeat-count-select"
+              name="repeat_count"
               value={repeatCount}
               onChange={(e) => setRepeatCount(parseInt(e.target.value))}
               style={{ background: '#002266', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', padding: '3px 6px', fontSize: '11px' }}

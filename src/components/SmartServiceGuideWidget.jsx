@@ -139,11 +139,14 @@ export default function SmartServiceGuideWidget() {
 
             {/* 1-CLICK WHATSAPP CHECKLIST DISPATCH FORM */}
             <form onSubmit={handleSendChecklistToWhatsapp} className="whatsapp-dispatch-form">
-              <label className="wa-dispatch-label">
+              <label htmlFor="smart-guide-wa-phone" className="wa-dispatch-label">
                 📲 இந்த ஆவணப் பட்டியலை உங்கள் WhatsApp-க்கு அனுப்ப:
               </label>
               <div className="wa-input-group">
                 <input
+                  id="smart-guide-wa-phone"
+                  name="wa_phone"
+                  autoComplete="tel"
                   type="tel"
                   placeholder="10 இலக்க மொபைல் எண்..."
                   value={phone}

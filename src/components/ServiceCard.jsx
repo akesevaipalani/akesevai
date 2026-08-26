@@ -1,6 +1,6 @@
 import { ArrowRight } from 'lucide-react';
 
-export default function ServiceCard({ service, lang }) {
+export default function ServiceCard({ service, lang = 'ta' }) {
   const Icon = service.icon;
 
   return (

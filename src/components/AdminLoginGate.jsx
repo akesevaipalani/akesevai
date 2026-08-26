@@ -198,7 +198,7 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
         <form onSubmit={handleSubmit}>
           {/* Operator Station ID (Readonly Display) */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <label htmlFor="admin-operator-id-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               🆔 OPERATOR STATION ID / முகவர் எண்
             </label>
             <div style={{
@@ -214,6 +214,9 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
             }}>
               <KeyRound size={16} style={{ color: '#38bdf8', marginRight: '10px' }} />
               <input
+                id="admin-operator-id-input"
+                name="admin_operator_id"
+                autoComplete="username"
                 type="text"
                 value={operatorId}
                 onChange={(e) => setOperatorId(e.target.value)}
@@ -233,7 +236,7 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
           {/* Reset Mode: Master Phone Verification */}
           {isResetMode && (
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#fbbf24', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <label htmlFor="admin-master-phone-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#fbbf24', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 📱 ADMIN MASTER PHONE / பிரதான மொபைல் எண் (9342318844) *
               </label>
               <div style={{
@@ -246,6 +249,9 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
               }}>
                 <span style={{ color: '#fbbf24', fontWeight: 800, fontSize: '13px', marginRight: '8px' }}>+91</span>
                 <input
+                  id="admin-master-phone-input"
+                  name="admin_master_phone"
+                  autoComplete="tel"
                   required
                   type="tel"
                   value={masterPhone}
@@ -268,7 +274,7 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
 
           {/* Admin Password Input with Eye Toggle */}
           <div style={{ marginBottom: '14px' }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <label htmlFor="admin-login-password-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               {isResetMode ? '🔑 NEW ADMIN PASSWORD / புதிய கடவுச்சொல்' : '🔒 ADMIN PASSWORD / கடவுச்சொல்'}
             </label>
             <div style={{
@@ -282,6 +288,9 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
             }}>
               <LockKeyhole size={18} style={{ color: isError ? '#ef4444' : '#38bdf8', marginRight: '10px' }} />
               <input
+                id="admin-login-password-input"
+                name="admin_login_password"
+                autoComplete={isResetMode ? "new-password" : "current-password"}
                 autoFocus
                 required
                 type={showPassword ? 'text' : 'password'}

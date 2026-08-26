@@ -155,7 +155,10 @@ export default function QuickTokenStatusLookup({ navigate }) {
             <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
               <Search size={20} className="search-icon-inside" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
               <input
+                id="quick-token-search-input"
+                name="token_lookup_query"
                 type="text"
+                autoComplete="off"
                 value={query}
                 onChange={(e) => {
                 const val = e.target.value;

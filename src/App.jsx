@@ -1,9 +1,46 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { siteConfig } from './config/siteConfig';
 import { translations } from './config/translations';
+import { APPOINTMENT_SLOTS_30MIN, BUSINESS_HOURS_CONFIG, getOperationalStatus } from './config/businessHours';
 import { publicPages } from './data/pageManifest';
 import { getStoredApplications, updateApplicationStage, deleteApplicationRecord, getDeletedAppsSet } from './utils/statusStore';
 import { handleViewDocument, handleDownloadDocument, validatePhotoUpload } from './utils/documentHelper';
+import {
+  clearAllApplicationLocalStorage,
+  saveCustomerProfileCloud,
+  deleteCustomerProfileCloud,
+  saveApplicationCloud,
+  deleteApplicationCloud,
+  subscribeApplications,
+  saveTokenBookingCloud,
+  deleteTokenBookingCloud,
+  requestTokenBookingCloud,
+  verifyTokenPaymentCloud,
+  rejectTokenPaymentCloud,
+  checkDuplicateUtrCloud,
+  subscribeTokens,
+  subscribeCustomerProfiles,
+  subscribeExpiryDocuments,
+  subscribeVisitorCounter,
+  recordVisitorHitCloud,
+  subscribeLiveQueue,
+  saveLiveQueueCloud,
+  subscribeServiceOfDay,
+  saveServiceOfDayCloud,
+  subscribeDailyVisitorLogsCloud,
+  saveExpiryDocumentCloud,
+  deleteExpiryDocumentCloud,
+  recordLoginEventCloud,
+  uploadFileToFirebaseStorage,
+  uploadDataUrlToFirebaseStorage,
+  fetchAllCloudRecords,
+  fetchSingleCustomerProfileCloud,
+  normalizePhone,
+  subscribeSponsoredAds,
+  saveSponsoredAdCloud,
+  deleteSponsoredAdCloud
+} from './utils/dataService';
+import AdvertisementBannerSection from './components/AdvertisementBannerSection';
 import ServiceCard from './components/ServiceCard';
 import NotificationCard from './components/NotificationCard';
 import NotificationTables from './components/NotificationTables';
@@ -12,6 +49,12 @@ import TokenPass from './components/TokenPass';
 import StatusTrackPage from './pages/StatusTrackPage';
 import TokenGeneratorPage from './pages/TokenGeneratorPage';
 import SoftwarePage from './pages/SoftwarePage';
+import WeblinkPage from './pages/WeblinkPage';
+import { allWebLinks } from './data/weblinksData';
+import PhotoMakerPage from './pages/PhotoMakerPage';
+import PhotoToolsHubPage from './pages/PhotoToolsHubPage';
+import PhotoToolPage from './pages/PhotoToolPage';
+import { PHOTO_TOOLS_CATALOG } from './data/photoToolsData';
 import HeroDocumentShowcase from './components/HeroDocumentShowcase';
 import HeroBannerSlider from './components/HeroBannerSlider';
 import ServicePhotoSlider from './components/ServicePhotoSlider';
@@ -46,12 +89,12 @@ import SEOHeadManager from './components/SEOHeadManager';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './components/SocialIcons';
 import {
   ArrowRight, Award, BadgeCheck, Bell, Calendar, CalendarDays, Check, ChevronDown, ChevronUp, Clock, Clock3, CreditCard,
-  FileCheck2, FileText, Gift, Globe, Headphones, Home, IndianRupee, Landmark, LockKeyhole,
-  LogIn, Mail, Menu, MessageCircle, Phone, Plus, Search, ShieldCheck, Sparkles,
+  FileCheck2, FileText, Gift, Globe, Grid, Headphones, Home, IndianRupee, Landmark, LockKeyhole,
+  LogIn, Mail, Menu, MessageCircle, MessageSquare, Phone, PhoneCall, Plus, Search, ShieldCheck, Sparkles,
   UploadCloud, User, UserCheck, UserPlus, UserRound, Users, X, ClipboardCheck, MapPin, Send, ChevronRight,
   Camera, ExternalLink, FileCog, Megaphone, BriefcaseBusiness, GraduationCap,
   FormInput, Download, ImagePlus, Printer, Trash2, Sun, Contrast, ZoomIn,
-  Crop, SlidersHorizontal, Eye, LogOut, Ticket, Volume2
+  Crop, SlidersHorizontal, Eye, LogOut, Ticket, Volume2, Flame, CheckCircle2, AlertCircle, Building2, Train, Shield, Stethoscope, BookOpen, Cpu
 } from 'lucide-react';
 
 const services = [
@@ -89,82 +132,161 @@ const documentRequirements = {
 };
 
 const serviceDocumentRequirements = {
-  'Income Certificate': ['Aadhaar Card', 'Family Card', 'Income proof or salary certificate', 'Self declaration'],
-  'Community Certificate': ['Aadhaar Card', 'Family Card', 'School transfer certificate or community proof', 'Parent or sibling community certificate if available'],
-  'Nativity Certificate': ['Aadhaar Card', 'Family Card', 'Address proof', 'School certificate or birth certificate'],
-  'Residence Certificate': ['Aadhaar Card', 'Family Card', 'Current address proof'],
-  'First Graduate Certificate': ['Aadhaar Card', 'Family Card', 'Degree certificate', 'Sibling education declaration'],
-  'Legal Heir Certificate': ['Aadhaar Card', 'Death certificate', 'Family Card', 'Relationship proof for legal heirs'],
-  'Old Age Pension': ['Aadhaar Card', 'Family Card', 'Bank Passbook', 'Age proof'],
-  'Destitute Widow Pension': ['Aadhaar Card', 'Family Card', 'Husband death certificate', 'Bank Passbook'],
-  'Disability Pension': ['Aadhaar Card', 'Disability certificate', 'Family Card', 'Bank Passbook'],
-  'Passport Application': ['Aadhaar Card', 'Date of birth proof', 'Address proof', 'Passport-size photo'],
-  'New PAN Card': ['Aadhaar Card', 'Date of birth proof', 'Passport-size photo'],
-  'PAN Card Correction': ['Existing PAN Card', 'Aadhaar Card', 'Supporting correction proof'],
-  'New Smart Card': ['Aadhaar Cards of all family members', 'Address proof', 'Passport-size photo'],
-  'Smart Card Address Change': ['Family Card', 'New address proof', 'Aadhaar Card'],
-  'Smart Card Name Add or Remove': ['Family Card', 'Aadhaar Card', 'Birth, death, or marriage certificate as applicable'],
-  'New Voter Card': ['Aadhaar Card', 'Age proof', 'Address proof', 'Passport-size photo'],
-  'Voter Card Correction': ['Voter ID Card', 'Aadhaar Card', 'Correction supporting proof'],
-  'Employment Exchange Registration': ['Aadhaar Card', 'Educational certificates', 'Community certificate if applicable', 'Passport-size photo'],
-  'Employment Qualification Update': ['Employment registration card', 'New educational certificate', 'Aadhaar Card'],
-  'Employment Renewal': ['Employment registration card', 'Aadhaar Card'],
-  'e-Shram Card Registration': ['Aadhaar Card', 'Bank Passbook', 'Mobile number'],
-  'FSSAI Food Business Registration': ['Aadhaar Card', 'Business address proof', 'Food business details', 'Passport-size photo'],
-  'TNPSC Application Support': ['Aadhaar Card', 'Educational certificates', 'Community certificate if applicable', 'Passport-size photo'],
-  'Duplicate Mark Sheet Application': ['Aadhaar Card', 'School or college details', 'Police complaint or affidavit if required'],
-  'Welfare Board Registration and Renewal': ['Aadhaar Card', 'Bank Passbook', 'Work proof', 'Passport-size photo'],
-  'Education Loan Application': ['Aadhaar Card', 'Admission letter', 'Fee structure', 'Bank Passbook'],
-  'EPFO Claim Support': ['UAN details', 'Aadhaar Card', 'Bank Passbook', 'PAN Card if applicable'],
-  'TN Police Verification Support': ['Aadhaar Card', 'Address proof', 'Passport-size photo'],
+  // Income Certificate / வருமானச்சான்று (5 Documents)
+  'Income Certificate': ['Aadhaar Card', 'Family Card / Ration Card', 'Salary Certificate / Income Proof', 'Applicant Passport Photo', 'Self Declaration Form'],
+  'வருமானச்சான்று': ['Aadhaar Card', 'Family Card / Ration Card', 'Salary Certificate / Income Proof', 'Applicant Passport Photo', 'Self Declaration Form'],
+  'வருமானச் சான்றிதழ்': ['Aadhaar Card', 'Family Card / Ration Card', 'Salary Certificate / Income Proof', 'Applicant Passport Photo', 'Self Declaration Form'],
+  
+  // Community Certificate / சாதிச்சான்று (5 Documents)
+  'Community Certificate': ['Aadhaar Card', 'Family Card / Ration Card', 'Applicant School TC / Transfer Certificate', 'Parent / Sibling Community Certificate', 'Applicant Passport Photo'],
+  'சாதிச்சான்று': ['Aadhaar Card', 'Family Card / Ration Card', 'Applicant School TC / Transfer Certificate', 'Parent / Sibling Community Certificate', 'Applicant Passport Photo'],
+  'சாதிச் சான்றிதழ்': ['Aadhaar Card', 'Family Card / Ration Card', 'Applicant School TC / Transfer Certificate', 'Parent / Sibling Community Certificate', 'Applicant Passport Photo'],
+  
+  // Nativity & Residence / பிறப்பிடச்சான்று & இருப்பிடச்சான்று (5 Documents)
+  'Nativity Certificate': ['Aadhaar Card', 'Family Card / Ration Card', 'Current Address Proof (EB Bill / Gas Bill)', 'Birth Certificate or School TC', 'Applicant Passport Photo'],
+  'பிறப்பிடச்சான்று': ['Aadhaar Card', 'Family Card / Ration Card', 'Current Address Proof (EB Bill / Gas Bill)', 'Birth Certificate or School TC', 'Applicant Passport Photo'],
+  'Residence Certificate': ['Aadhaar Card', 'Family Card / Ration Card', 'Current Address Proof (EB Bill / Gas Bill)', 'Property Tax Receipt / Rental Agreement', 'Applicant Passport Photo'],
+  'இருப்பிடச்சான்று': ['Aadhaar Card', 'Family Card / Ration Card', 'Current Address Proof (EB Bill / Gas Bill)', 'Property Tax Receipt / Rental Agreement', 'Applicant Passport Photo'],
+
+  // First Graduate / முதல் பட்டதாரி (5 Documents)
+  'First Graduate Certificate': ['Aadhaar Card', 'Family Card / Ration Card', 'Applicant 10th / 12th / Degree Mark Sheet', 'Parents Non-Graduate Proof', 'Sibling Education Declaration', 'Applicant Passport Photo'],
+  'முதல் பட்டதாரி சான்றிதழ்': ['Aadhaar Card', 'Family Card / Ration Card', 'Applicant 10th / 12th / Degree Mark Sheet', 'Parents Non-Graduate Proof', 'Sibling Education Declaration', 'Applicant Passport Photo'],
+
+  // Legal Heir / வாரிசு சான்றிதழ் (5 Documents)
+  'Legal Heir Certificate': ['Deceased Person Aadhaar Card', 'Death Certificate of Deceased', 'Family Card / Ration Card', 'Aadhaar Cards of All Legal Heirs', 'Relationship Proof Form'],
+  'வாரிசு சான்றிதழ்': ['Deceased Person Aadhaar Card', 'Death Certificate of Deceased', 'Family Card / Ration Card', 'Aadhaar Cards of All Legal Heirs', 'Relationship Proof Form'],
+
+  // Pensions (5-6 Documents)
+  'Old Age Pension': ['Aadhaar Card', 'Family Card / Ration Card', 'Age Proof (Voter ID / Birth Proof)', 'Bank Passbook (Single Account)', 'Destitute / Income Self Declaration', 'Applicant Passport Photo'],
+  'முதியோர் ஓய்வூதியம்': ['Aadhaar Card', 'Family Card / Ration Card', 'Age Proof (Voter ID / Birth Proof)', 'Bank Passbook (Single Account)', 'Destitute / Income Self Declaration', 'Applicant Passport Photo'],
+  'Destitute Widow Pension': ['Aadhaar Card', 'Family Card / Ration Card', 'Husband Death Certificate', 'Bank Passbook', 'Widow Self Declaration', 'Applicant Passport Photo'],
+  'விதவை ஓய்வூதியம்': ['Aadhaar Card', 'Family Card / Ration Card', 'Husband Death Certificate', 'Bank Passbook', 'Widow Self Declaration', 'Applicant Passport Photo'],
+  'Disability Pension': ['Aadhaar Card', 'Disability Certificate / UDID Card', 'Family Card / Ration Card', 'Bank Passbook', 'Applicant Passport Photo'],
+  'மாற்றுத்திறனாளி ஓய்வூதியம்': ['Aadhaar Card', 'Disability Certificate / UDID Card', 'Family Card / Ration Card', 'Bank Passbook', 'Applicant Passport Photo'],
+
+  // Passport & Identity (5 Documents)
+  'Passport Application': ['Aadhaar Card', 'Date of Birth Proof (Birth Certificate / 10th Mark Sheet)', 'Current Address Proof', 'PAN Card / Voter ID', 'Passport Size Photo (White Background)'],
+  'பாஸ்போர்ட்': ['Aadhaar Card', 'Date of Birth Proof (Birth Certificate / 10th Mark Sheet)', 'Current Address Proof', 'PAN Card / Voter ID', 'Passport Size Photo (White Background)'],
+  'New PAN Card': ['Aadhaar Card', 'Date of Birth Proof', 'Current Address Proof', 'Passport-size photo', 'Signature / Thumb Impression Specimen'],
+  'பான்கார்டு / PAN CARD': ['Aadhaar Card', 'Date of Birth Proof', 'Current Address Proof', 'Passport-size photo', 'Signature / Thumb Impression Specimen'],
+  'PAN Card Correction': ['Existing PAN Card Copy', 'Aadhaar Card', 'Supporting Correction Proof', 'Passport-size photo', 'Signature Specimen'],
+  'பான்கார்டு திருத்தம்': ['Existing PAN Card Copy', 'Aadhaar Card', 'Supporting Correction Proof', 'Passport-size photo', 'Signature Specimen'],
+
+  // Smart Card / குடும்ப அட்டை (5 Documents)
+  'New Smart Card': ['Aadhaar Cards of all family members', 'Address proof (Rental Agreement / EB Bill)', 'Marriage Certificate (if applicable)', 'Name Deletion Certificate', 'Head of Family Passport Photo'],
+  'புதிய குடும்ப அட்டை / Smart Card': ['Aadhaar Cards of all family members', 'Address proof (Rental Agreement / EB Bill)', 'Marriage Certificate (if applicable)', 'Name Deletion Certificate', 'Head of Family Passport Photo'],
+  'Smart Card Address Change': ['Family Card / Smart Card', 'New Address Proof (EB Bill / Tax Receipt)', 'Aadhaar Card of Head of Family', 'Supporting Document'],
+  'குடும்ப அட்டை முகவரி மாற்றம்': ['Family Card / Smart Card', 'New Address Proof (EB Bill / Tax Receipt)', 'Aadhaar Card of Head of Family', 'Supporting Document'],
+  'Smart Card Name Add or Remove': ['Family Card / Smart Card', 'Aadhaar Card of Member', 'Birth / Death / Marriage Certificate', 'Surrender Certificate if applicable'],
+  'குடும்ப அட்டையில் பெயர் சேர்த்தல் / நீக்குதல்': ['Family Card / Smart Card', 'Aadhaar Card of Member', 'Birth / Death / Marriage Certificate', 'Surrender Certificate if applicable'],
+
+  // Voter Card (4-5 Documents)
+  'New Voter Card': ['Aadhaar Card', 'Age Proof (10th TC / Birth Certificate)', 'Address Proof', 'Passport-size photo', 'Family Member Voter ID Card'],
+  'புதிய வாக்காளர் அட்டை': ['Aadhaar Card', 'Age Proof (10th TC / Birth Certificate)', 'Address Proof', 'Passport-size photo', 'Family Member Voter ID Card'],
+  'Voter Card Correction': ['Existing Voter ID Card', 'Aadhaar Card', 'Correction Supporting Proof (TC / Mark Sheet)', 'Passport-size photo'],
+  'வாக்காளர் அட்டை திருத்தம்': ['Existing Voter ID Card', 'Aadhaar Card', 'Correction Supporting Proof (TC / Mark Sheet)', 'Passport-size photo'],
+
+  // Employment (5-6 Documents)
+  'Employment Exchange Registration': ['Aadhaar Card', '10th Mark Sheet', '12th Mark Sheet / Diploma', 'Degree Certificate / Provisional', 'Community Certificate', 'Passport-size photo'],
+  'வேலைவாய்ப்பு புதிய பதிவு': ['Aadhaar Card', '10th Mark Sheet', '12th Mark Sheet / Diploma', 'Degree Certificate / Provisional', 'Community Certificate', 'Passport-size photo'],
+  'Employment Qualification Update': ['Employment Registration Card', 'New Educational Certificate / Mark Sheet', 'Aadhaar Card', 'Community Certificate'],
+  'வேலைவாய்ப்பு கல்வி சேர்க்கை': ['Employment Registration Card', 'New Educational Certificate / Mark Sheet', 'Aadhaar Card', 'Community Certificate'],
+  'Employment Renewal': ['Employment Registration Card', 'Aadhaar Card', 'Mobile Number'],
+  'வேலைவாய்ப்பு புதுப்பித்தல்': ['Employment Registration Card', 'Aadhaar Card', 'Mobile Number'],
+  'e-Shram Card Registration': ['Aadhaar Card', 'Bank Passbook', 'Active Mobile Number linked to Aadhaar', 'Nominee Details Document'],
+  'e-SHRAM CARD': ['Aadhaar Card', 'Bank Passbook', 'Active Mobile Number linked to Aadhaar', 'Nominee Details Document'],
+
+  // Business & Welfare (5 Documents)
+  'FSSAI Food Business Registration': ['Applicant Aadhaar Card', 'Business Premise Address Proof (Rental / EB)', 'Food Business Category Details', 'NOC from Property Owner', 'Applicant Passport Photo'],
+  'FSSAI REGISTRATION': ['Applicant Aadhaar Card', 'Business Premise Address Proof (Rental / EB)', 'Food Business Category Details', 'NOC from Property Owner', 'Applicant Passport Photo'],
+  'TNPSC Application Support': ['Aadhaar Card', '10th / 12th / Degree Mark Sheets', 'Community Certificate', 'PSTM Certificate (if applicable)', 'Passport-size photo', 'Signature Specimen'],
+  'TNPSC விண்ணப்பம்': ['Aadhaar Card', '10th / 12th / Degree Mark Sheets', 'Community Certificate', 'PSTM Certificate (if applicable)', 'Passport-size photo', 'Signature Specimen'],
+  'Education Loan Application': ['Applicant Aadhaar & PAN Card', 'Parent / Co-applicant Aadhaar & PAN Card', 'College Admission Letter & Bonafide', 'Official Fee Structure of College', '10th, 12th & Degree Mark Sheets', 'Bank Passbook (6 Months)'],
+  'கல்விக்கடன்': ['Applicant Aadhaar & PAN Card', 'Parent / Co-applicant Aadhaar & PAN Card', 'College Admission Letter & Bonafide', 'Official Fee Structure of College', '10th, 12th & Degree Mark Sheets', 'Bank Passbook (6 Months)'],
+  'Welfare Board Registration and Renewal': ['Aadhaar Card', 'Bank Passbook', 'Work Proof / Employer Certificate', 'Family Card', 'Passport-size photo'],
+  'நலவாரியம் புதிய பதிவு / புதுப்பித்தல்': ['Aadhaar Card', 'Bank Passbook', 'Work Proof / Employer Certificate', 'Family Card', 'Passport-size photo'],
+  'EPFO Claim Support': ['UAN details / UAN Card', 'Aadhaar Card', 'Bank Passbook with IFSC', 'PAN Card (for TDS claim)', 'Cancelled Cheque Leaf'],
+  'EPFO Advance Claim / Full Claim': ['UAN details / UAN Card', 'Aadhaar Card', 'Bank Passbook with IFSC', 'PAN Card (for TDS claim)', 'Cancelled Cheque Leaf'],
+
+  // 10-Document Comprehensive Scheme
+  'Comprehensive Business & Industrial Loan Scheme': [
+    '1. Applicant Aadhaar Card',
+    '2. Applicant PAN Card',
+    '3. Co-Applicant / Guarantor Aadhaar Card',
+    '4. Co-Applicant / Guarantor PAN Card',
+    '5. Business Premise Rental Agreement / Property Document',
+    '6. Business Project Report & Estimation',
+    '7. GST Registration Certificate',
+    '8. Bank Account Statement (Past 12 Months)',
+    '9. Income Tax Return (ITR) Copy (Past 2 Years)',
+    '10. Passport Size Photos of Applicant & Guarantor'
+  ],
+  'விரிவான அரசு கடன் திட்டம்': [
+    '1. Applicant Aadhaar Card',
+    '2. Applicant PAN Card',
+    '3. Co-Applicant / Guarantor Aadhaar Card',
+    '4. Co-Applicant / Guarantor PAN Card',
+    '5. Business Premise Rental Agreement / Property Document',
+    '6. Business Project Report & Estimation',
+    '7. GST Registration Certificate',
+    '8. Bank Account Statement (Past 12 Months)',
+    '9. Income Tax Return (ITR) Copy (Past 2 Years)',
+    '10. Passport Size Photos of Applicant & Guarantor'
+  ]
 };
 
 function getRequiredDocuments(serviceTitle, group) {
-  if (serviceDocumentRequirements[serviceTitle]) return serviceDocumentRequirements[serviceTitle];
-  if (serviceTitle.includes('Aadhaar')) return ['Aadhaar Card or enrolment ID', 'Registered mobile number', ...(serviceTitle.includes('Address') ? ['New address proof'] : [])];
-  if (serviceTitle.includes('Certificate')) return ['Aadhaar Card', 'Family Card', 'Service-specific supporting proof'];
-  return documentRequirements[group] || ['Aadhaar Card', 'Supporting document'];
+  if (!serviceTitle) return documentRequirements[group] || ['Aadhaar Card', 'Family Card', 'Address Proof', 'Photo', 'Supporting Document'];
+
+  const cleanTitle = String(serviceTitle).trim();
+  if (serviceDocumentRequirements[cleanTitle]) return serviceDocumentRequirements[cleanTitle];
+
+  // Try matching by lowercase or substring
+  for (const [key, reqList] of Object.entries(serviceDocumentRequirements)) {
+    if (cleanTitle.toLowerCase().includes(key.toLowerCase()) || key.toLowerCase().includes(cleanTitle.toLowerCase())) {
+      return reqList;
+    }
+  }
+
+  // Keyword-based full 4-6 document lists for any unlisted or custom service
+  if (cleanTitle.includes('வருமான') || cleanTitle.toLowerCase().includes('income')) {
+    return serviceDocumentRequirements['Income Certificate'];
+  }
+  if (cleanTitle.includes('சாதி') || cleanTitle.toLowerCase().includes('community')) {
+    return serviceDocumentRequirements['Community Certificate'];
+  }
+  if (cleanTitle.includes('பட்டதாரி') || cleanTitle.toLowerCase().includes('graduate')) {
+    return serviceDocumentRequirements['First Graduate Certificate'];
+  }
+  if (cleanTitle.includes('வாரிசு') || cleanTitle.toLowerCase().includes('legal heir')) {
+    return serviceDocumentRequirements['Legal Heir Certificate'];
+  }
+  if (cleanTitle.includes('ஓய்வூதியம்') || cleanTitle.toLowerCase().includes('pension')) {
+    return serviceDocumentRequirements['Old Age Pension'];
+  }
+  if (cleanTitle.includes('பாஸ்போர்ட்') || cleanTitle.toLowerCase().includes('passport')) {
+    return serviceDocumentRequirements['Passport Application'];
+  }
+  if (cleanTitle.includes('பான்கார்டு') || cleanTitle.toLowerCase().includes('pan')) {
+    return serviceDocumentRequirements['New PAN Card'];
+  }
+  if (cleanTitle.includes('குடும்ப அட்டை') || cleanTitle.toLowerCase().includes('smart card')) {
+    return serviceDocumentRequirements['New Smart Card'];
+  }
+  if (cleanTitle.includes('வாக்காளர்') || cleanTitle.toLowerCase().includes('voter')) {
+    return serviceDocumentRequirements['New Voter Card'];
+  }
+  if (cleanTitle.includes('வேலைவாய்ப்பு') || cleanTitle.toLowerCase().includes('employment')) {
+    return serviceDocumentRequirements['Employment Exchange Registration'];
+  }
+
+  if (documentRequirements[group]) return documentRequirements[group];
+  return ['Aadhaar Card', 'Family Card / Ration Card', 'Current Address Proof', 'Applicant Passport Photo', 'Supporting Certificate / Proof'];
 }
 
-const appointmentSlots = Array.from({ length: 14 }, (_, index) => {
-  const formatTime = (minutes) => {
-    const hour = Math.floor(minutes / 60);
-    const minute = minutes % 60;
-    const suffix = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
-  };
-  const start = 10 * 60 + index * 30;
-  return `${formatTime(start)} - ${formatTime(start + 30)}`;
-});
+const appointmentSlots = APPOINTMENT_SLOTS_30MIN;
 
 const isFirebaseConfigured = () => false;
-import {
-  clearAllApplicationLocalStorage,
-  saveCustomerProfileCloud,
-  saveTokenBookingCloud,
-  subscribeApplications,
-  subscribeTokens,
-  subscribeCustomerProfiles,
-  subscribeLiveQueue,
-  subscribeServiceOfDay,
-  subscribeExpiryDocuments,
-  recordLoginEventCloud,
-  saveLiveQueueCloud,
-  saveServiceOfDayCloud,
-  uploadFileToFirebaseStorage,
-  uploadDataUrlToFirebaseStorage,
-  saveExpiryDocumentCloud,
-  fetchAllCloudRecords,
-  deleteCustomerProfileCloud,
-  deleteTokenBookingCloud,
-  recordVisitorHitCloud,
-  subscribeVisitorCounter,
-  subscribeDailyVisitorLogsCloud,
-  deleteApplicationCloud,
-  deleteExpiryDocumentCloud,
-  normalizePhone
-} from './utils/dataService';
 import { setInStoreApplications } from './utils/statusStore';
 
 const readCustomerRecords = () => {
@@ -218,7 +340,7 @@ const persistTokenBooking = (token) => {
   return [token];
 };
 
-const adminOnlyPages = new Set(['weblink', 'forms', 'software', 'photo-maker', 'admin']);
+const adminOnlyPages = new Set(['forms', 'software', 'admin']);
 const menuItems = publicPages.filter(({ id }) => !adminOnlyPages.has(id)).map(({ id, label }) => [id, label]);
 
 const notifications = [
@@ -269,72 +391,10 @@ const serviceCatalog = [
   ['EPFO Advance Claim / Full Claim', 'EPFO Claim Support', 'Financial Services'],
   ['TN Police Self Verification', 'TN Police Verification Support', 'Verification'],
   ['Typing / டைப்பிங் சேவை', 'Tamil and English Typing', 'General Services'],
+  ['விரிவான அரசு கடன் திட்டம்', 'Comprehensive Business & Industrial Loan Scheme', 'Business'],
 ];
 
-const webLinks = [
-  { title: 'Tamil Nadu Government', text: 'Official state government services', href: 'https://www.tn.gov.in/', icon: Landmark },
-  { title: 'TNeGA e-Sevai', text: 'தமிழ்நாடு அரசு இ-சேவை', href: 'https://www.tnesevai.tn.gov.in/Index.aspx', icon: Landmark },
-  { title: 'CSC Services', text: 'பொது சேவை மையம்', href: 'https://digitalseva.csc.gov.in/', icon: ShieldCheck },
-  { title: 'DigiPay Web', text: 'CSC digital payment services', href: 'https://digipayweb.csccloud.in/', icon: IndianRupee },
-  { title: 'Tamil Nadu District Portals', text: 'மாவட்ட இணைய தளங்கள்', href: 'https://tndistricts.nic.in/', icon: MapPin },
-  { title: 'TNPDS', text: 'பொது விநியோகத் திட்டம்', href: 'https://www.tnpds.gov.in/', icon: FileText },
-  { title: 'Voters Service Portal', text: 'வாக்காளர் அட்டை சேவைகள்', href: 'https://voters.eci.gov.in/', icon: Users },
-  { title: 'Electoral Roll Search', text: 'வாக்காளர் விபரம் தேடுதல்', href: 'https://electoralsearch.eci.gov.in/', icon: Search },
-  { title: 'DigiLocker', text: 'Access your digital documents', href: 'https://www.digilocker.gov.in/', icon: FileCheck2 },
-  { title: 'Aadhaar Download', text: 'ஆதார் பதிவிறக்கம்', href: 'https://myaadhaar.uidai.gov.in/', icon: ShieldCheck },
-  { title: 'Aadhaar Status', text: 'பதிவு மற்றும் புதுப்பிப்பு நிலை', href: 'https://myaadhaar.uidai.gov.in/CheckAadhaarStatus/en', icon: ClipboardCheck },
-  { title: 'Birth & Death Certificate', text: 'பிறப்பு இறப்பு சான்று', href: 'https://www.crstn.org/birth_death_tn/', icon: FileText },
-  { title: 'Patta Chitta', text: 'பட்டா சிட்டா', href: 'https://eservices.tn.gov.in/eservicesnew/home.html', icon: Home },
-  { title: 'Registration Department', text: 'பதிவுத்துறை', href: 'https://tnreginet.gov.in/portal/', icon: Landmark },
-  { title: 'CM Health Insurance', text: 'மருத்துவ காப்பீடு', href: 'https://www.cmchistn.com/', icon: ShieldCheck },
-  { title: 'TN Unorganised Workers Board', text: 'அமைப்புசாரா தொழிலாளர்கள் நலவாரியம்', href: 'https://tnuwwb.tn.gov.in/', icon: Users },
-  { title: 'UDID Card', text: 'மாற்றுத்திறனாளி அடையாள அட்டை', href: 'https://swavlambancard.gov.in/Applyforudid', icon: BadgeCheck },
-  { title: 'PMEGP DIC Loan', text: 'மாவட்ட தொழில் கடன்', href: 'https://kviconline.gov.in/pmegpeportal/pmegphome/index.jsp', icon: IndianRupee },
-  { title: 'Jan Samarth Loan', text: 'Government loan schemes', href: 'https://www.jansamarth.in/home', icon: IndianRupee },
-  { title: 'PM Kisan', text: 'விவசாயி நலத்திட்டம்', href: 'https://pmkisan.gov.in/', icon: Landmark },
-  { title: 'Crop Insurance', text: 'பயிர் காப்பீடு', href: 'https://pmfby.gov.in/csclogin', icon: ShieldCheck },
-  { title: 'PAN Aadhaar Linking', text: 'பான் ஆதார் இணைக்க', href: 'https://eportal.incometax.gov.in/iec/foservices/#/pre-login/bl-link-aadhaar', icon: FileCheck2 },
-  { title: 'PAN Service Portal', text: 'PAN applications and updates', href: 'https://tinpan.proteantech.in/', icon: FileText },
-  { title: 'Train Ticket Booking', text: 'CSC travel service', href: 'https://cscsafar.in/', icon: CalendarDays },
-  { title: 'eCourts Services', text: 'இ-கோர்ட் சேவை', href: 'https://services.csccloud.in/ecourt/Default.aspx', icon: Landmark },
-  { title: 'Tele Law', text: 'இலவச சட்ட ஆலோசனை', href: 'https://www.tele-law.in/', icon: MessageCircle },
-  { title: 'CSC All Payments', text: 'Bill payment services', href: 'https://billpaymentlite.csccloud.in/', icon: IndianRupee },
-  { title: 'e-District Certificate Status', text: 'சான்றிதழ் நிலை அறிய', href: 'https://edistricts.tn.gov.in/revenue/status.html', icon: ClipboardCheck },
-  { title: 'e-Pettagam', text: 'கல்வி சான்றிதழ் சேமிப்பு', href: 'https://www.epettagam.tn.gov.in/', icon: FileCheck2 },
-  { title: 'TNEB Quick Pay', text: 'மின்கட்டணம் செலுத்த', href: 'https://www.tnebnet.org/qwp/qpay', icon: IndianRupee },
-  { title: 'TNEB Bill Status', text: 'மின்கட்டண நிலை', href: 'https://www.tnebltd.gov.in/BillStatus/billstatus.xhtml', icon: ClipboardCheck },
-  { title: 'TNPSC', text: 'தமிழ்நாடு அரசுப் பணியாளர் தேர்வாணையம்', href: 'https://www.tnpsc.gov.in/', icon: GraduationCap },
-  { title: 'TNPSC Exam Portal', text: 'TNPSC application portal', href: 'https://apply.tnpscexams.in/', icon: GraduationCap },
-  { title: 'SSC', text: 'பணியாளர் தேர்வாணையம்', href: 'https://ssc.gov.in/login', icon: BriefcaseBusiness },
-  { title: 'UPSC', text: 'மத்திய பணியாளர் தேர்வாணையம்', href: 'https://upsconline.nic.in/', icon: BriefcaseBusiness },
-  { title: 'Railway Recruitment Board', text: 'RRB recruitment', href: 'https://www.rrbapply.gov.in/', icon: BriefcaseBusiness },
-  { title: 'TNUSRB', text: 'தமிழ்நாடு சீருடைப் பணியாளர் தேர்வாணையம்', href: 'https://www.tnusrb.tn.gov.in/', icon: BriefcaseBusiness },
-  { title: 'TN Employment Exchange', text: 'வேலைவாய்ப்பு பதிவு', href: 'https://tnvelaivaaippu.gov.in/Empower/', icon: BriefcaseBusiness },
-  { title: 'National Scholarship Portal', text: 'தேசிய கல்வி உதவித்தொகை', href: 'https://scholarships.gov.in/', icon: GraduationCap },
-  { title: 'CUET UG', text: 'Common University Entrance Test', href: 'https://cuet.nta.nic.in/', icon: GraduationCap },
-  { title: 'JEE Main', text: 'Joint Entrance Examination', href: 'https://jeemain.nta.nic.in/', icon: GraduationCap },
-  { title: 'NEET UG', text: 'Medical entrance examination', href: 'https://neet.nta.nic.in/', icon: GraduationCap },
-  { title: 'TNEA Admissions', text: 'தமிழ்நாடு பொறியியல் சேர்க்கை', href: 'https://www.tneaonline.org/', icon: GraduationCap },
-  { title: 'TN Govt Arts Admissions', text: 'அரசு கலை கல்லூரி சேர்க்கை', href: 'https://www.tngasa.in/', icon: GraduationCap },
-  { title: 'Passport Seva', text: 'பாஸ்போர்ட் சேவை', href: 'https://www.passportindia.gov.in/psp', icon: FileText },
-  { title: 'Udyam Registration', text: 'சிறுதொழில் பதிவு', href: 'https://udyamregistration.gov.in/UdyamRegistration.aspx', icon: BriefcaseBusiness },
-  { title: 'GST Portal', text: 'GST services', href: 'https://www.gst.gov.in/', icon: FileText },
-  { title: 'FSSAI FoSCoS', text: 'உணவு பாதுகாப்பு பதிவு', href: 'https://foscos.fssai.gov.in/', icon: FileCheck2 },
-  { title: 'Parivahan', text: 'வாகன மற்றும் ஓட்டுநர் சேவைகள்', href: 'https://parivahan.gov.in/', icon: Home },
-  { title: 'e-Challan', text: 'போக்குவரத்து அபராதம்', href: 'https://echallan.parivahan.gov.in/index/accused-challan', icon: ClipboardCheck },
-  { title: 'TN Police Citizen Portal', text: 'தமிழ்நாடு காவல்துறை', href: 'https://www.police.tn.gov.in/citizenportal', icon: ShieldCheck },
-  { title: 'Cyber Crime Portal', text: 'இணையக் குற்றப் புகார்', href: 'https://cybercrime.gov.in/', icon: ShieldCheck },
-  { title: 'Jeevan Pramaan', text: 'ஆயுள் சான்று', href: 'https://jeevanpramaan.gov.in/v1.0/', icon: FileCheck2 },
-  { title: 'EPFO Main Page', text: 'EPFO services', href: 'https://www.epfindia.gov.in/site_en/index.php', icon: FileText },
-  { title: 'UMANG', text: 'All government services', href: 'https://web.umang.gov.in/landing/', icon: Landmark },
-  { title: 'Income Tax', text: 'வருமான வரித்துறை', href: 'https://www.incometax.gov.in/iec/foportal/', icon: FileText },
-  { title: 'ABHA Card', text: 'மருத்துவ சுகாதார அட்டை', href: 'https://abha.abdm.gov.in/abha/v3/', icon: ShieldCheck },
-  { title: 'Remove Background', text: 'Online photo tool', href: 'https://www.remove.bg/', icon: Camera },
-  { title: 'Online OCR', text: 'Image to Word converter', href: 'https://www.onlineocr.net/', icon: FileText },
-  { title: 'iLovePDF', text: 'Merge, split and compress PDF', href: 'https://www.ilovepdf.com/', icon: FileCog },
-  { title: 'QR Code Generator', text: 'Create QR codes', href: 'https://me-qr.com/', icon: ImagePlus },
-  { title: 'Resume Maker', text: 'Create a professional resume', href: 'https://eformvle.com/free-resume-bio-maker', icon: FileText },
-];
+
 
 const formsCatalog = [
   ['ALL FORMS விண்ணப்பப்படிவங்கள்', 'General'], ['AADHAAR', 'Identity'], ['Adangal - Natham', 'Revenue'], ['ADANGAL SHEET', 'Revenue'], ['Adangal', 'Revenue'], ['AGE CERTIFICATE', 'General'], ['Agnipath Affidavit', 'Employment'], ['Application for Casual Leave', 'Employment'], ['Arasu Cable TV Declaration Form', 'Utility'], ['Bank KYC Form', 'Banking'], ['Bonafide Certificate - Paramedical', 'Education'], ['CCTV Camera Installation Form', 'General'], ['Community Certificate Form', 'Certificates'], ['Computer Course Certificate', 'Education'], ['Consent Letter Form', 'General'], ['Death Certificate Form', 'Certificates'], ['Disability Certificate Form', 'Welfare'], ['Driving Licence Form', 'Transport'], ['Education Loan Form', 'Banking'], ['Employment Exchange Registration', 'Employment'], ['E-Sevai Application Form', 'General'], ['FSSAI Registration Form', 'Business'], ['First Graduate Certificate', 'Education'], ['Fisherman Registration Form', 'Welfare'], ['Gas Connection Form', 'Utility'], ['Income Certificate Form', 'Certificates'], ['Inter Caste Marriage Assistance', 'Welfare'], ['Job Application Form', 'Employment'], ['Legal Heir Certificate', 'Certificates'], ['Life Certificate Form', 'Pension'], ['Marriage Certificate Form', 'Certificates'], ['Medical Insurance Form', 'Insurance'], ['Minor PAN Card Form', 'Identity'], ['MSME / Udyam Registration', 'Business'], ['Nativity Certificate Form', 'Certificates'], ['New Family Card Form', 'Smart Card'], ['New Voter ID Form', 'Identity'], ['Old Age Pension Form', 'Pension'], ['OBC Certificate Form', 'Certificates'], ['Passport Application Form', 'Identity'], ['PAN Card Application', 'Identity'], ['PAN Correction Form', 'Identity'], ['Patta Transfer Form', 'Revenue'], ['Pension Life Certificate', 'Pension'], ['Police Verification Form', 'Verification'], ['PM Kisan Registration', 'Welfare'], ['PMEGP Loan Application', 'Banking'], ['Property Tax Form', 'Utility'], ['Residence Certificate Form', 'Certificates'], ['Scholarship Application Form', 'Education'], ['Self Declaration Form', 'General'], ['Small Farmer Certificate', 'Welfare'], ['Smart Card Address Change', 'Smart Card'], ['Smart Card Name Addition', 'Smart Card'], ['Smart Card Name Deletion', 'Smart Card'], ['Smart Card Head of Family Change', 'Smart Card'], ['Student Bonafide Form', 'Education'], ['Tamil Medium Certificate / PSTM', 'Education'], ['TNPSC Application Form', 'Employment'], ['TN Police Self Verification', 'Verification'], ['Trade Licence Form', 'Business'], ['Two Female Child Scheme', 'Welfare'], ['Unemployed Youth Assistance', 'Employment'], ['Unmarried Certificate', 'Certificates'], ['Voter Correction Form', 'Identity'], ['Voter Name Deletion Form', 'Identity'], ['Voter Address Change Form', 'Identity'], ['Widow Certificate Form', 'Certificates'], ['Widow Pension Form', 'Pension'], ['Welfare Board Renewal', 'Welfare'], ['e-SHRAM Registration Form', 'Employment'], ['EPFO Claim Form', 'Pension'], ['EPFO Nominee Form', 'Pension'], ['ESI Registration Form', 'Insurance'], ['GST Registration Form', 'Business'], ['Income Tax Declaration Form', 'Tax'], ['IT Return Supporting Form', 'Tax'], ['Kisan Credit Card Form', 'Banking'], ['Labour Welfare Board Form', 'Welfare'], ['Loan Application Checklist', 'Banking'], ['NOC Application Form', 'General'], ['Passport Photo Declaration', 'Identity'], ['Ration Card Member Add Form', 'Smart Card'], ['Ration Card Member Remove Form', 'Smart Card'], ['Revenue Petition Form', 'Revenue'], ['School Admission Form', 'Education'], ['Self Employment Loan Form', 'Banking'], ['Skill Training Registration', 'Education'], ['Street Vendor Loan Form', 'Banking'], ['TNEB Name Transfer Form', 'Utility'], ['TNEB New Connection Form', 'Utility'], ['TNEB Name / Mobile Update Form', 'Utility'], ['Transport Permit Form', 'Transport'], ['UDID Application Form', 'Welfare'], ['University Admission Checklist', 'Education'], ['Vehicle Ownership Transfer', 'Transport'], ['Village Administrative Petition', 'Revenue'], ['Welfare Scheme Enquiry Form', 'Welfare'], ['Work Experience Certificate', 'Employment']
@@ -393,10 +453,32 @@ function toDownloadLink(link) {
 const validPages = [
   'home', 'services', 'status-track', 'token-generator', 'notifications',
   'about', 'contact', 'customer', 'admin', 'weblink', 'forms', 'software',
-  'photo-maker', 'whatsapp-poster'
+  'photo-maker', 'whatsapp-poster', 'photo-tools'
 ];
 
-const getInitialPage = () => 'home';
+const getInitialPage = () => {
+  if (typeof window === 'undefined') return 'home';
+  const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').toLowerCase();
+  const searchParams = new URLSearchParams(window.location.search);
+  const queryPage = searchParams.get('page');
+  const queryTool = searchParams.get('tool');
+
+  if (queryTool) return `tools/${queryTool}`;
+  if (queryPage) {
+    if (queryPage === 'tools' && queryTool) return `tools/${queryTool}`;
+    return queryPage;
+  }
+
+  if (pathname === 'photo-tools') return 'photo-tools';
+  if (pathname.startsWith('tools/')) return pathname;
+  if (pathname && validPages.includes(pathname)) return pathname;
+
+  const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim();
+  if (hash === 'photo-tools' || hash.startsWith('tools/')) return hash;
+  if (hash && validPages.includes(hash)) return hash;
+
+  return 'home';
+};
 
 function App() {
   const [page, setPage] = useState(getInitialPage);
@@ -417,6 +499,8 @@ function App() {
     return records[phone] || { phone, profile: { name: 'Customer' }, applications: [], documents: [] };
   });
   const [adminLoggedIn, setAdminLoggedIn] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true');
+  const [customerTab, setCustomerTab] = useState('overview');
+  const [adminNavTab, setAdminNavTab] = useState('smartdesk');
   const [toast, setToast] = useState('');
   const [tokenBookings, setTokenBookings] = useState(() => readTokenBookings());
   const [customerRecords, setCustomerRecords] = useState(() => readCustomerRecords());
@@ -436,14 +520,14 @@ function App() {
       if (event.state && event.state.page) {
         targetPage = event.state.page;
       } else {
-        const pathname = window.location.pathname.replace(/^\/+/, '').trim();
-        const mainPath = pathname.split('/')[0].split('?')[0];
-        if (validPages.includes(mainPath)) {
-          targetPage = mainPath;
+        const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').trim();
+        if (pathname === 'photo-tools' || pathname.startsWith('tools/') || validPages.includes(pathname)) {
+          targetPage = pathname;
         } else {
-          const hash = window.location.hash.replace('#', '').trim();
-          const mainHash = hash.split('/')[0].split('?')[0];
-          if (validPages.includes(mainHash)) targetPage = mainHash;
+          const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim();
+          if (hash === 'photo-tools' || hash.startsWith('tools/') || validPages.includes(hash)) {
+            targetPage = hash;
+          }
         }
       }
       setPage(targetPage);
@@ -486,61 +570,42 @@ function App() {
   useEffect(() => {
     fetchAllCloudRecords().then((cloudData) => {
       if (cloudData) {
-        if (cloudData.customers) {
-          const local = readCustomerRecords();
-          setCustomerRecords({ ...local, ...cloudData.customers });
+        if (cloudData.customers && typeof cloudData.customers === 'object') {
+          setCustomerRecords(cloudData.customers);
         }
-        if (cloudData.tokens) {
-          const localToks = readTokenBookings();
-          const tokenMap = new Map();
-          [...localToks, ...cloudData.tokens].forEach(t => {
-            if (!t) return;
-            const k = String(t.tokenNo || t.tokenId || t.id || '');
-            if (k && !tokenMap.has(key => key === k)) tokenMap.set(k, t);
-          });
-          setTokenBookings(Array.from(tokenMap.values()));
+        if (Array.isArray(cloudData.tokens)) {
+          setTokenBookings(cloudData.tokens);
         }
-        if (cloudData.applications) {
-          const localApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
-          setApplicationRecords({ ...localApps, ...cloudData.applications });
-          setInStoreApplications({ ...localApps, ...cloudData.applications });
+        if (cloudData.applications && typeof cloudData.applications === 'object') {
+          setApplicationRecords(cloudData.applications);
+          setInStoreApplications(cloudData.applications);
+        }
+        if (Array.isArray(cloudData.documents)) {
+          setCloudExpiryDocs(cloudData.documents);
         }
       }
     });
 
     const unsubscribeTokens = subscribeTokens((cloudTokens) => {
       if (cloudTokens && Array.isArray(cloudTokens)) {
-        setTokenBookings((prev = []) => {
-          const localToks = readTokenBookings();
-          const tokenMap = new Map();
-          [...localToks, ...prev, ...cloudTokens].forEach(t => {
-            if (!t) return;
-            const k = String(t.tokenNo || t.tokenId || t.id || '');
-            if (k && !tokenMap.has(k)) tokenMap.set(k, t);
-          });
-          return Array.from(tokenMap.values());
-        });
+        setTokenBookings(cloudTokens);
       }
     });
 
     const unsubscribeProfiles = subscribeCustomerProfiles((cloudProfiles) => {
       if (cloudProfiles && typeof cloudProfiles === 'object') {
-        const local = readCustomerRecords();
-        const merged = { ...local, ...cloudProfiles };
-        setCustomerRecords(merged);
+        setCustomerRecords(cloudProfiles);
         const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
-        if (activePhone && (merged[activePhone] || merged[normalizePhone(activePhone)])) {
-          setCustomer(merged[activePhone] || merged[normalizePhone(activePhone)]);
+        if (activePhone && (cloudProfiles[activePhone] || cloudProfiles[normalizePhone(activePhone)])) {
+          setCustomer(cloudProfiles[activePhone] || cloudProfiles[normalizePhone(activePhone)]);
         }
       }
     });
 
     const unsubscribeApps = subscribeApplications((cloudApps) => {
       if (cloudApps && typeof cloudApps === 'object') {
-        const localApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
-        const merged = { ...localApps, ...cloudApps };
-        setApplicationRecords(merged);
-        setInStoreApplications(merged);
+        setApplicationRecords(cloudApps);
+        setInStoreApplications(cloudApps);
       }
     });
 
@@ -666,15 +731,53 @@ function App() {
     notify(nextLang === 'ta' ? 'தமிழ் மொழிக்கு மாற்றப்பட்டது' : 'Language switched to English');
   };
 
-    const menuItems = [
-      ['home', t.home],
-      ['services', t.services],
-      ['status-track', t.statusTrack],
-      ['token-generator', t.tokenSlip],
-      ['notifications', t.notifications],
-      ['about', t.about],
-      ['contact', t.contact],
-    ];
+    let menuItems = [];
+    if (adminLoggedIn) {
+      menuItems = [
+        ['admin:smartdesk', lang === 'ta' ? 'டாஷ்போர்டு' : 'Dashboard'],
+        ['admin:customers', lang === 'ta' ? 'வாடிக்கையாளர்கள்' : 'Customers'],
+        ['admin:applications', lang === 'ta' ? 'விண்ணப்பங்கள்' : 'Applications'],
+        ['admin:documents', lang === 'ta' ? 'ஆவணங்கள்' : 'Documents'],
+        ['admin:tokens', lang === 'ta' ? 'கட்டணம் & டோக்கன்' : 'Payments & Tokens'],
+        ['admin:notifications', lang === 'ta' ? 'அறிவிப்புகள்' : 'Notifications'],
+        ['status-track', lang === 'ta' ? 'விண்ணப்ப நிலை' : 'Track Status']
+      ];
+    } else if (customer) {
+      menuItems = [
+        ['customer:overview', lang === 'ta' ? 'முகப்பு பலகை' : 'Dashboard'],
+        ['customer:applications', lang === 'ta' ? 'எனது விண்ணப்பங்கள்' : 'My Applications'],
+        ['customer:documents', lang === 'ta' ? 'எனது ஆவணங்கள்' : 'My Documents'],
+        ['customer:token-slip', lang === 'ta' ? 'முன்னுரிமை டோக்கன்' : 'Priority Token'],
+        ['status-track', lang === 'ta' ? 'விண்ணப்ப நிலை' : 'Track Status'],
+        ['customer:profile-settings', lang === 'ta' ? 'சுயவிவரம்' : 'My Profile']
+      ];
+    } else {
+      menuItems = [
+        ['home', lang === 'ta' ? 'முகப்பு' : 'Home'],
+        ['services', lang === 'ta' ? 'சேவைகள்' : 'Services'],
+        ['notifications', lang === 'ta' ? 'அறிவிப்புகள்' : 'Notifications'],
+        ['photo-tools', lang === 'ta' ? 'போட்டோ & PDF கருவிகள்' : 'Photo & PDF Tools'],
+        ['weblink', lang === 'ta' ? '🌐 அரசு இணையதளங்கள்' : '🌐 Weblinks'],
+        ['status-track', lang === 'ta' ? 'நிலை அறிதல்' : 'Track Status'],
+        ['about', lang === 'ta' ? 'எங்களைப் பற்றி' : 'About Us'],
+        ['contact', lang === 'ta' ? 'தொடர்பு' : 'Contact Us']
+      ];
+    }
+
+    const handleNavClick = (id) => {
+      setMenuOpen(false);
+      if (id.startsWith('customer:')) {
+        const subTab = id.replace('customer:', '');
+        setCustomerTab(subTab);
+        navigate('customer');
+      } else if (id.startsWith('admin:')) {
+        const subTab = id.replace('admin:', '');
+        setAdminNavTab(subTab);
+        navigate('admin');
+      } else {
+        navigate(id);
+      }
+    };
 
     const saveToken = (token) => {
       if (!token) return;
@@ -698,24 +801,23 @@ function App() {
       // 2. Update customer's lastToken in customerRecords for immediate sync
       const cleanPhone = normalizePhone(token.phone);
       if (cleanPhone) {
+        let updatedCust = null;
         setCustomerRecords((prevRecords = {}) => {
           const existingCust = prevRecords[cleanPhone] || prevRecords[token.phone] || { phone: cleanPhone, name: token.customerName };
-          const updatedCust = {
+          updatedCust = {
             ...existingCust,
             phone: cleanPhone,
             lastToken: token,
             updatedAt: new Date().toISOString()
           };
-          saveCustomerProfileCloud(cleanPhone, updatedCust);
           return {
             ...prevRecords,
             [cleanPhone]: updatedCust
           };
         });
-      }
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('akesevai-data-changed'));
+        if (updatedCust) {
+          saveCustomerProfileCloud(cleanPhone, updatedCust);
+        }
       }
 
       if ('BroadcastChannel' in window) {
@@ -772,7 +874,7 @@ function App() {
       return null;
     };
 
-    const loginCustomer = async (phone, pass = '') => {
+    const loginCustomer = async (phone, pass = '', regDetails = null) => {
       const cleanPhone = normalizePhone(phone);
       if (!cleanPhone) return false;
 
@@ -786,12 +888,12 @@ function App() {
       const records = customerRecords || readCustomerRecords();
       let existingRecord = findExistingCustomerRecord(cleanPhone, records);
 
-      // If not found in local storage, check MongoDB cloud server
-      if (!existingRecord && cleanPhone) {
+      // If not found in local storage and not a new registration, check MongoDB cloud server directly
+      if (!existingRecord && cleanPhone && !regDetails) {
         try {
-          const cloudRecords = await fetchAllCloudRecords();
-          if (cloudRecords && cloudRecords.customers) {
-            existingRecord = findExistingCustomerRecord(cleanPhone, cloudRecords.customers);
+          const singleCust = await fetchSingleCustomerProfileCloud(cleanPhone);
+          if (singleCust && singleCust.phone) {
+            existingRecord = singleCust;
           }
         } catch (e) {}
       }
@@ -804,26 +906,32 @@ function App() {
         !hasName.startsWith('Customer ')
       );
 
-      const isNew = !isExistingProfileComplete;
+      const isNew = !isExistingProfileComplete && !regDetails;
 
-      const custName = isExistingProfileComplete ? (existingRecord.name || existingRecord.profile?.name) : '';
-      const custDob = isExistingProfileComplete ? (existingRecord.dob || existingRecord.profile?.dob) : '';
-      const custAadhaar = isExistingProfileComplete ? (existingRecord.aadhaarNo || existingRecord.profile?.aadhaarNo || existingRecord.aadhar) : '';
+      const custName = regDetails?.name || (isExistingProfileComplete ? (existingRecord.name || existingRecord.profile?.name) : '');
+      const custDob = regDetails?.dob || (isExistingProfileComplete ? (existingRecord.dob || existingRecord.profile?.dob) : '');
+      const custAadhaar = regDetails?.aadhaarNo || (isExistingProfileComplete ? (existingRecord.aadhaarNo || existingRecord.profile?.aadhaarNo || existingRecord.aadhar) : '');
+      const isComplete = Boolean(regDetails || isExistingProfileComplete);
 
-      const record = isExistingProfileComplete ? {
-        ...existingRecord,
+      const record = isComplete ? {
+        ...(existingRecord || {}),
         phone: cleanPhone,
         name: custName,
         dob: custDob,
         aadhaarNo: custAadhaar,
+        aadhar: custAadhaar,
         profile: {
-          ...(existingRecord.profile || {}),
+          ...(existingRecord?.profile || {}),
           name: custName,
           dob: custDob,
           aadhaarNo: custAadhaar,
-          password: pass || existingRecord.profile?.password || '',
+          aadhar: custAadhaar,
+          password: pass || existingRecord?.profile?.password || '',
           complete: true
-        }
+        },
+        applications: existingRecord?.applications || [],
+        documents: existingRecord?.documents || [],
+        appointment: existingRecord?.appointment || { date: '', time: '' }
       } : {
         phone: cleanPhone,
         name: '',
@@ -841,6 +949,10 @@ function App() {
       setCustomer(record);
       setCustomerRecords((prev) => ({ ...prev, [cleanPhone || phone]: record }));
 
+      if (isComplete) {
+        saveCustomerProfileCloud(cleanPhone, record);
+      }
+
       recordLoginEventCloud({
         type: 'customer_login',
         phone,
@@ -849,7 +961,7 @@ function App() {
       });
 
       setIsFirstTimeLogin(isNew);
-      setShowFirstLoginModal(isNew);
+      setShowFirstLoginModal(true);
       notify(isNew ? 'Account created. Your details will be saved for your next login.' : `Welcome back ${custName}! Your saved details are ready.`);
     };
 
@@ -900,9 +1012,8 @@ function App() {
     };
 
     return (
-      <div className="app-shell">
-        <SEOHeadManager activeTab={page} />
-        <WelcomeSplashIntro />
+      <div className={`app-shell ${isDark ? 'dark' : 'light'}`}>
+        <SEOHeadManager activeTab={page} currentToolId={page.startsWith('tools/') ? page.replace('tools/', '') : ''} />
         <CustomerLogoutModal
           isOpen={showLogoutModal}
           onClose={() => {
@@ -910,54 +1021,111 @@ function App() {
             navigate('home');
           }}
         />
-        <FirstTimeLoginModal isOpen={showFirstLoginModal} isFirstTime={isFirstTimeLogin} customerName={customer?.profile?.name} onClose={() => setShowFirstLoginModal(false)} />
         <header className="site-header">
           <div className="header-inner">
-            <button className="brand" onClick={() => navigate('home')} aria-label="AkEsevai home">
-              <img src="/logo.png" alt="AkEsevai Logo" className="brand-logo-img" />
+            <button className="brand" onClick={() => navigate('home')} aria-label="AK e-Sevai home">
+              <div className="brand-logo-container">
+                <img src="/logo.png" alt="AK e-Sevai Logo" className="brand-logo-img" />
+              </div>
               <div className="brand-text-wrap">
                 <strong className="brand-name">
-                  Ak <span className="brand-highlight">e-Sevai</span>
+                  AK <span className="brand-highlight">e-Sevai</span>
                 </strong>
                 <small className="brand-tagline">
-                  {t.tagline}
+                  {lang === 'ta' ? 'நம்பகமான இ-சேவை மையம்' : 'Your Trusted e-Sevai Centre'}
                 </small>
               </div>
             </button>
 
-            <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'}>
-              {menuItems.map(([id, label]) => (
+            {/* MAIN NAVIGATION (DESKTOP & MOBILE DRAWER) */}
+            <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'} id="site-navigation-drawer">
+              {/* MOBILE DRAWER TOP BAR (Visible only when mobile drawer is open) */}
+              <div className="mobile-drawer-header">
+                <div className="mobile-drawer-brand">
+                  <img src="/logo.png" alt="AK e-Sevai Logo" className="mobile-drawer-logo" />
+                  <div>
+                    <strong className="mobile-drawer-title">AK <span style={{ color: '#16a34a' }}>e-Sevai</span></strong>
+                    <small className="mobile-drawer-subtitle">{lang === 'ta' ? 'பழனி டிஜிட்டல் மையம்' : 'Palani Digital Centre'}</small>
+                  </div>
+                </div>
                 <button
-                  key={id}
-                  className={page === id ? 'nav-active' : ''}
-                  onClick={() => { navigate(id); setMenuOpen(false); }}
+                  type="button"
+                  id="mobile-drawer-close-btn"
+                  className="mobile-drawer-close-btn"
+                  onClick={() => setMenuOpen(false)}
+                  aria-label="Close navigation menu"
+                  title={lang === 'ta' ? 'மெனுவை மூடுக' : 'Close Menu'}
                 >
-                  {label}
+                  <X size={22} strokeWidth={2.5} />
                 </button>
-              ))}
+              </div>
 
-              {/* Mobile Drawer Quick Action Links */}
+              {/* NAVIGATION LINKS */}
+              <div className="nav-links-container">
+                {menuItems.map(([id, label]) => (
+                  <button
+                    key={id}
+                    id={`nav-item-${id.replace(':', '-')}`}
+                    className={`nav-link-btn ${(page === id || (id === 'photo-tools' && page.startsWith('tools/')) || (id.startsWith('customer:') && page === 'customer' && customerTab === id.replace('customer:', '')) || (id.startsWith('admin:') && page === 'admin' && adminNavTab === id.replace('admin:', ''))) ? 'nav-active' : ''}`}
+                    onClick={() => handleNavClick(id)}
+                  >
+                    <span className="nav-link-text">{label}</span>
+                    <ChevronRight size={16} className="mobile-nav-arrow" />
+                  </button>
+                ))}
+              </div>
+
+              {/* MOBILE ACTION GRID (Row 1: Language & Customer Login, Row 2: Admin) */}
               <div className="mobile-menu-actions">
                 <button
-                  className="lang-switcher-btn drawer-lang-switcher"
-                  onClick={() => { toggleLang(); setMenuOpen(false); }}
+                  type="button"
+                  id="mobile-drawer-lang-btn"
+                  className="drawer-action-btn drawer-lang-btn"
+                  onClick={() => { toggleLang(); }}
+                  title={lang === 'ta' ? 'Switch to English' : 'தமிழ் மொழிக்கு மாற்றுக'}
                 >
-                  🌐 <span>{lang === 'ta' ? 'Switch to English' : 'தமிழ் மொழிக்கு மாற்றுக'}</span>
+                  🌐 <span>{lang === 'ta' ? 'English' : 'தமிழ்'}</span>
                 </button>
 
-                <button
-                  className="nav-btn-customer"
-                  onClick={() => { navigate('customer'); setMenuOpen(false); }}
-                >
-                  <UserRound size={16} /> {t.customerPortal}
-                </button>
+                {adminLoggedIn ? (
+                  <button
+                    type="button"
+                    className="drawer-action-btn drawer-logout-btn"
+                    style={{ gridColumn: '1 / -1' }}
+                    onClick={() => { logoutAdmin(); setMenuOpen(false); }}
+                  >
+                    <LogOut size={16} /> {lang === 'ta' ? 'நிர்வாகி வெளியேறு' : 'Logout Admin'}
+                  </button>
+                ) : customer ? (
+                  <button
+                    type="button"
+                    className="drawer-action-btn drawer-logout-btn"
+                    style={{ gridColumn: '1 / -1' }}
+                    onClick={() => { logoutCustomer(); setMenuOpen(false); }}
+                  >
+                    <LogOut size={16} /> {lang === 'ta' ? 'வெளியேறு (Logout)' : 'Logout'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      id="mobile-drawer-customer-btn"
+                      className="drawer-action-btn drawer-customer-btn"
+                      onClick={() => { navigate('customer'); setMenuOpen(false); }}
+                    >
+                      <UserRound size={16} /> <span>{lang === 'ta' ? 'வாடிக்கையாளர்' : 'Customer Login'}</span>
+                    </button>
 
-                <button
-                  className="nav-btn-admin"
-                  onClick={() => { navigate('admin'); setMenuOpen(false); }}
-                >
-                  <LockKeyhole size={15} /> {t.admin}
-                </button>
+                    <button
+                      type="button"
+                      id="mobile-drawer-admin-btn"
+                      className="drawer-action-btn drawer-admin-btn"
+                      onClick={() => { navigate('admin'); setMenuOpen(false); }}
+                    >
+                      <LockKeyhole size={15} /> <span>{lang === 'ta' ? 'நிர்வாகி' : 'Admin'}</span>
+                    </button>
+                  </>
+                )}
               </div>
             </nav>
 
@@ -965,31 +1133,77 @@ function App() {
               <DarkModeToggle isDark={isDark} setIsDark={setIsDark} />
 
               <button
-                className="lang-switcher-btn"
+                type="button"
+                id="header-lang-switcher-btn"
+                className="lang-switcher-btn desktop-header-lang-btn"
                 onClick={toggleLang}
                 title={lang === 'ta' ? 'Switch language to English' : 'தமிழ் மொழிக்கு மாற்றுக'}
               >
                 🌐 <span className="lang-switcher-text">{lang === 'ta' ? 'EN' : 'தமிழ்'}</span>
               </button>
 
-              <button
-                className="nav-btn-admin desktop-only-btn"
-                onClick={() => navigate('admin')}
-                title="Admin Login"
-              >
-                <LockKeyhole size={13} style={{ color: '#fbbf24' }} /> {t.admin}
-              </button>
+              {adminLoggedIn ? (
+                <>
+                  <button
+                    className="desktop-only-btn"
+                    onClick={() => { setAdminNavTab('smartdesk'); navigate('admin'); }}
+                    style={{ background: '#f0fdf4', border: '1.5px solid #86efac', color: '#15803d', padding: '6px 12px', borderRadius: '8px', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <ShieldCheck size={14} color="#16a34a" /> {lang === 'ta' ? 'நிர்வாகம் (Admin: ON)' : 'Admin: ON'}
+                  </button>
+                  <button
+                    className="desktop-only-btn"
+                    onClick={logoutAdmin}
+                    style={{ background: '#fee2e2', border: '1.5px solid #fca5a5', color: '#dc2626', padding: '6px 12px', borderRadius: '8px', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <LogOut size={14} /> {lang === 'ta' ? 'வெளியேறு' : 'Logout'}
+                  </button>
+                </>
+              ) : customer ? (
+                <>
+                  <button
+                    className="desktop-only-btn"
+                    onClick={() => { setCustomerTab('overview'); navigate('customer'); }}
+                    style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', color: '#1e40af', padding: '6px 12px', borderRadius: '8px', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <UserRound size={14} /> {customer.profile?.name || customer.name || 'Customer'}
+                  </button>
+                  <button
+                    className="desktop-only-btn"
+                    onClick={logoutCustomer}
+                    style={{ background: '#fee2e2', border: '1.5px solid #fca5a5', color: '#dc2626', padding: '6px 12px', borderRadius: '8px', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    <LogOut size={14} /> {lang === 'ta' ? 'வெளியேறு' : 'Logout'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="nav-btn-customer desktop-only-btn"
+                    id="desktop-nav-customer-btn"
+                    onClick={() => navigate('customer')}
+                    title="Customer Portal"
+                  >
+                    <UserRound size={14} /> {lang === 'ta' ? 'வாடிக்கையாளர்' : 'Customer Login'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="nav-btn-admin desktop-only-btn"
+                    id="desktop-nav-admin-btn"
+                    onClick={() => navigate('admin')}
+                    title="Admin Login"
+                  >
+                    <LockKeyhole size={13} style={{ color: '#fbbf24' }} /> {lang === 'ta' ? 'நிர்வாகி' : 'Admin'}
+                  </button>
+                </>
+              )}
 
               <button
-                className="nav-btn-customer desktop-only-btn"
-                onClick={() => navigate('customer')}
-                title="Customer Portal"
-              >
-                <UserRound size={14} /> {t.customerPortal}
-              </button>
-
-              <button
+                type="button"
                 className="menu-button"
+                id="header-hamburger-menu-btn"
                 onClick={() => setMenuOpen(!menuOpen)}
                 aria-label="Toggle menu"
                 title="Toggle mobile menu"
@@ -1000,25 +1214,27 @@ function App() {
           </div>
         </header>
         <div className="announcement-bar" aria-label="AkEsevai updates">
-          <div className="announcement-track"><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span><span>APPOINTMENTS OPEN TODAY • 10:00 AM - 5:00 PM</span><span>DOCUMENTS • CERTIFICATES • WELFARE SCHEMES</span><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span></div>
+          <div className="announcement-track"><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span><span>APPOINTMENTS OPEN TODAY • 10:00 AM - 8:00 PM</span><span>DOCUMENTS • CERTIFICATES • WELFARE SCHEMES</span><span>AK ESEVAI • PALANI'S DIGITAL SERVICE PARTNER</span></div>
         </div>
 
         <main>
           {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
           {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
-          {page === 'weblink' && (adminLoggedIn ? <WeblinkPage /> : <PrivatePageGate navigate={navigate} />)}
-          {page === 'photo-maker' && (adminLoggedIn ? <PhotoMakerPage notify={notify} /> : <PrivatePageGate navigate={navigate} />)}
-          {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} /> : <PrivatePageGate navigate={navigate} />)}
-          {page === 'notifications' && <NotificationsPage lang={lang} />}
-          {page === 'software' && (adminLoggedIn ? <SoftwarePage notify={notify} navigate={navigate} /> : <PrivatePageGate navigate={navigate} />)}
-          {page === 'whatsapp-poster' && <WhatsappPosterPage notify={notify} />}
-          {page === 'status-track' && <StatusTrackPage />}
-          {page === 'token-generator' && <TokenGeneratorPage onTokenSaved={saveToken} />}
+          {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
+          {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
+          {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
+          {page === 'photo-maker' && <PhotoMakerPage notify={notify} lang={lang} />}
+          {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
+          {page === 'notifications' && <NotificationsPage lang={lang} navigate={navigate} />}
+          {page === 'software' && (adminLoggedIn ? <SoftwarePage notify={notify} navigate={navigate} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
+          {page === 'whatsapp-poster' && <WhatsappPosterPage notify={notify} lang={lang} />}
+          {page === 'status-track' && <StatusTrackPage lang={lang} />}
+          {page === 'token-generator' && <TokenGeneratorPage onTokenSaved={saveToken} lang={lang} />}
           {page === 'about' && <AboutPage navigate={navigate} lang={lang} />}
           {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
-          {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} />}
-          {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} />}
-          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} />}
+          {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} onClose={() => navigate('home')} />}
+          {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} activeTab={customerTab} setActiveTab={setCustomerTab} lang={lang} navigate={navigate} />}
+          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
         </main>
 
         <footer className="site-footer">
@@ -1041,6 +1257,32 @@ function App() {
               <a href={siteConfig.facebook} target="_blank" rel="noreferrer" title="Facebook Page" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#1877F2', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(24,119,242,0.3)' }}>
                 <FacebookIcon size={15} color="white" /> Facebook
               </a>
+            </div>
+
+            {/* Photo Tools Footer Links */}
+            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+              <strong style={{ fontSize: '12px', color: '#93c5fd', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                📸 Free Photo & Document Tools:
+              </strong>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
+                <button onClick={() => navigate('photo-tools')} style={{ background: 'none', border: 'none', color: '#86efac', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>All Tools Hub</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/passport-size-photo')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Passport Photo</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/photo-compress-20kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 20KB</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/photo-compress-50kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 50KB</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/photo-compress-100kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 100KB</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/photo-crop')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Photo Crop</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/jpg-to-pdf')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>JPG to PDF</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/png-to-jpg')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PNG to JPG</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/pdf-compress')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PDF Compress</button>
+              </div>
             </div>
           </div>
           <div className="footer-contact"><span><MapPin size={16} /> {siteConfig.address}</span><a href={`tel:${siteConfig.phone}`}><Phone size={16} /> {siteConfig.displayPhone}</a><a href={`mailto:${siteConfig.email}`}><Mail size={16} /> {siteConfig.email}</a></div>
@@ -1078,100 +1320,139 @@ function AdEnquiryCard() {
     }
 
 function HomePage({ navigate, notify, lang, visitorCount = 18472 }) {
-      const t = translations[lang] || translations.en;
-      return <>
-        <section className="hero">
-          <div className="hero-content page-width">
-            <div className="eyebrow"><span className="live-dot" /> {t.eyebrow}</div>
-            <h1 className={lang === 'ta' ? 'hero-title-tamil' : ''}>{t.heroTitleLine1}<br /><em>{t.heroTitleLine2}</em></h1>
-            <p className="hero-copy">{t.heroCopy}</p>
-            <div className="hero-actions"><button className="button button-primary" onClick={() => navigate('customer')}>{t.startApp} <ArrowRight size={18} /></button><button className="button button-quiet" onClick={() => navigate('services')}>{t.exploreServices} <ChevronRight size={17} /></button></div>
-            <div className="hero-note"><ShieldCheck size={16} /> {t.heroNote}</div>
+  const isTa = lang === 'ta';
+  const t = translations[lang] || translations.en;
+
+  return (
+    <>
+      {/* 1. TOP ANNOUNCEMENT TICKER */}
+      <div className="top-announcement-banner">
+        <marquee scrollamount="4">
+          {isTa
+            ? '✨ AK e-Sevai மையம் பழனி • அரசு சான்றிதழ்கள், ஆதார், பட்டா, ஸ்மார்ட் கார்டு, உதவித்தொகை மற்றும் அனைத்து அரசு நலத்திட்ட விண்ணப்பங்கள் • நேரம்: திங்கள் – சனி காலை 10:00 – இரவு 8:00 • உதவிக்கு: 93423 18844 ✨'
+            : '✨ AK e-Sevai Centre Palani • Government Certificates, Aadhaar, Smart Card, Pension & All Online Welfare Schemes • Hours: Mon–Sat 10:00 AM – 8:00 PM • Help: 93423 18844 ✨'}
+        </marquee>
+      </div>
+
+      <div className="page-width">
+        {/* 2. COMPACT MODERN HERO SECTION */}
+        <section className="modern-home-hero">
+          <div className="hero-badge-pill">
+            <span>🏛️</span>
+            <span>{isTa ? 'தமிழ்நாடு & மத்திய அரசு அங்கீகரிக்கப்பட்ட இ-சேவை மையம் • Palani' : 'Government Approved e-Sevai Digital Centre • Palani'}</span>
           </div>
-          <div className="hero-visual-showcase-container" style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: '860px', margin: '20px 0', flexShrink: 1 }}>
+
+          <h1 className="hero-main-headline">
+            AK e-Sevai Centre
+            <span style={{ display: 'block', color: '#16a34a', fontSize: '0.85em', marginTop: '6px' }}>
+              {isTa ? 'அரசு மற்றும் ஆன்லைன் சேவைகளை எளிதாக பெறுங்கள்' : 'Essential Government & Citizen Services Made Simple'}
+            </span>
+          </h1>
+
+          <p className="hero-main-subtitle">
+            {isTa
+              ? 'வீட்டிலிருந்தே விண்ணப்பிக்கலாம் • ஆவணங்களை பதிவேற்றலாம் • விண்ணப்ப நிலையை உடனுக்குடன் கண்காணிக்கலாம்'
+              : 'Apply online from home • Upload documents safely • Track application progress in real time'}
+          </p>
+
+          {/* 5 PRIMARY ACTION BUTTONS */}
+          <div className="hero-cta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+            <button className="hero-cta-btn hero-cta-primary" onClick={() => navigate('services')}>
+              <Grid size={17} /> {isTa ? '🟢 சேவைகள் (Services)' : '🟢 View Services'}
+            </button>
+
+            <button className="hero-cta-btn hero-cta-login" onClick={() => navigate('customer')}>
+              <UserRound size={17} /> {isTa ? '🔵 விண்ணப்பிக்க (Apply)' : '🔵 Apply / Login'}
+            </button>
+
+            <button className="hero-cta-btn hero-cta-track" onClick={() => navigate('status-track')}>
+              <Search size={17} /> {isTa ? '🔍 நிலை அறிய (Track)' : '🔍 Track Status'}
+            </button>
+
+            <button className="hero-cta-btn hero-cta-token" onClick={() => navigate('token-generator')}>
+              <Ticket size={17} /> {isTa ? '🎟️ Priority Token' : '🎟️ Priority Token'}
+            </button>
+
+            <button 
+              className="hero-cta-btn" 
+              onClick={() => navigate('photo-tools')}
+              style={{
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                fontSize: '13px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)'
+              }}
+            >
+              <Camera size={17} /> {isTa ? '📸 போட்டோ டூல்ஸ்' : '📸 Photo Tools'}
+            </button>
+          </div>
+
+          {/* COMPACT REAL OFFICE SHOWCASE SLIDER */}
+          <div className="home-centre-image-section" style={{ width: '100%', maxWidth: '960px', margin: '20px auto 14px', position: 'relative' }}>
             <AkEsevaiOfficePhotoSlider />
           </div>
-        </section>
 
-        {/* INSTALL PWA MOBILE APP BANNER */}
-        <div className="page-width">
-          <InstallPwaBanner />
-        </div>
-
-        {/* EASY & CLEAR LIVE CENTER STATUS BANNER */}
-        <div className="page-width">
-          <LiveWaitTimeBanner lang={lang} navigate={navigate} />
-        </div>
-
-
-
-        {/* ⭐ SERVICE OF THE DAY BANNER - "இன்றைய சிறப்பு சேவை" */}
-        <div className="page-width">
-          <ServiceOfTheDayBanner navigate={navigate} />
-        </div>
-
-
-
-        {/* ANIMATED LIVE COUNTER STATS STRIP */}
-        <div className="page-width">
-          <AnimatedLiveStatsStrip />
-        </div>
-
-        {/* GOVERNMENT PASSPORT PHOTO & SIGNATURE CROPPER */}
-        <div className="page-width">
-          <GovernmentPhotoCropperTool />
-        </div>
-
-
-
-        {/* TDCOMMONESEVAI STYLE HERO BANNER SLIDER */}
-        <div className="page-width">
-          <HeroBannerSlider navigate={navigate} />
-        </div>
-
-        {/* AADHAAR MARQUEE BANNER ON HOME PAGE */}
-        <div className="page-width" style={{ marginTop: '28px', marginBottom: '15px' }}>
-          <div className="aadhaar-marquee-box" style={{ margin: '0' }}>
-            <marquee scrollamount="4">
-              {t.aadhaarMarqueeText}
-            </marquee>
+          {/* TRUST HIGHLIGHT BADGES */}
+          <div className="hero-trust-strip">
+            <span className="hero-trust-item"><ShieldCheck size={15} color="#16a34a" /> {isTa ? 'அரசு அங்கீகாரம்' : 'Govt Authorized'}</span>
+            <span className="hero-trust-item">⚡ {isTa ? 'Same-Day சமர்ப்பிப்பு' : 'Same-Day Processing'}</span>
+            <span className="hero-trust-item">📄 {isTa ? '100 KB ஆவண பெட்டகம்' : '100 KB Doc Vault'}</span>
+            <span className="hero-trust-item">🔒 {isTa ? 'பாதுகாப்பான தளம்' : '256-Bit Secure'}</span>
+            <span className="hero-trust-item">📱 {isTa ? 'நேரடி SMS நிலை' : 'Live SMS Alerts'}</span>
           </div>
-        </div>
+        </section>
+      </div>
 
-        {/* PREMIUM LOCAL SPONSORED ADVERTISEMENTS SHOWCASE */}
-        <div className="page-width">
-          <PremiumHomeAdShowcase navigate={navigate} />
-        </div>
+      {/* 3. OPERATIONAL STATUS & LIVE QUEUE STRIP */}
+      <div className="page-width">
+        <LiveWaitTimeBanner lang={lang} navigate={navigate} />
+      </div>
 
-
-
-
-
-        {/* SMART AI DOCUMENT VERIFICATION CHECKER WIDGET */}
-        <div className="page-width">
-          <AiDocumentCheckerWidget navigate={navigate} />
-        </div>
+      {/* 4. RESPONSIVE ADVERTISEMENT BANNER CAROUSEL (Active Ads Only) */}
+      <AdvertisementBannerSection lang={lang} navigate={navigate} />
 
 
 
+      {/* 8. SHORT CONTACT & ASSISTANCE STRIP */}
+      <div className="page-width">
+        <section style={{ background: 'linear-gradient(135deg, #022c7a 0%, #15803d 100%)', color: '#ffffff', padding: '20px 24px', borderRadius: '16px', margin: '20px auto 32px', boxShadow: '0 8px 20px rgba(2, 44, 122, 0.15)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <span style={{ background: 'rgba(255,255,255,0.15)', color: '#fde047', fontSize: '10px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px' }}>
+                {isTa ? 'நேரடி உதவி மையம்' : 'DIRECT ASSISTANCE'}
+              </span>
+              <h3 style={{ fontSize: '18px', fontWeight: 900, margin: '6px 0 2px', color: '#ffffff' }}>
+                {isTa ? 'உங்களுக்கு உதவி அல்லது ஆலோசனை தேவையா?' : 'Need Help or Guidance?'}
+              </h3>
+              <p style={{ fontSize: '12px', color: '#e0f2fe', margin: 0 }}>
+                📍 AK e-Sevai Centre, Mill Road, Palani • 🕘 {isTa ? 'திங்கள் – சனி காலை 10:00 – இரவு 8:00' : 'Mon–Sat 10:00 AM – 8:00 PM'}
+              </p>
+            </div>
 
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <a href="tel:9342318844" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#ffffff', color: '#022c7a', padding: '10px 16px', borderRadius: '10px', textDecoration: 'none', fontWeight: 800, fontSize: '13px' }}>
+                <PhoneCall size={16} color="#16a34a" /> <span>+91 93423 18844</span>
+              </a>
 
-        {/* SOCIAL MEDIA CHANNELS & FOLLOW WIDGET */}
-        <div className="page-width">
-          <SocialMediaFollowWidget />
-        </div>
-
-        <section className="notifications-section page-width"><div className="section-heading"><div><span className="section-kicker">{t.notificationsKicker}</span><h2>{t.notificationsTitle}</h2></div><button className="text-button" onClick={() => navigate('notifications')}>{t.viewAllNotifications} <ArrowRight size={16} /></button></div><div className="notification-grid">{notifications.map((notification) => <NotificationCard key={notification.title} notification={notification} />)}</div><div className="visitor-counter"><Eye /> <span>{t.totalVisitors}</span><strong>{visitorCount.toLocaleString('en-IN')}</strong></div></section>
-
-
-        {/* CITIZEN REVIEWS & TESTIMONIALS AT THE BOTTOM OF HOMEPAGE */}
-        <div className="page-width">
-          <CustomerTestimonials />
-        </div>
-
-        <section className="cta-section page-width"><div className="cta-box"><div><span className="section-kicker">{t.ctaKicker}</span><h2>{t.ctaTitle}</h2><p>{t.ctaText}</p></div><button className="button button-primary" onClick={() => navigate('contact')}>{t.talkToUs} <MessageCircle size={18} /></button></div></section>
-      </>;
-    }
+              <a href="https://wa.me/919342318844" target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#25D366', color: '#ffffff', padding: '10px 16px', borderRadius: '10px', textDecoration: 'none', fontWeight: 800, fontSize: '13px' }}>
+                <MessageSquare size={16} color="#ffffff" /> <span>WhatsApp</span>
+              </a>
+            </div>
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}
 
 const getServiceVisual = (group, title = '') => {
   const t = title.toLowerCase();
@@ -1438,401 +1719,12 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
-  function WeblinkPage() { const [query, setQuery] = useState(''); const filteredLinks = webLinks.filter((link) => `${link.title} ${link.text}`.toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="USEFUL WEBLINKS" title="Trusted links, all in one place." text="Open official portals directly from AkEsevai. Search by service name and choose Open to visit the official website."><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Link-ஐ தேடவும்... Search official links" /><span>{filteredLinks.length} links</span></div><div className="link-grid">{filteredLinks.map((link) => { const Icon = link.icon; return <a className="external-link-card" href={link.href} target="_blank" rel="noreferrer" key={link.title}><span className="link-icon"><Icon /></span><span><strong>{link.title}</strong><small>{link.text}</small></span><span className="open-link">Open <ExternalLink size={14} /></span></a>; })}</div><div className="link-note"><ShieldCheck size={18} /><span>Always check that you are on the official government website before entering personal details.</span></div></PageIntro>; }
 
-  function PhotoMakerPage({ notify }) {
-    const [photo, setPhoto] = useState('');
-    const [copies, setCopies] = useState(8);
-    const [paper, setPaper] = useState('A4');
-    const [brightness, setBrightness] = useState(100);
-    const [contrast, setContrast] = useState(100);
-    const [zoom, setZoom] = useState(100);
-    const [border, setBorder] = useState(true);
-    const [textEnabled, setTextEnabled] = useState(false);
-    const [photoText, setPhotoText] = useState('');
-    const [margins, setMargins] = useState({ top: 5, bottom: 5, left: 5, right: 5 });
-    const [gaps, setGaps] = useState({ horizontal: 2.5, vertical: 2.5 });
-    const bgRemoverRef = useRef(null);
 
-    const updateMargin = (key, value) => setMargins({ ...margins, [key]: value });
-    const updateGap = (key, value) => setGaps({ ...gaps, [key]: value });
-    const clearPhoto = () => { setPhoto(''); setPhotoText(''); notify('Photo cleared.'); };
-    const photoStyle = { filter: `brightness(${brightness}%) contrast(${contrast}%)`, transform: `scale(${zoom / 100})` };
-
-    const buildSheetCanvas = (photoUrl) => {
-      return new Promise((resolve, reject) => {
-        if (!photoUrl) {
-          reject(new Error('No photo uploaded'));
-          return;
-        }
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          let canvasWidth = 2480; // A4
-          let canvasHeight = 3508;
-          let cols = 5;
-
-          if (paper === '4 x 6 inch') {
-            canvasWidth = 1200;
-            canvasHeight = 1800;
-            cols = 3;
-          } else if (paper === 'A5') {
-            canvasWidth = 1748;
-            canvasHeight = 2480;
-            cols = 4;
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = canvasWidth;
-          canvas.height = canvasHeight;
-          const ctx = canvas.getContext('2d');
-
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-          const scaleMM = 300 / 25.4;
-          const photoW = Math.round(35 * scaleMM);
-          const photoH = Math.round(45 * scaleMM);
-
-          const mt = (Number(margins.top) || 5) * scaleMM;
-          const ml = (Number(margins.left) || 5) * scaleMM;
-          const gh = (Number(gaps.horizontal) || 2.5) * scaleMM;
-          const gv = (Number(gaps.vertical) || 2.5) * scaleMM;
-
-          for (let i = 0; i < copies; i++) {
-            const row = Math.floor(i / cols);
-            const col = i % cols;
-            const x = ml + col * (photoW + gh);
-            const y = mt + row * (photoH + gv);
-
-            if (y + photoH > canvasHeight) break;
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.rect(x, y, photoW, photoH);
-            ctx.clip();
-
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(x, y, photoW, photoH);
-
-            ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
-
-            const zoomFactor = (zoom || 100) / 100;
-            const drawW = photoW * zoomFactor;
-            const drawH = photoH * zoomFactor;
-            const drawX = x + (photoW - drawW) / 2;
-            const drawY = y + (photoH - drawH) / 2;
-
-            ctx.drawImage(img, drawX, drawY, drawW, drawH);
-            ctx.filter = 'none';
-
-            if (border) {
-              ctx.strokeStyle = '#666666';
-              ctx.lineWidth = 3;
-              ctx.strokeRect(x, y, photoW, photoH);
-            }
-
-            if (textEnabled && photoText) {
-              const textHeight = Math.round(28 * (scaleMM / 10));
-              ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-              ctx.fillRect(x, y + photoH - textHeight, photoW, textHeight);
-
-              ctx.fillStyle = '#000000';
-              ctx.font = `bold ${Math.round(14 * (scaleMM / 10))}px sans-serif`;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText(photoText, x + photoW / 2, y + photoH - textHeight / 2);
-            }
-
-            ctx.restore();
-          }
-
-          resolve(canvas);
-        };
-        img.onerror = (err) => reject(err);
-        img.src = photoUrl;
-      });
-    };
-
-    const buildSinglePhotoCanvas = (photoUrl) => {
-      return new Promise((resolve, reject) => {
-        if (!photoUrl) {
-          reject(new Error('No photo uploaded'));
-          return;
-        }
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          const scaleMM = 300 / 25.4;
-          const photoW = Math.round(35 * scaleMM);
-          const photoH = Math.round(45 * scaleMM);
-
-          const canvas = document.createElement('canvas');
-          canvas.width = photoW;
-          canvas.height = photoH;
-          const ctx = canvas.getContext('2d');
-
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, photoW, photoH);
-
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(0, 0, photoW, photoH);
-          ctx.clip();
-
-          ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
-          const zoomFactor = (zoom || 100) / 100;
-          const drawW = photoW * zoomFactor;
-          const drawH = photoH * zoomFactor;
-          const drawX = (photoW - drawW) / 2;
-          const drawY = (photoH - drawH) / 2;
-
-          ctx.drawImage(img, drawX, drawY, drawW, drawH);
-          ctx.filter = 'none';
-
-          if (border) {
-            ctx.strokeStyle = '#666666';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(0, 0, photoW, photoH);
-          }
-
-          if (textEnabled && photoText) {
-            const textHeight = 34;
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-            ctx.fillRect(0, photoH - textHeight, photoW, textHeight);
-
-            ctx.fillStyle = '#000000';
-            ctx.font = 'bold 16px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(photoText, photoW / 2, photoH - textHeight / 2);
-          }
-
-          ctx.restore();
-          resolve(canvas);
-        };
-        img.onerror = (err) => reject(err);
-        img.src = photoUrl;
-      });
-    };
-
-    const triggerDownload = (dataUrl, filename) => {
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    };
-
-    const handlePrintPhotos = async () => {
-      if (!photo) {
-        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும் (Please upload a photo first).');
-        return;
-      }
-      try {
-        notify('⏳ Photo sheet தயார் செய்யப்படுகிறது...');
-        const canvas = await buildSheetCanvas(photo);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        const printWin = window.open('', '_blank');
-        if (!printWin) {
-          notify('⚠️ Popup தடுப்பு உள்ளது. பிரின்ட் செய்ய popup அனுமதி கொடுக்கவும்.');
-          return;
-        }
-        printWin.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>AkEsevai Passport Photo Sheet - ${paper}</title>
-              <style>
-                @page { size: auto; margin: 0mm; }
-                body { margin: 0; padding: 0; background: white; text-align: center; }
-                img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
-                @media print { img { width: 100%; height: auto; } }
-              </style>
-            </head>
-            <body>
-              <img src="${dataUrl}" />
-              <script>
-                window.onload = function() {
-                  setTimeout(function() {
-                    window.focus();
-                    window.print();
-                  }, 300);
-                };
-              </script>
-            </body>
-          </html>
-        `);
-        printWin.document.close();
-        notify(`🖨️ ${copies} போட்டோ தாள் பிரிண்ட் செய்ய சன்னல் திறக்கப்பட்டது.`);
-      } catch (err) {
-        console.error(err);
-        notify('❌ Error generating print sheet: ' + err.message);
-      }
-    };
-
-    const handleDownloadPDF = async () => {
-      if (!photo) {
-        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும் (Please upload a photo first).');
-        return;
-      }
-      try {
-        notify('⏳ PDF / Image பதிவிறக்கம் செய்யப்படுகிறது...');
-        const canvas = await buildSheetCanvas(photo);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        triggerDownload(dataUrl, `akesevai_passport_photos_${paper.replace(/\s+/g, '_')}.jpg`);
-        notify(`✅ போட்டோ தாள் உங்கள் கணினியின் 'Downloads' (பதிவிறக்கங்கள்) போல்டரில் சேமிக்கப்பட்டது!`);
-      } catch (err) {
-        console.error(err);
-        notify('❌ Download error: ' + err.message);
-      }
-    };
-
-    const handleSaveSinglePhoto = async () => {
-      if (!photo) {
-        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும்.');
-        return;
-      }
-      try {
-        const canvas = await buildSinglePhotoCanvas(photo);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-        triggerDownload(dataUrl, 'passport_photo_single.jpg');
-        notify(`✅ தனி புகைப்படம் 'Downloads' போல்டரில் சேமிக்கப்பட்டது!`);
-      } catch (err) {
-        console.error(err);
-        notify('❌ Error saving photo: ' + err.message);
-      }
-    };
-
-    const handleCropPhoto = () => {
-      if (!photo) {
-        notify('⚠️ புகைப்படத்தை முதலில் பதிவேற்றவும்.');
-        return;
-      }
-      buildSinglePhotoCanvas(photo)
-        .then((canvas) => {
-          const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-          setPhoto(croppedDataUrl);
-          notify('✂️ பாஸ்போர்ட் அளவீட்டிற்கு போட்டோ க்ராப் செய்யப்பட்டது.');
-        })
-        .catch((err) => notify('❌ Crop error: ' + err.message));
-    };
-
-    return (
-      <PageIntro kicker="PHOTO MAKER SOFTWARE" title="Create your passport photo sheet." text="Upload one photo, adjust the layout, and generate a ready-to-print sheet just like a service centre tool.">
-        <div className="photo-tool">
-          <div className="photo-toolbar">
-            <span className="tool-badge"><Camera size={18} /> PHOTO MAKER</span>
-            <button className="tool-action" onClick={handleDownloadPDF}><Download size={15} /> Generate & Download Sheet</button>
-            <button className="tool-action" onClick={handleCropPhoto}><Crop size={15} /> Crop Photo (3.5x4.5)</button>
-            <button className="tool-action" onClick={handlePrintPhotos}><Printer size={15} /> Print Sheet / Save PDF</button>
-            <button className="tool-action" onClick={handleDownloadPDF}><Download size={15} /> Download PDF / Sheet</button>
-          </div>
-          <div className="photo-tool-layout">
-            <aside className="photo-controls">
-              <label className="photo-upload compact-upload">
-                <ImagePlus size={25} />
-                <strong>{photo ? 'Change photo' : 'Upload photo'}</strong>
-                <small>JPG format only, up to 1 MB</small>
-                <input
-                  type="file"
-                  accept="image/jpeg,.jpg,.jpeg"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) {
-                      const validation = validatePhotoUpload(file, 1);
-                      if (!validation.valid) {
-                        notify(validation.error);
-                        event.target.value = '';
-                        return;
-                      }
-                      setPhoto(URL.createObjectURL(file));
-                      notify('Photo loaded into the sheet.');
-                    }
-                  }}
-                />
-              </label>
-
-              <div className="control-section">
-                <strong><SlidersHorizontal size={15} /> Sheet settings</strong>
-                <label>Paper<select value={paper} onChange={(event) => setPaper(event.target.value)}><option>A4</option><option>4 x 6 inch</option><option>A5</option></select></label>
-                <label>Copies<input type="number" min="1" max="40" value={copies} onChange={(event) => setCopies(Math.max(1, Math.min(40, Number(event.target.value))))} /></label>
-              </div>
-
-              <div className="control-section">
-                <strong><Sun size={15} /> Image adjustment</strong>
-                <label>Brightness <output>{brightness}%</output><input type="range" min="50" max="150" value={brightness} onChange={(event) => setBrightness(event.target.value)} /></label>
-                <label><Contrast size={14} /> Contrast <output>{contrast}%</output><input type="range" min="50" max="150" value={contrast} onChange={(event) => setContrast(event.target.value)} /></label>
-                <label><ZoomIn size={14} /> Zoom <output>{zoom}%</output><input type="range" min="70" max="140" value={zoom} onChange={(event) => setZoom(event.target.value)} /></label>
-              </div>
-
-              <div className="control-section">
-                <strong>Margins (mm)</strong>
-                <div className="mini-input-grid">
-                  <label>Top<input type="number" value={margins.top} onChange={(event) => updateMargin('top', event.target.value)} /></label>
-                  <label>Bottom<input type="number" value={margins.bottom} onChange={(event) => updateMargin('bottom', event.target.value)} /></label>
-                  <label>Left<input type="number" value={margins.left} onChange={(event) => updateMargin('left', event.target.value)} /></label>
-                  <label>Right<input type="number" value={margins.right} onChange={(event) => updateMargin('right', event.target.value)} /></label>
-                </div>
-              </div>
-
-              <div className="control-section">
-                <strong>Gaps (mm)</strong>
-                <div className="mini-input-grid">
-                  <label>Horizontal<input type="number" step="0.5" value={gaps.horizontal} onChange={(event) => updateGap('horizontal', event.target.value)} /></label>
-                  <label>Vertical<input type="number" step="0.5" value={gaps.vertical} onChange={(event) => updateGap('vertical', event.target.value)} /></label>
-                </div>
-              </div>
-
-              <div className="toggle-list">
-                <label><input type="checkbox" checked={border} onChange={(event) => setBorder(event.target.checked)} /> Photo Border</label>
-                <label><input type="checkbox" checked={textEnabled} onChange={(event) => setTextEnabled(event.target.checked)} /> Text on Photo</label>
-                {textEnabled && <input className="text-photo-input" value={photoText} onChange={(event) => setPhotoText(event.target.value)} placeholder="Name or ID number" />}
-              </div>
-
-              <div className="tool-footer-actions">
-                <button className="button button-primary" onClick={handlePrintPhotos}><Printer size={16} /> Print Photos (அச்சு எடுக்க)</button>
-                <button className="text-button" onClick={handleDownloadPDF}><Download size={15} /> Download Photo Sheet (சேமிக்க)</button>
-                <button className="text-button" onClick={handleSaveSinglePhoto}><Download size={15} /> Save Single Photo (JPEG)</button>
-                <button className="text-button" onClick={() => { if (bgRemoverRef.current) bgRemoverRef.current.scrollIntoView({ behavior: 'smooth' }); }}><Sparkles size={15} /> AI Background Remover</button>
-                <button className="clear-photo" onClick={clearPhoto}><Trash2 size={15} /> Clear Photo</button>
-              </div>
-            </aside>
-
-            <section className="sheet-workspace">
-              <div className="workspace-head">
-                <span>
-                  <strong>Preview Sheet</strong>
-                  <small>{paper} · {copies} copies · {margins.top}/{margins.bottom}/{margins.left}/{margins.right} mm margins</small>
-                </span>
-                <span className="workspace-status">● Ready</span>
-              </div>
-              <div className={`print-sheet ${paper === 'A5' ? 'paper-a5' : ''}`} style={{ padding: `${margins.top}px ${margins.right}px ${margins.bottom}px ${margins.left}px`, gap: `${gaps.vertical}px ${gaps.horizontal}px` }}>
-                {Array.from({ length: copies }).map((_, index) => (
-                  <div className={`sheet-photo ${border ? 'with-border' : ''}`} key={index}>
-                    {photo ? <img src={photo} alt={`Photo copy ${index + 1}`} style={photoStyle} /> : <span><Camera size={18} />Upload a photo</span>}
-                    {textEnabled && photoText && <small>{photoText}</small>}
-                  </div>
-                ))}
-              </div>
-              <div className="sheet-help">
-                <Crop size={15} /> Photo size: 35 × 45 mm <span>•</span> Adjust controls on the left, then click Print or Download PDF (Saved in your Downloads folder)
-              </div>
-            </section>
-          </div>
-        </div>
-        <div ref={bgRemoverRef}>
-          <PhotoBackgroundRemover />
-        </div>
-      </PageIntro>
-    );
-  }
-
-  function FormsPage({ notify }) { const [fileName, setFileName] = useState(''); const [query, setQuery] = useState(''); const [category, setCategory] = useState('All Forms'); const categories = ['All Forms', ...new Set(formsCatalog.map((form) => form[1]))]; const filteredForms = formsCatalog.filter((form) => (category === 'All Forms' || form[1] === category) && form.join(' ').toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="FORMS & DOWNLOADS" title="Official forms, ready to download." text="Search for a form and download the available official PDF from the TD Common e-Sevai forms collection."><div className="form-count"><FormInput size={18} /> <strong>📋 All Forms</strong><span>{filteredForms.length} forms available</span></div><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Form-ஐ தேடவும்... Search forms" /><span>{filteredForms.length} results</span></div><div className="category-tabs">{categories.map((item) => <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="forms-directory">{filteredForms.map(([title, type]) => <FormRow title={title} type={type} notify={notify} key={title} />)}</div><label className="form-dropzone full-dropzone"><UploadCloud size={30} /><strong>{fileName || 'Upload a completed form'}</strong><small>PDF, JPG or PNG up to 10 MB</small><input type="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || '')} />{fileName && <span className="upload-ready"><Check size={14} /> Ready for review</span>}</label></PageIntro>; }
+  function FormsPage({ notify, lang = 'ta' }) { const [fileName, setFileName] = useState(''); const [query, setQuery] = useState(''); const [category, setCategory] = useState('All Forms'); const categories = ['All Forms', ...new Set(formsCatalog.map((form) => form[1]))]; const filteredForms = formsCatalog.filter((form) => (category === 'All Forms' || form[1] === category) && form.join(' ').toLowerCase().includes(query.toLowerCase())); return <PageIntro kicker="FORMS & DOWNLOADS" title="Official forms, ready to download." text="Search for a form and download the available official PDF from the TD Common e-Sevai forms collection."><div className="form-count"><FormInput size={18} /> <strong>📋 All Forms</strong><span>{filteredForms.length} forms available</span></div><div className="service-search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="🔍 Form-ஐ தேடவும்... Search forms" /><span>{filteredForms.length} results</span></div><div className="category-tabs">{categories.map((item) => <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div><div className="forms-directory">{filteredForms.map(([title, type]) => <FormRow title={title} type={type} notify={notify} key={title} />)}</div><label className="form-dropzone full-dropzone"><UploadCloud size={30} /><strong>{fileName || 'Upload a completed form'}</strong><small>PDF, JPG or PNG up to 10 MB</small><input type="file" onChange={(event) => setFileName(event.target.files?.[0]?.name || '')} />{fileName && <span className="upload-ready"><Check size={14} /> Ready for review</span>}</label></PageIntro>; }
   function FormRow({ title, type, notify }) { const sourceLink = tdcscFormLinks[title]; const downloadForm = () => { if (sourceLink) { window.open(toDownloadLink(sourceLink), '_blank', 'noopener,noreferrer'); notify(`${title} download opened.`); return; } notify(`${title} is not yet linked to an official PDF.`); }; return <div className="form-row"><span className="form-icon"><FormInput size={19} /></span><span><strong>{title}</strong><small>{type} · {sourceLink ? 'Official PDF download' : 'PDF link coming soon'}</small></span><button className="icon-button" aria-label={`Download ${title}`} onClick={downloadForm} disabled={!sourceLink}><Download size={17} /></button></div>; }
 
-  function NotificationsPage({ lang }) {
+  function NotificationsPage({ lang, navigate }) {
     const t = translations[lang] || translations.en;
     return (
       <PageIntro
@@ -1840,6 +1732,26 @@ const getServiceVisual = (group, title = '') => {
         title={t.notifTitle}
         text={t.notifText}
       >
+        {/* Photo Tools Helper Banner for Exam Applicants */}
+        <div style={{ background: 'linear-gradient(135deg, #022c7a 0%, #0052cc 100%)', borderRadius: '12px', padding: '16px 20px', color: 'white', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <strong style={{ fontSize: '14px', display: 'block', marginBottom: '2px' }}>
+              📸 {lang === 'ta' ? 'அரசுத் தேர்வுகளுக்கு விண்ணப்பிக்கிறீர்களா?' : 'Applying for Government Exams?'}
+            </strong>
+            <span style={{ fontSize: '12px', opacity: 0.9 }}>
+              {lang === 'ta' ? 'போட்டோ மற்றும் கையொப்பத்தை 20 KB / 50 KB அளவுக்கு துல்லியமாக சுருக்க இலவச ஆன்லைன் கருவிகளைப் பயன்படுத்துங்கள்.' : 'Resize and compress your photo & signature to exact 20 KB / 50 KB online.'}
+            </span>
+          </div>
+          {navigate && (
+            <button
+              onClick={() => navigate('photo-tools')}
+              style={{ background: '#22c55e', color: '#064e3b', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              {lang === 'ta' ? 'போட்டோ கருவிகள் ➔' : 'Open Photo Tools ➔'}
+            </button>
+          )}
+        </div>
+
         <NotificationTables forceAdmin={false} lang={lang} />
         <div className="notice-list" style={{ marginTop: '35px' }}>
           <div>
@@ -1863,7 +1775,7 @@ const getServiceVisual = (group, title = '') => {
 
   // SoftwarePage loaded from ./pages/SoftwarePage.jsx
 
-  function WhatsappPosterPage({ notify }) { const [message, setMessage] = useState('AkEsevai - Digital services made simple'); return <PageIntro kicker="WHATSAPP POSTER" title="Create a shareable service poster." text="Add your message, preview a clean poster and share it with your customers or family groups."><div className="poster-maker"><div className="poster-controls"><label>Poster message<textarea rows="4" value={message} onChange={(event) => setMessage(event.target.value)} /></label><button className="button button-primary" onClick={() => notify('Poster preview is ready to share on WhatsApp.')}><Download size={17} /> Download poster</button></div><div className="poster-preview"><div className="poster-logo"><Sparkles size={17} /> AkEsevai</div><div className="poster-lines"><span>YOUR LOCAL</span><strong>{message}</strong><small>Mill Road, Sanmugapuram, Palani - 624601</small><b>93423 18844</b></div><div className="poster-stamp">OPEN<br /><strong>9 AM - 7 PM</strong></div></div></div></PageIntro>; }
+  function WhatsappPosterPage({ notify }) { const [message, setMessage] = useState('AkEsevai - Digital services made simple'); return <PageIntro kicker="WHATSAPP POSTER" title="Create a shareable service poster." text="Add your message, preview a clean poster and share it with your customers or family groups."><div className="poster-maker"><div className="poster-controls"><label>Poster message<textarea rows="4" value={message} onChange={(event) => setMessage(event.target.value)} /></label><button className="button button-primary" onClick={() => notify('Poster preview is ready to share on WhatsApp.')}><Download size={17} /> Download poster</button></div><div className="poster-preview"><div className="poster-logo"><Sparkles size={17} /> AkEsevai</div><div className="poster-lines"><span>YOUR LOCAL</span><strong>{message}</strong><small>Mill Road, Sanmugapuram, Palani - 624601</small><b>93423 18844</b></div><div className="poster-stamp">OPEN<br /><strong>10 AM - 8 PM</strong></div></div></div></PageIntro>; }
 
   function AboutPage({ navigate, lang }) {
     return <PageIntro kicker={lang === 'ta' ? 'AKESEVAI பற்றி' : 'ABOUT AKESEVAI'} title={lang === 'ta' ? 'உள்ளூர் அனுபவம். டிஜிட்டல் நிச்சயம்.' : 'Local knowledge. Digital confidence.'} text={lang === 'ta' ? 'பழனி மற்றும் சுற்றியுள்ள குடும்பங்களுக்கு படிவங்கள், இணையதளங்களின் சிரமமின்றி அத்தியாவசிய ஆன்லைன் சேவைகளை பெற உதவுகிறோம்.' : 'We help families in and around Palani navigate essential online services without the stress of forms, portals and follow-ups.'}><div className="about-grid"><div className="about-photo"><div className="photo-overlay"><span>{lang === 'ta' ? 'பழனி மக்களுக்குச் சேவை' : 'Serving Palani'}</span><strong>{lang === 'ta' ? 'முதல் நாளிலிருந்தே கனிவுடன்.' : 'With care since day one.'}</strong></div></div><div className="about-copy"><span className="section-kicker">{lang === 'ta' ? 'எங்கள் உறுதிமொழி' : 'OUR PROMISE'}</span><h2>{lang === 'ta' ? 'ஒவ்வொரு விண்ணப்பத்திற்கும் மனித வழிகாட்டுதல் அவசியம்.' : 'Every application deserves a human guide.'}</h2><p>{lang === 'ta' ? 'அரசு தளங்கள் கடினமாக இருக்கலாம். சிறு தவறுகள் தாமதத்தை உருவாக்கலாம். AkEsevai உங்களை சரியான பாதையில் அழைத்துச் செல்லும்.' : 'Government websites can be hard to navigate and small mistakes can create long delays. AkEsevai combines local understanding with a simple digital process so you always know what is happening next.'}</p><div className="promise-list"><span><Check /> {lang === 'ta' ? 'தொ தொடங்கும் முன் தெளிவான கட்டணம்' : 'Clear pricing before we begin'}</span><span><Check /> {lang === 'ta' ? 'எளிதில் புரியும் உடனுக்குடன் தகவல்கள்' : 'Updates you can understand'}</span><span><Check /> {lang === 'ta' ? 'பாதுகாப்பான ஆவண பராமரிப்பு' : 'Your documents handled with care'}</span></div><button className="button button-primary" onClick={() => navigate('contact')}>{lang === 'ta' ? 'பழனியில் எங்களைச் சந்திக்க' : 'Meet us in Palani'} <MapPin size={17} /></button></div></div></PageIntro>;
@@ -1876,7 +1788,7 @@ const getServiceVisual = (group, title = '') => {
         <div className="contact-grid">
           <div className="contact-panel">
             <div className="contact-item"><span><MapPin /></span><div><small>{t.visitUs}</small><strong>Mill Road, Sanmugapuram</strong><p>Palani - 624601, Tamil Nadu</p></div></div>
-            <div className="contact-item"><span><Phone /></span><div><small>{t.callUs}</small><a href="tel:9342318844"><strong>93423 18844</strong></a><p>Mon - Sat, 9:00 AM - 7:00 PM</p></div></div>
+            <div className="contact-item"><span><Phone /></span><div><small>{t.callUs}</small><a href="tel:9342318844"><strong>93423 18844</strong></a><p>{lang === 'ta' ? siteConfig.hoursTamil : siteConfig.hours}</p></div></div>
             <div className="contact-item"><span><Mail /></span><div><small>EMAIL US</small><a href="mailto:akesevaipalani@gmail.com"><strong>akesevaipalani@gmail.com</strong></a><p>We reply within 24 hours</p></div></div>
             <div className="contact-item"><span><MessageCircle /></span><div><small>{t.whatsappUs}</small><a href="https://wa.me/919342318844"><strong>Chat with AkEsevai</strong></a><p>Quick questions and document checklist</p></div></div>
             <div className="contact-item"><span><YoutubeIcon size={20} color="#FF0000" /></span><div><small>YOUTUBE CHANNEL</small><a href={siteConfig.youtube} target="_blank" rel="noreferrer"><strong>@AkEsevai</strong></a><p>Subscribe for video guides & updates</p></div></div>
@@ -2170,10 +2082,28 @@ const getServiceVisual = (group, title = '') => {
         return;
       }
 
+      const fileName = selectedFile.name || '';
+      const fileExt = fileName.split('.').pop().toLowerCase();
+      const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+      const isAllowedType = validExts.includes(fileExt) || selectedFile.type.startsWith('image/') || selectedFile.type === 'application/pdf';
+
+      if (!isAllowedType) {
+        notify('❌ தவறான கோப்பு வகை (Invalid file format)! PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும்.');
+        return;
+      }
+
+      const rawKb = Math.round(selectedFile.size / 1024);
+      const isImage = selectedFile.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt);
+
+      if (!isImage && rawKb > 100) {
+        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ஆவணம் கண்டிப்பாக 100 KB-க்குள் இருக்க வேண்டும். (PDF must be <= 100 KB)`);
+        return;
+      }
+
       const requirementName = docCategory === 'Other' ? (customRequirement.trim() || 'Uploaded Document') : docCategory;
       
       setUploading(true);
-      notify(`⏳ Uploading ${selectedFile.name}...`);
+      notify(`⏳ Processing & Uploading ${selectedFile.name}...`);
 
       try {
         const docRecord = await uploadFileToFirebaseStorage(selectedFile, 'customer_documents', cleanPhone);
@@ -2347,13 +2277,16 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
-  function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], setTokenBookings, customerRecords = {}, setCustomerRecords, applicationRecords = {}, setApplicationRecords, cloudExpiryDocs = [], notify }) {
+  function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], setTokenBookings, customerRecords = {}, setCustomerRecords, applicationRecords = {}, setApplicationRecords, cloudExpiryDocs = [], notify, activeTab: propAdminTab, setActiveTab: setPropAdminTab, lang = 'ta' }) {
     const [password, setPassword] = useState('');
     const [query, setQuery] = useState('');
     const [tokenSearch, setTokenSearch] = useState('');
+    const [tokenFilterStatus, setTokenFilterStatus] = useState('all');
     const [appSearch, setAppSearch] = useState('');
     const [activeCustomer, setActiveCustomer] = useState('');
-    const [adminTab, setAdminTab] = useState('smartdesk');
+    const [internalAdminTab, setInternalAdminTab] = useState(propAdminTab || 'smartdesk');
+    const adminTab = propAdminTab || internalAdminTab;
+    const setAdminTab = setPropAdminTab || setInternalAdminTab;
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [editName, setEditName] = useState('');
     const [editPhone, setEditPhone] = useState('');
@@ -2371,12 +2304,27 @@ const getServiceVisual = (group, title = '') => {
     const [newCustAadhar, setNewCustAadhar] = useState('');
     const [newCustNotes, setNewCustNotes] = useState('');
 
+    // Sponsored Advertisements Manager state
+    const [sponsoredAds, setSponsoredAds] = useState([]);
+    const [adTitle, setAdTitle] = useState('');
+    const [adSubtitle, setAdSubtitle] = useState('');
+    const [adTargetUrl, setAdTargetUrl] = useState('');
+    const [adBadge, setAdBadge] = useState('Special Announcement');
+    const [adImageUrl, setAdImageUrl] = useState('');
+    const [adImageAspectRatio, setAdImageAspectRatio] = useState('16/9');
+    const [adIsActive, setAdIsActive] = useState(true);
+    const [adUploading, setAdUploading] = useState(false);
+
     useEffect(() => {
-      const unsub = subscribeDailyVisitorLogsCloud((logs) => {
+      const unsubLogs = subscribeDailyVisitorLogsCloud((logs) => {
         if (Array.isArray(logs)) setVisitorLogs(logs);
       });
+      const unsubAds = subscribeSponsoredAds((ads) => {
+        if (Array.isArray(ads)) setSponsoredAds(ads);
+      });
       return () => {
-        if (typeof unsub === 'function') unsub();
+        if (typeof unsubLogs === 'function') unsubLogs();
+        if (typeof unsubAds === 'function') unsubAds();
       };
     }, []);
 
@@ -2885,6 +2833,34 @@ const getServiceVisual = (group, title = '') => {
       notify(`🗑️ Token ${targetTokNo} removed permanently from all pages & database!`);
     };
 
+    const handleVerifyPayment = async (tok) => {
+      if (!tok) return;
+      const targetId = tok.id || tok.tokenNo || tok.utr;
+      try {
+        const verified = await verifyTokenPaymentCloud(targetId);
+        const tokNo = verified?.token?.tokenNo || verified?.tokenNo || 'TOK';
+        notify(`✅ ₹50 கட்டணம் சரிபார்க்கப்பட்டது! அதிகாரப்பூர்வ டோக்கன் எண் ${tokNo} உருவாக்கப்பட்டது.`);
+      } catch (err) {
+        notify(`❌ சரிபார்ப்பு பிழை: ${err.message || String(err)}`);
+      }
+    };
+
+    const handleRejectPayment = async (tok) => {
+      if (!tok) return;
+      const reason = window.prompt(
+        `கட்டணத்தை நிராகரிப்பதற்கான காரணத்தை உள்ளிடவும் (Rejection Reason):\n\n(Applicant: ${tok.customerName || 'Customer'}, UTR: ${tok.utr || 'N/A'})`,
+        'தவறான UTR / கட்டணம் கணக்கில் வரவு வைக்கப்படவில்லை (Invalid UTR / Amount not credited)'
+      );
+      if (reason === null) return;
+      const targetId = tok.id || tok.tokenNo || tok.utr;
+      try {
+        await rejectTokenPaymentCloud(targetId, reason || 'Invalid UTR');
+        notify(`❌ கட்டணம் நிராகரிக்கப்பட்டது (${tok.customerName || 'Customer'}). டோக்கன் உருவாக்கப்படவில்லை.`);
+      } catch (err) {
+        notify(`❌ பிழை: ${err.message || String(err)}`);
+      }
+    };
+
     return (
       <section className="admin-dashboard page-width">
         <div className="dashboard-top">
@@ -2894,6 +2870,13 @@ const getServiceVisual = (group, title = '') => {
               notify('⏳ Fetching latest data from cloud database...');
               const cloud = await fetchAllCloudRecords();
               if (cloud) {
+                if (cloud.customers) setCustomerRecords(cloud.customers);
+                if (Array.isArray(cloud.tokens)) setTokenBookings(cloud.tokens);
+                if (cloud.applications) {
+                  setApplicationRecords(cloud.applications);
+                  setInStoreApplications(cloud.applications);
+                }
+                if (Array.isArray(cloud.documents)) setCloudExpiryDocs(cloud.documents);
                 notify('✅ Database sync complete!');
               } else {
                 notify('⚡ Using latest synchronized cloud state');
@@ -2903,64 +2886,71 @@ const getServiceVisual = (group, title = '') => {
           </div>
         </div>
         <div className="admin-tools">
-          <button onClick={() => setAdminTab('notifications')}><Bell size={18} /><span><strong>Notifications</strong><small>Add & delete notifications</small></span></button>
-          <button onClick={() => navigate('weblink')}><ExternalLink size={18} /><span><strong>Weblinks</strong><small>Private service links</small></span></button>
-          <button onClick={() => navigate('forms')}><FormInput size={18} /><span><strong>Forms</strong><small>Official PDF downloads</small></span></button>
-          <button onClick={() => navigate('software')}><FileCog size={18} /><span><strong>Software</strong><small>AkEsevai tools</small></span></button>
-          <button onClick={() => navigate('photo-maker')}><Camera size={18} /><span><strong>Photo Maker</strong><small>Private photo tools</small></span></button>
+          <button id="admin-tool-notifications" onClick={() => setAdminTab('notifications')}><Bell size={18} /><span><strong>Notifications</strong><small>Add & delete notifications</small></span></button>
+          <button id="admin-tool-weblinks" onClick={() => navigate('weblink')}><ExternalLink size={18} /><span><strong>Weblinks</strong><small>359+ Official Portals</small></span></button>
+          <button id="admin-tool-photomaker" onClick={() => setAdminTab('photomaker')}><Camera size={18} /><span><strong>Photo Maker</strong><small>Passport & Signature Studio</small></span></button>
+          <button id="admin-tool-forms" onClick={() => navigate('forms')}><FormInput size={18} /><span><strong>Forms</strong><small>Official PDF downloads</small></span></button>
+          <button id="admin-tool-software" onClick={() => navigate('software')}><FileCog size={18} /><span><strong>Software</strong><small>AkEsevai tools</small></span></button>
         </div>
         <div className="dashboard-stats">
           <div
+            id="admin-stat-customers"
             onClick={() => setAdminTab('customers')}
             style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
             title="Click to view Customer Requests & Profiles (வாடிக்கையாளர்கள்)"
           >
             <span className="stat-icon yellow"><Users /></span>
-            <span><strong>{customers.length}</strong><small>Customers (வாடிக்கையாளர்கள்)</small></span>
+            <span><strong id="admin-count-customers">{customers.length}</strong><small>Customers (வாடிக்கையாளர்கள்)</small></span>
           </div>
 
           <div
+            id="admin-stat-applications"
             onClick={() => setAdminTab('applications')}
             style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
             title="Click to view Applications Manager (விண்ணப்பங்கள்)"
           >
             <span className="stat-icon blue"><FileText /></span>
-            <span><strong>{totalApplications}</strong><small>Service requests (விண்ணப்பங்கள்)</small></span>
+            <span><strong id="admin-count-applications">{totalApplications}</strong><small>Service requests (விண்ணப்பங்கள்)</small></span>
           </div>
 
           <div
+            id="admin-stat-documents"
             onClick={() => setAdminTab('smartdesk')}
             style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
             title="Click to view Uploaded Documents in Smart Desk (ஆவணங்கள்)"
           >
             <span className="stat-icon green"><FileCheck2 /></span>
-            <span><strong>{totalDocuments}</strong><small>Uploaded documents (ஆவணங்கள்)</small></span>
+            <span><strong id="admin-count-documents">{totalDocuments}</strong><small>Uploaded documents (ஆவணங்கள்)</small></span>
           </div>
 
           <div
+            id="admin-stat-tokens"
             onClick={() => setAdminTab('tokens')}
             style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
             title="Click to view Token Bookings (டோக்கன் சீட்டுகள்)"
           >
             <span className="stat-icon" style={{ background: '#fff7ed', color: '#c2410c' }}><CalendarDays /></span>
-            <span><strong>{combinedTokensList.length}</strong><small>Token Bookings (டோக்கன்கள்)</small></span>
+            <span><strong id="admin-count-tokens">{combinedTokensList.length}</strong><small>Token Bookings (டோக்கன்கள்)</small></span>
           </div>
 
           <div
+            id="admin-stat-revenue"
             onClick={() => setAdminTab('tokens')}
             style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
             title="Click to view Token Bookings & Revenue (வருமானம்)"
           >
             <span className="stat-icon" style={{ background: '#f0fdf4', color: '#16a34a' }}><IndianRupee /></span>
-            <span><strong>₹{combinedTokensList.length * 50}</strong><small>Est. Token Revenue (வருமானம்)</small></span>
+            <span><strong id="admin-count-revenue">₹{combinedTokensList.length * 50}</strong><small>Est. Token Revenue (வருமானம்)</small></span>
           </div>
         </div>
         <div className="dashboard-tabs" style={{ marginBottom: '24px' }}>
-          <button className={adminTab === 'applications' ? 'tab-active' : ''} onClick={() => setAdminTab('applications')} style={{ background: adminTab === 'applications' ? '#0052cc' : undefined, color: adminTab === 'applications' ? 'white' : undefined }}>📋 Applications Manager ({allAppsList.length})</button>
-          <button className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests ({customers.length})</button>
-          <button className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings ({combinedTokensList.length})</button>
-          <button className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={() => setAdminTab('notifications')} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
-          <button className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={() => setAdminTab('smartdesk')} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
+          <button id="admin-tab-applications" className={adminTab === 'applications' ? 'tab-active' : ''} onClick={() => setAdminTab('applications')} style={{ background: adminTab === 'applications' ? '#0052cc' : undefined, color: adminTab === 'applications' ? 'white' : undefined }}>📋 Applications Manager ({allAppsList.length})</button>
+          <button id="admin-tab-customers" className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests ({customers.length})</button>
+          <button id="admin-tab-tokens" className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings ({combinedTokensList.length})</button>
+          <button id="admin-tab-photomaker" className={adminTab === 'photomaker' ? 'tab-active' : ''} onClick={() => setAdminTab('photomaker')} style={{ background: adminTab === 'photomaker' ? '#0284c7' : undefined, color: adminTab === 'photomaker' ? 'white' : undefined }}>📸 Photo Maker Studio</button>
+          <button id="admin-tab-notifications" className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={() => setAdminTab('notifications')} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
+          <button id="admin-tab-advertisements" className={adminTab === 'advertisements' ? 'tab-active' : ''} onClick={() => setAdminTab('advertisements')} style={{ background: adminTab === 'advertisements' ? '#7c3aed' : undefined, color: adminTab === 'advertisements' ? 'white' : undefined }}>📢 Advertisements ({sponsoredAds.length})</button>
+          <button id="admin-tab-smartdesk" className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={() => setAdminTab('smartdesk')} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
         </div>
 
         {editingCustomer && (
@@ -3048,25 +3038,26 @@ const getServiceVisual = (group, title = '') => {
                         <td>{app.date || app.submittedDate || 'Recently'}</td>
                         <td>
                           <select
-                            value={app.currentStage || 3}
+                            value={app.currentStage || 1}
                             onChange={(e) => handleUpdateAppStage(app.id || app.ackNo, parseInt(e.target.value, 10), app)}
                             style={{
-                              padding: '4px 8px',
+                              padding: '5px 8px',
                               borderRadius: '6px',
-                              border: '1.5px solid #0052cc',
+                              border: app.currentStage === 7 ? '1.5px solid #ef4444' : app.currentStage === 6 ? '1.5px solid #16a34a' : '1.5px solid #0052cc',
                               fontWeight: 800,
                               fontSize: '11px',
                               cursor: 'pointer',
-                              background: '#eff6ff',
-                              color: '#1d4ed8'
+                              background: app.currentStage === 7 ? '#fef2f2' : app.currentStage === 6 ? '#f0fdf4' : '#eff6ff',
+                              color: app.currentStage === 7 ? '#dc2626' : app.currentStage === 6 ? '#166534' : '#1d4ed8'
                             }}
                           >
-                            <option value={1}>Step 1: Received</option>
-                            <option value={2}>Step 2: Verified</option>
-                            <option value={3}>Step 3: Fee Paid</option>
-                            <option value={4}>Step 4: Submitted to Govt</option>
-                            <option value={5}>Step 5: Officer Review</option>
-                            <option value={6}>Step 6: Approved & Completed</option>
+                            <option value={1}>1. Application Submitted (விண்ணப்பம் பெறப்பட்டது)</option>
+                            <option value={2}>2. Document Verification (ஆவணங்கள் சரிபார்க்கப்படுகிறது)</option>
+                            <option value={3}>3. Document Pending (கூடுதல் ஆவணம் தேவை)</option>
+                            <option value={4}>4. Under Process / Fee Paid (செயலாக்கத்தில் உள்ளது)</option>
+                            <option value={5}>5. Officer Review (அதிகாரி பரிசீலனை)</option>
+                            <option value={6}>6. Approved & Completed (சான்றிதழ் தயார் / நிறைவடைந்தது)</option>
+                            <option value={7}>7. Rejected (நிராகரிக்கப்பட்டது)</option>
                           </select>
                         </td>
                         <td style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8' }}>
@@ -3120,7 +3111,7 @@ const getServiceVisual = (group, title = '') => {
                 </p>
               </div>
             </div>
-            <NotificationTables forceAdmin={true} />
+            <NotificationTables forceAdmin={true} lang={lang || 'ta'} />
           </div>
         )}
 
@@ -3346,31 +3337,28 @@ const getServiceVisual = (group, title = '') => {
 
                 const selectedDocs = combinedDocs.reduce((acc, current) => {
                   if (!current) return acc;
-                  const curReq = (current.requirement || current.title || '').trim().toLowerCase();
                   const curId = String(current.id || '');
+                  const curReq = (current.requirement || current.title || '').trim().toLowerCase();
+                  const curAppId = String(current.applicationId || '');
 
                   const existingIndex = acc.findIndex((item) => {
-                    const itemReq = (item.requirement || item.title || '').trim().toLowerCase();
                     const itemId = String(item.id || '');
+                    const itemReq = (item.requirement || item.title || '').trim().toLowerCase();
+                    const itemAppId = String(item.applicationId || '');
 
-                    const reqMatch = curReq && itemReq && curReq === itemReq;
                     const idMatch = curId && itemId && curId === itemId;
+                    const reqAppMatch = curReq && itemReq && curReq === itemReq && curAppId && itemAppId && curAppId === itemAppId;
 
-                    return reqMatch || idMatch;
+                    return idMatch || reqAppMatch;
                   });
 
                   if (existingIndex === -1) {
                     acc.push(current);
                   } else {
                     const existing = acc[existingIndex];
-                    const isExistingReqFilename = existing.requirement && (existing.requirement.endsWith('.jpg') || existing.requirement.endsWith('.png') || existing.requirement.endsWith('.jpeg') || existing.requirement.endsWith('.pdf'));
-                    const isCurReqFilename = current.requirement && (current.requirement.endsWith('.jpg') || current.requirement.endsWith('.png') || current.requirement.endsWith('.jpeg') || current.requirement.endsWith('.pdf'));
-
-                    const bestRequirement = (!isCurReqFilename && current.requirement) ? current.requirement : existing.requirement;
                     acc[existingIndex] = {
                       ...existing,
                       ...current,
-                      requirement: bestRequirement || existing.requirement || current.requirement,
                       url: current.url || current.data || existing.url || existing.data,
                       data: current.url || current.data || existing.url || existing.data
                     };
@@ -3441,13 +3429,13 @@ const getServiceVisual = (group, title = '') => {
 
 
                     <h3 className="admin-section-title">Selected services (விண்ணப்பித்த சேவைகள் & நிலைகள்)</h3>
-                    {selectedApps.length ? selectedApps.map((application) => {
+                    {selectedApps.length ? selectedApps.map((application, appIdx) => {
                       const appIdKey = application.id || application.ackNo;
                       const storeRecord = applicationRecords && (applicationRecords[appIdKey] || applicationRecords[application.name]);
                       const currentStageNum = storeRecord?.currentStage || application.currentStage || application.stage || (application.status === 'Completed' ? 6 : 1);
 
                       return (
-                        <div className="admin-service-row" key={application.id || application.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                        <div className="admin-service-row" key={application.id ? `${application.id}_${appIdx}` : `app_${application.name}_${appIdx}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span className="doc-symbol"><FileText size={17} /></span>
                             <div>
@@ -3552,7 +3540,7 @@ const getServiceVisual = (group, title = '') => {
                     }) : <p className="empty-customer-state">No service selected.</p>}
                     <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
                     {selectedDocs.length ? selectedDocs.map((document, idx) => (
-                      <div className="admin-service-row" key={document.id || idx} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                      <div className="admin-service-row" key={document.id ? `${document.id}_${idx}` : `doc_${document.name}_${idx}`} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <span className="doc-symbol" style={{ background: '#dcfce7', color: '#16a34a', padding: '8px', borderRadius: '8px' }}>
                             <FileCheck2 size={20} />
@@ -3613,73 +3601,710 @@ const getServiceVisual = (group, title = '') => {
             </section>
           </div>
         )}
-        {adminTab === 'tokens' && (
-          <div className="admin-token-bookings">
-            <div className="panel-heading" style={{ marginBottom: '16px' }}><div><span className="section-kicker">TOKEN BOOKINGS</span><h2>Appointment Requests & Token Slips</h2><p>Search by Token Number or Phone Number to easily locate token details.</p></div></div>
-            <div className="admin-token-search-bar" style={{ marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <div className="service-search" style={{ flex: 1, margin: 0 }}><Search size={18} /><input type="text" value={tokenSearch} onChange={(e) => setTokenSearch(e.target.value)} placeholder="🔍 Search by Token No (e.g. TOK-123) or Mobile Number (e.g. 9342318844)..." />{tokenSearch && <button type="button" onClick={() => setTokenSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--muted)' }}>Clear</button>}</div>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{filteredTokens.length} {filteredTokens.length === 1 ? 'Token' : 'Tokens'} found</span>
+        {adminTab === 'tokens' && (() => {
+          const pendingTokens = combinedTokensList.filter(t => t.paymentStatus === 'PENDING_VERIFICATION' || t.status === 'PAYMENT PENDING' || (!t.tokenNo && t.paymentStatus !== 'REJECTED'));
+          const verifiedTokens = combinedTokensList.filter(t => (t.paymentStatus === 'VERIFIED' || t.paymentStatus?.includes('PAID') || t.tokenNo) && t.paymentStatus !== 'REJECTED');
+          const rejectedTokens = combinedTokensList.filter(t => t.paymentStatus === 'REJECTED');
+
+          const filteredList = combinedTokensList.filter((tok) => {
+            if (tokenFilterStatus === 'pending') {
+              const isPend = tok.paymentStatus === 'PENDING_VERIFICATION' || tok.status === 'PAYMENT PENDING' || (!tok.tokenNo && tok.paymentStatus !== 'REJECTED');
+              if (!isPend) return false;
+            } else if (tokenFilterStatus === 'verified') {
+              const isVer = (tok.paymentStatus === 'VERIFIED' || tok.paymentStatus?.includes('PAID') || tok.tokenNo) && tok.paymentStatus !== 'REJECTED';
+              if (!isVer) return false;
+            } else if (tokenFilterStatus === 'rejected') {
+              if (tok.paymentStatus !== 'REJECTED') return false;
+            }
+
+            const q = tokenSearch.trim().toLowerCase();
+            if (!q) return true;
+            return (tok.tokenNo || '').toLowerCase().includes(q) ||
+                   (tok.phone || '').toLowerCase().includes(q) ||
+                   (tok.customerName || '').toLowerCase().includes(q) ||
+                   (tok.service || '').toLowerCase().includes(q) ||
+                   (tok.date || '').toLowerCase().includes(q) ||
+                   (tok.utr || '').toLowerCase().includes(q);
+          });
+
+          return (
+            <div className="admin-token-bookings">
+              <div className="panel-heading" style={{ marginBottom: '16px' }}>
+                <div>
+                  <span className="section-kicker">TOKEN & PAYMENT MANAGEMENT</span>
+                  <h2>💳 கட்டண சரிபார்ப்பு & டோக்கன் மேலாண்மை (Token Bookings)</h2>
+                  <p>Customer UPI UTR submissions-ஐ சரிபார்த்து அதிகாரப்பூர்வ டோக்கன் எண்ணை உருவாக்கலாம் அல்லது நிராகரிக்கலாம்.</p>
+                </div>
+              </div>
+
+              {/* PENDING PAYMENT VERIFICATION QUEUE (PROMINENT ALERT BOX) */}
+              {pendingTokens.length > 0 && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                  border: '2px solid #f59e0b',
+                  borderRadius: '16px',
+                  padding: '20px',
+                  marginBottom: '24px',
+                  boxShadow: '0 4px 20px rgba(245,158,11,0.15)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ background: '#d97706', color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 900 }}>
+                        ⚡ உடனடி சரிபார்ப்பு தேவை
+                      </span>
+                      <h3 style={{ margin: 0, fontSize: '16px', color: '#92400e', fontWeight: 900 }}>
+                        சரிபார்க்கப்பட வேண்டிய கட்டணங்கள் ({pendingTokens.length} கோரிக்கைகள்)
+                      </h3>
+                    </div>
+                    <small style={{ color: '#b45309', fontWeight: 700, fontSize: '12px' }}>
+                      ₹50 கட்டணம் கணக்கில் வரவு வைக்கப்பட்டதை உறுதி செய்து டோக்கன் உருவாக்கவும்.
+                    </small>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
+                    {pendingTokens.map((pTok, pIdx) => (
+                      <div
+                        key={pTok.id ? `${pTok.id}_${pIdx}` : `pending_${pTok.utr || pIdx}_${pIdx}`}
+                        style={{
+                          background: '#ffffff',
+                          border: '1.5px solid #fde68a',
+                          borderRadius: '12px',
+                          padding: '16px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                            <strong style={{ fontSize: '15px', color: '#0f172a' }}>{pTok.customerName}</strong>
+                            <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 900 }}>
+                              ₹50.00
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                            <div>📞 <strong>+91 {pTok.phone}</strong></div>
+                            <div>🛠️ <strong>{pTok.service}</strong></div>
+                            <div>📅 <strong>{pTok.date} ({pTok.slot})</strong></div>
+                            <div style={{ marginTop: '4px', background: '#f1f5f9', padding: '6px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>UTR / REF:</span>
+                              <code style={{ fontSize: '12.5px', fontWeight: 900, color: '#022c7a' }}>{pTok.utr || 'N/A'}</code>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleVerifyPayment(pTok)}
+                            style={{
+                              background: '#16a34a',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '8px 12px',
+                              fontSize: '11.5px',
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <Check size={14} /> Verify & Issue
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRejectPayment(pTok)}
+                            style={{
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fca5a5',
+                              borderRadius: '8px',
+                              padding: '8px 12px',
+                              fontSize: '11.5px',
+                              fontWeight: 900,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <X size={14} style={{ display: 'inline', verticalAlign: 'middle' }} /> Reject
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SEARCH BAR & STATUS TABS */}
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
+                <div className="service-search" style={{ flex: 1, minWidth: '240px', margin: 0 }}>
+                  <Search size={18} />
+                  <input
+                    type="text"
+                    value={tokenSearch}
+                    onChange={(e) => setTokenSearch(e.target.value)}
+                    placeholder="🔍 Search by Token No, Mobile, Name, Service, or UTR..."
+                  />
+                  {tokenSearch && (
+                    <button type="button" onClick={() => setTokenSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', fontSize: '12px', color: 'var(--muted)' }}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setTokenFilterStatus('all')}
+                    style={{
+                      background: tokenFilterStatus === 'all' ? '#0052cc' : '#f1f5f9',
+                      color: tokenFilterStatus === 'all' ? 'white' : '#475569',
+                      border: 'none',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    All ({combinedTokensList.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTokenFilterStatus('pending')}
+                    style={{
+                      background: tokenFilterStatus === 'pending' ? '#d97706' : '#fffbeb',
+                      color: tokenFilterStatus === 'pending' ? 'white' : '#b45309',
+                      border: '1px solid #fde68a',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚡ Pending ({pendingTokens.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTokenFilterStatus('verified')}
+                    style={{
+                      background: tokenFilterStatus === 'verified' ? '#16a34a' : '#f0fdf4',
+                      color: tokenFilterStatus === 'verified' ? 'white' : '#15803d',
+                      border: '1px solid #bbf7d0',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ✅ Verified ({verifiedTokens.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTokenFilterStatus('rejected')}
+                    style={{
+                      background: tokenFilterStatus === 'rejected' ? '#dc2626' : '#fef2f2',
+                      color: tokenFilterStatus === 'rejected' ? 'white' : '#991b1b',
+                      border: '1px solid #fecaca',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ❌ Rejected ({rejectedTokens.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* TOKENS TABLE */}
+              {combinedTokensList.length === 0 ? (
+                <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}>
+                  <CalendarDays size={36} style={{ opacity: 0.3, marginBottom: '12px' }} />
+                  <p>No token bookings or payment requests yet. Customers who book from the Token Slip page will appear here.</p>
+                </div>
+              ) : filteredList.length === 0 ? (
+                <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}>
+                  <Search size={36} style={{ opacity: 0.3, marginBottom: '12px' }} />
+                  <p>No token found matching your filter / search.</p>
+                </div>
+              ) : (
+                <div className="token-bookings-table-wrap">
+                  <table className="admin-token-table">
+                    <thead>
+                      <tr>
+                        <th>Token No</th>
+                        <th>Applicant Name</th>
+                        <th>Mobile</th>
+                        <th>Service</th>
+                        <th>Visit Date & Slot</th>
+                        <th>UTR / Fee</th>
+                        <th>WhatsApp Alert</th>
+                        <th>Technical Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredList.map((tok, tIdx) => {
+                        const isTokPending = tok.paymentStatus === 'PENDING_VERIFICATION' || tok.status === 'PAYMENT PENDING' || (!tok.tokenNo && tok.paymentStatus !== 'REJECTED');
+                        const isTokRejected = tok.paymentStatus === 'REJECTED';
+                        const waText = encodeURIComponent(`🙏 *வணக்கம் ${tok.customerName}*,\n\nஉங்கள் AkEsevai டோக்கன் *${tok.tokenNo || 'சரிபார்ப்பில் உள்ளது'}* உறுதி செய்யப்பட்டது.\nசேவை: ${tok.service}\nதேதி & நேரம்: ${tok.date} (${tok.slot})\n\nAkEsevai மையம், பழனியில் சேவையைப் பெறலாம்.`);
+
+                        return (
+                          <tr key={tok.id ? `${tok.id}_${tIdx}` : `tok_${tok.tokenNo || tok.utr || tIdx}_${tIdx}`}>
+                            <td>
+                              {tok.tokenNo ? (
+                                <span className="token-id-badge">{tok.tokenNo}</span>
+                              ) : isTokRejected ? (
+                                <span style={{ background: '#fee2e2', color: '#dc2626', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 900 }}>REJECTED</span>
+                              ) : (
+                                <span style={{ background: '#fef3c7', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 900 }}>PENDING</span>
+                              )}
+                            </td>
+                            <td><strong>{tok.customerName}</strong></td>
+                            <td>+91 {tok.phone}</td>
+                            <td style={{ maxWidth: '180px' }}>{tok.service}</td>
+                            <td>{tok.date}<br /><small style={{ color: '#64748b', fontWeight: 700 }}>{tok.slot}</small></td>
+                            <td>
+                              <div style={{ fontSize: '11.5px' }}>
+                                <strong style={{ color: '#16a34a' }}>₹{tok.amount || 50}</strong>
+                                {tok.utr && <div style={{ color: '#022c7a', fontWeight: 800, fontSize: '11px' }}>UTR: {tok.utr}</div>}
+                              </div>
+                            </td>
+                            <td>
+                              {tok.tokenNo ? (
+                                <a
+                                  href={`https://wa.me/91${String(tok.phone || '').replace(/\D/g, '')}?text=${waText}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ background: '#25D366', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                >
+                                  <MessageCircle size={13} /> WA Alert
+                                </a>
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontSize: '11px' }}>—</span>
+                              )}
+                            </td>
+                            <td>
+                              {isTokPending ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyPayment(tok)}
+                                  style={{ background: '#16a34a', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}
+                                >
+                                  ✅ Verify UTR
+                                </button>
+                              ) : (
+                                <select
+                                  value={tok.status || (isTokRejected ? 'NO-SHOW / CANCELLED' : 'CHECKED-IN / VERIFIED')}
+                                  onChange={(e) => handleUpdateTokenStatus(tok, e.target.value)}
+                                  style={{
+                                    background: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#f0fdf4' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#fffbebf' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#fef2f2' : '#eff6ff',
+                                    color: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#16a34a' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#d97706' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#dc2626' : '#2563eb',
+                                    border: '1.5px solid currentColor',
+                                    padding: '5px 8px',
+                                    borderRadius: '6px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <option value="CHECKED-IN / VERIFIED">🟢 VERIFIED (சரிபார்க்கப்பட்டது)</option>
+                                  <option value="AWAITING VISIT">🟡 AWAITING VISIT (காத்திருப்பில்)</option>
+                                  <option value="COMPLETED / SERVED">🔵 COMPLETED (நிறைவடைந்தது)</option>
+                                  <option value="NO-SHOW / CANCELLED">🔴 CANCELLED / REJECTED</option>
+                                </select>
+                              )}
+                            </td>
+                            <td>
+                              <button
+                                onClick={() => handleDeleteToken(tok)}
+                                style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-            {tokenBookings.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><CalendarDays size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token bookings yet. Customers who generate a token from the Token Slip page will appear here.</p></div> : filteredTokens.length === 0 ? <div className="empty-customer-state" style={{ padding: '40px', textAlign: 'center' }}><Search size={36} style={{ opacity: 0.3, marginBottom: '12px' }} /><p>No token found matching <strong>"{tokenSearch}"</strong>.</p><small style={{ color: 'var(--muted)' }}>Try searching with Token Number (e.g., TOK-101) or Mobile Number.</small></div> : <div className="token-bookings-table-wrap"><table className="admin-token-table"><thead><tr><th>Token No</th><th>Applicant Name</th><th>Mobile</th><th>Service</th><th>Visit Date</th><th>Time Slot</th><th>WhatsApp Alert</th><th>Technical Status</th><th>Action</th></tr></thead><tbody>{filteredTokens.map((tok) => {
-              const waText = encodeURIComponent(`🙏 *வணக்கம் ${tok.customerName}*,\n\nஉங்கள் AkEsevai டோக்கன் *${tok.tokenNo}* உறுதி செய்யப்பட்டது.\nசேவை: ${tok.service}\nதேதி & நேரம்: ${tok.date} (${tok.slot})\n\nAkEsevai மையம், பழனியில் சேவையைப் பெறலாம்.`);
-              return (
-                <tr key={tok.tokenNo}>
-                  <td><span className="token-id-badge">{tok.tokenNo}</span></td>
-                  <td><strong>{tok.customerName}</strong></td>
-                  <td>+91 {tok.phone}</td>
-                  <td style={{ maxWidth: '200px' }}>{tok.service}</td>
-                  <td>{tok.date}</td>
-                  <td>{tok.slot}</td>
-                  <td>
-                    <a
-                      href={`https://wa.me/91${tok.phone.replace(/\D/g, '')}?text=${waText}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ background: '#25D366', color: 'white', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                    >
-                      <MessageCircle size={13} /> WA Alert
-                    </a>
-                  </td>
-                  <td>
-                    <select
-                      value={tok.status || 'CHECKED-IN / VERIFIED'}
-                      onChange={(e) => handleUpdateTokenStatus(tok, e.target.value)}
+          );
+        })()}
+
+        {adminTab === 'photomaker' && (
+          <div style={{ marginTop: '10px' }}>
+            <PhotoMakerPage notify={notify} lang={lang || 'ta'} />
+          </div>
+        )}
+
+        {adminTab === 'advertisements' && (
+          <div className="admin-advertisements-panel" style={{ background: '#ffffff', borderRadius: '16px', border: '1.5px solid #e2e8f0', padding: '24px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+            <div className="panel-heading" style={{ marginBottom: '20px' }}>
+              <div>
+                <span className="section-kicker" style={{ color: '#7c3aed' }}>RESPONSIVE ADVERTISEMENTS & BANNERS</span>
+                <h2 style={{ fontSize: '20px', color: '#0f172a', margin: '4px 0 6px' }}>📢 விளம்பரங்கள் & அறிவிப்பு பேனர்கள் மேலாண்மை</h2>
+                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                  எந்த size அல்லது dimension விளம்பர படத்தை பதிவேற்றினாலும் தானாகவே Desktop, Tablet & Mobile-க்கு ஏற்ற aspect ratio-வுடன் Home Page-ல் தோன்றும்.
+                </p>
+              </div>
+            </div>
+
+            {/* ADD / UPLOAD NEW AD FORM */}
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!adImageUrl.trim()) {
+                  notify('⚠️ தயவுசெய்து விளம்பர படத்தை பதிவேற்றவும் அல்லது Image URL-ஐ உள்ளிடவும்.');
+                  return;
+                }
+                setAdUploading(true);
+                try {
+                  const newAd = {
+                    id: 'ad-' + Date.now(),
+                    title: adTitle.trim(),
+                    subtitle: adSubtitle.trim(),
+                    imageUrl: adImageUrl.trim(),
+                    aspectRatio: adImageAspectRatio || '16/9',
+                    targetUrl: adTargetUrl.trim(),
+                    badge: adBadge.trim() || 'Special Announcement',
+                    status: adIsActive ? 'active' : 'inactive',
+                    isActive: adIsActive,
+                    order: sponsoredAds.length + 1
+                  };
+                  await saveSponsoredAdCloud(newAd);
+                  setAdTitle('');
+                  setAdSubtitle('');
+                  setAdImageUrl('');
+                  setAdTargetUrl('');
+                  setAdBadge('Special Announcement');
+                  setAdImageAspectRatio('16/9');
+                  notify('🎉 புதிய விளம்பரம் வெற்றிகரமாக சேமிக்கப்பட்டது!');
+                } catch (err) {
+                  notify('❌ விளம்பரம் சேமிப்பதில் பிழை: ' + (err.message || 'Unknown error'));
+                } finally {
+                  setAdUploading(false);
+                }
+              }}
+              style={{
+                background: '#f8fafc',
+                border: '1.5px solid #cbd5e1',
+                borderRadius: '14px',
+                padding: '20px',
+                marginBottom: '28px'
+              }}
+            >
+              <h3 style={{ margin: '0 0 14px', fontSize: '15px', color: '#334155', fontWeight: 800 }}>
+                ➕ புதிய விளம்பர பேனர் சேர்க்க (Add New Advertisement Banner)
+              </h3>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+                {/* Image Upload / URL */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                    1. விளம்பரப் படம் (Image File / Upload) *:
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        const dataUrl = evt.target.result;
+                        setAdImageUrl(dataUrl);
+                        const img = new Image();
+                        img.onload = () => {
+                          const w = img.naturalWidth || 1;
+                          const h = img.naturalHeight || 1;
+                          const ratio = (w / h).toFixed(2);
+                          setAdImageAspectRatio(`${w}/${h}`);
+                          notify(`📐 Aspect Ratio கண்டறியப்பட்டது: ${w}x${h} (${ratio})`);
+                        };
+                        img.src = dataUrl;
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                    style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '12px', marginBottom: '8px' }}
+                  />
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>அல்லது நேரடி Image URL:</div>
+                  <input
+                    type="url"
+                    value={adImageUrl.startsWith('data:') ? '' : adImageUrl}
+                    onChange={(e) => {
+                      const url = e.target.value;
+                      setAdImageUrl(url);
+                      if (url) {
+                        const img = new Image();
+                        img.onload = () => {
+                          const w = img.naturalWidth || 1;
+                          const h = img.naturalHeight || 1;
+                          setAdImageAspectRatio(`${w}/${h}`);
+                        };
+                        img.src = url;
+                      }
+                    }}
+                    placeholder="https://example.com/banner.jpg"
+                    style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '12px', marginTop: '4px' }}
+                  />
+                </div>
+
+                {/* Title & Subtitle */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                    2. விளம்பரத் தலைப்பு (Title - Optional):
+                  </label>
+                  <input
+                    type="text"
+                    value={adTitle}
+                    onChange={(e) => setAdTitle(e.target.value)}
+                    placeholder="எ.கா: TNPSC Group 4 சிறப்பு பயிற்சி"
+                    style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '12px', marginBottom: '10px' }}
+                  />
+
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                    3. விவரம் / Tagline (Subtitle - Optional):
+                  </label>
+                  <input
+                    type="text"
+                    value={adSubtitle}
+                    onChange={(e) => setAdSubtitle(e.target.value)}
+                    placeholder="எ.கா: இன்றே பதிவு செய்து அரசு வேலைவாய்ப்பை வெல்லுங்கள்"
+                    style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '12px' }}
+                  />
+                </div>
+
+                {/* Target URL & Badge */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                    4. கிளிக் செய்யும் இணைப்பு (Target URL / WhatsApp / Link):
+                  </label>
+                  <input
+                    type="text"
+                    value={adTargetUrl}
+                    onChange={(e) => setAdTargetUrl(e.target.value)}
+                    placeholder="https://wa.me/919342318844 அல்லது https://..."
+                    style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '12px', marginBottom: '10px' }}
+                  />
+
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
+                        5. Badge Text:
+                      </label>
+                      <input
+                        type="text"
+                        value={adBadge}
+                        onChange={(e) => setAdBadge(e.target.value)}
+                        placeholder="Special Announcement"
+                        style={{ width: '100%', padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', fontSize: '12px' }}
+                      />
+                    </div>
+
+                    <div style={{ paddingTop: '20px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 800, color: '#16a34a', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={adIsActive}
+                          onChange={(e) => setAdIsActive(e.target.checked)}
+                          style={{ width: '16px', height: '16px' }}
+                        />
+                        Active (நேரலையில்)
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* LIVE IMAGE PREVIEW IN FORM */}
+              {adImageUrl && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <strong style={{ fontSize: '12px', color: '#475569' }}>🖼️ Preview (Aspect Ratio: {adImageAspectRatio}):</strong>
+                    <span style={{ fontSize: '11px', background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px', color: '#64748b' }}>Original Aspect Ratio Preserved</span>
+                  </div>
+                  <div style={{ maxHeight: '180px', display: 'flex', justifyContent: 'center', background: '#0f172a', borderRadius: '8px', overflow: 'hidden', padding: '6px' }}>
+                    <img src={adImageUrl} alt="Ad Preview" style={{ maxHeight: '168px', maxWidth: '100%', objectFit: 'contain' }} />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="submit"
+                  disabled={adUploading}
+                  style={{
+                    background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '10px 22px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: adUploading ? 'wait' : 'pointer',
+                    boxShadow: '0 3px 10px rgba(124, 58, 237, 0.25)'
+                  }}
+                >
+                  {adUploading ? '⏳ சேமிக்கப்படுகிறது...' : '💾 விளம்பரத்தை வெளியிட (Publish Ad)'}
+                </button>
+              </div>
+            </form>
+
+            {/* LIST OF CURRENT ADVERTISEMENTS */}
+            <div>
+              <h3 style={{ margin: '0 0 14px', fontSize: '16px', color: '#0f172a', fontWeight: 800 }}>
+                📋 தற்போதுள்ள விளம்பரங்கள் ({sponsoredAds.length})
+              </h3>
+
+              {sponsoredAds.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #cbd5e1', color: '#94a3b8' }}>
+                  <div style={{ fontSize: '32px', marginBottom: '8px' }}>📢</div>
+                  <strong style={{ display: 'block', fontSize: '14px', color: '#64748b' }}>தற்போது விளம்பரங்கள் எதுவும் இல்லை</strong>
+                  <p style={{ fontSize: '12px', margin: '4px 0 0' }}>விளம்பரங்களை சேர்த்தவுடன் Home Page-ல் தோன்றும்; இல்லையென்றால் banner section தானாக hide ஆகும்.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+                  {sponsoredAds.map((ad) => (
+                    <div
+                      key={ad.id}
                       style={{
-                        background: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#f0fdf4' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#fffbebf' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#fef2f2' : '#eff6ff',
-                        color: (tok.status?.includes('COMPLETED') || tok.status?.includes('SERVED')) ? '#16a34a' : (tok.status?.includes('AWAITING') || tok.status?.includes('PENDING')) ? '#d97706' : (tok.status?.includes('NO-SHOW') || tok.status?.includes('CANCELLED')) ? '#dc2626' : '#2563eb',
-                        border: '1.5px solid currentColor',
-                        padding: '5px 8px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        cursor: 'pointer'
+                        background: '#ffffff',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
                       }}
                     >
-                      <option value="CHECKED-IN / VERIFIED">🟢 VERIFIED / CHECKED-IN (பெறப்பட்டது)</option>
-                      <option value="AWAITING VISIT">🟡 AWAITING VISIT (காத்திருப்பில்)</option>
-                      <option value="COMPLETED / SERVED">🔵 COMPLETED / SERVED (நிறைவடைந்தது)</option>
-                      <option value="NO-SHOW / CANCELLED">🔴 NO-SHOW / CANCELLED (வரவில்லை)</option>
-                    </select>
-                  </td>
-                  <td>
-                    <button
-                      onClick={() => handleRemoveToken(tok)}
-                      style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}</tbody></table></div>}
+                      <div style={{ height: '140px', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                        <img
+                          src={ad.imageUrl}
+                          alt={ad.title || 'Advertisement'}
+                          style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                        />
+                        <span
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            background: ad.isActive ? '#16a34a' : '#64748b',
+                            color: 'white',
+                            fontSize: '10px',
+                            fontWeight: 900,
+                            padding: '3px 8px',
+                            borderRadius: '12px'
+                          }}
+                        >
+                          {ad.isActive ? '● Live Active' : '○ Inactive'}
+                        </span>
+                        {ad.badge && (
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: '8px',
+                              left: '8px',
+                              background: '#7c3aed',
+                              color: 'white',
+                              fontSize: '10px',
+                              fontWeight: 900,
+                              padding: '3px 8px',
+                              borderRadius: '12px'
+                            }}
+                          >
+                            {ad.badge}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ padding: '14px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                        <div>
+                          <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block', marginBottom: '4px' }}>
+                            {ad.title || 'Untitled Banner'}
+                          </strong>
+                          {ad.subtitle && (
+                            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>
+                              {ad.subtitle}
+                            </p>
+                          )}
+                          <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                            <span>📐 Ratio: <strong>{ad.aspectRatio || 'Auto'}</strong></span>
+                            {ad.targetUrl && (
+                              <span style={{ color: '#0284c7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
+                                🔗 {ad.targetUrl}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                          <button
+                            onClick={async () => {
+                              const updated = { ...ad, isActive: !ad.isActive, status: !ad.isActive ? 'active' : 'inactive' };
+                              await saveSponsoredAdCloud(updated);
+                              notify(updated.isActive ? '🟢 விளம்பரம் இயக்கப்பட்டது!' : '⚪ விளம்பரம் முடக்கப்பட்டது!');
+                            }}
+                            style={{
+                              background: ad.isActive ? '#fef3c7' : '#dcfce7',
+                              color: ad.isActive ? '#92400e' : '#15803d',
+                              border: 'none',
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {ad.isActive ? 'Pause Ad' : 'Activate Ad'}
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              if (window.confirm('இந்த விளம்பரத்தை நீக்க விரும்புகிறீர்களா?')) {
+                                await deleteSponsoredAdCloud(ad.id);
+                                notify('🗑️ விளம்பரம் நீக்கப்பட்டது!');
+                              }
+                            }}
+                            style={{
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: '1px solid #fca5a5',
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </section>
     );
   }
 
-  function CustomerPage({ customer, updateCustomer, logout, notify, saveToken, cloudExpiryDocs = [] }) {
-    const [activeTab, setActiveTab] = useState('overview');
+  function CustomerPage({ customer, updateCustomer, logout, notify, saveToken, cloudExpiryDocs = [], activeTab: propTab, setActiveTab: setPropTab, lang = 'ta', navigate }) {
+    const [internalTab, setInternalTab] = useState(propTab || 'overview');
+    const activeTab = propTab || internalTab;
+    const setActiveTab = setPropTab || setInternalTab;
     const [selectedService, setSelectedService] = useState('');
     const [showNotifications, setShowNotifications] = useState(false);
     const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
@@ -3776,7 +4401,7 @@ const getServiceVisual = (group, title = '') => {
                 required
                 value={aadhaarInput}
                 onChange={(e) => setAadhaarInput(e.target.value)}
-                placeholder="1234 5678 9012"
+                placeholder="5678 9012 3456"
                 style={{ width: '100%', marginTop: '4px', padding: '10px', fontSize: '13.5px', fontWeight: 700 }}
               />
             </label>
@@ -3790,11 +4415,12 @@ const getServiceVisual = (group, title = '') => {
     }
 
     const tabs = [
-      ['overview', 'Overview'],
-      ['documents', 'My documents'],
-      ['compressor', '📸 போட்டோ அமுக்கி (Compressor)'],
-      ['token-slip', '🎫 Token Slip'],
-      ['profile-settings', '👤 Profile & Delete Account']
+      ['overview', lang === 'ta' ? '📊 முகப்பு பலகை' : '📊 Dashboard'],
+      ['applications', lang === 'ta' ? '📋 எனது விண்ணப்பங்கள்' : '📋 My Applications'],
+      ['documents', lang === 'ta' ? '📁 எனது ஆவணங்கள்' : '📁 My Documents'],
+      ['token-slip', lang === 'ta' ? '🎟️ முன்னுரிமை டோக்கன்' : '🎟️ Priority Token'],
+      ['compressor', lang === 'ta' ? '📸 போட்டோ அமுக்கி' : '📸 Photo Compressor'],
+      ['profile-settings', lang === 'ta' ? '👤 சுயவிவரம் & அமைப்புகள்' : '👤 Profile & Settings']
     ];
 
     const rawApps = customer.applications || [];
@@ -3822,7 +4448,13 @@ const getServiceVisual = (group, title = '') => {
         return;
       }
 
-      const service = serviceCatalog.find(([, title]) => title === selectedService);
+      const service = serviceCatalog.find(([tamil, title]) => 
+        tamil === selectedService || 
+        title === selectedService || 
+        `${tamil} (${title})` === selectedService ||
+        selectedService.includes(tamil) || 
+        selectedService.includes(title)
+      );
       const requirements = getRequiredDocuments(selectedService, service?.[2]);
       const application = {
         id: `AK-${Math.floor(10000000 + Math.random() * 90000000)}`,
@@ -3953,7 +4585,20 @@ const getServiceVisual = (group, title = '') => {
       <section className="customer-dashboard page-width">
         <div className="dashboard-top">
           <div><span className="section-kicker">PRIVATE CUSTOMER PORTAL</span><h1>Welcome, <em>{customer.profile.name}.</em></h1><p>Only the services, applications and documents for +91 {customer.phone} are shown here.</p></div>
-          <div className="profile-pill"><span className="avatar">{initials}</span><span><strong>{customer.profile.name}</strong><small>Mobile: {customer.phone}</small></span><button className="logout-button" onClick={logout}><LogOut size={14} /> Logout</button></div>
+          <div className="profile-pill">
+            <span className="avatar">{initials}</span>
+            <span><strong>{customer.profile.name}</strong><small>Mobile: {customer.phone}</small></span>
+            <button
+              type="button"
+              id="customer-dashboard-home-btn"
+              className="customer-dashboard-home-btn"
+              onClick={() => typeof navigate === 'function' ? navigate('home') : (window.location.href = '/')}
+              title="முகப்புக்குத் திரும்பு / Back to Home"
+            >
+              <Home size={14} /> முகப்பு (Home)
+            </button>
+            <button className="logout-button" onClick={logout}><LogOut size={14} /> Logout</button>
+          </div>
         </div>
         <div className="dashboard-tabs">
           {tabs.map(([id, label]) => <button className={activeTab === id ? 'tab-active' : ''} onClick={() => setActiveTab(id)} key={id}>{label}{id === 'documents' && <span className="tab-count">{uploadedCount}</span>}</button>)}
@@ -4171,6 +4816,50 @@ const getServiceVisual = (group, title = '') => {
             </div>
           </>
         )}
+        {activeTab === 'applications' && (
+          <div style={{ marginTop: '20px' }}>
+            <div className="application-panel" style={{ background: '#ffffff', borderRadius: '16px', padding: '24px', border: '1.5px solid #cbd5e1', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+              <div className="panel-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px', marginBottom: '20px' }}>
+                <div>
+                  <span className="section-kicker">MY ACTIVE SERVICES</span>
+                  <h2 style={{ margin: '4px 0 0', fontSize: '20px', color: '#0f172a' }}>📋 எனது விண்ணப்பங்கள் (My Applications)</h2>
+                  <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#64748b' }}>
+                    நீங்கள் விண்ணப்பித்த அரசு சேவைகள் மற்றும் அவற்றின் தற்போதைய நிலைகள்.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveTab('overview')}
+                  style={{ background: '#0284c7', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                >
+                  + புதிய சேவை சேர்க்க (Add Service)
+                </button>
+              </div>
+
+              {applications.length ? (
+                <div style={{ display: 'grid', gap: '14px' }}>
+                  {applications.map((application) => (
+                    <ApplicationRow
+                      application={application}
+                      customerDocs={customer.documents}
+                      key={application.id}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-customer-state" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                  <FileText size={36} style={{ opacity: 0.3, marginBottom: '12px' }} />
+                  <p style={{ fontWeight: 700, color: '#334155' }}>இதுவரை விண்ணப்பங்கள் எதுவும் சேர்க்கப்படவில்லை.</p>
+                  <small style={{ color: '#64748b' }}>முகப்பு பலகையில் இருந்து உங்களுக்குத் தேவையான சேவையைத் தேர்வு செய்யவும்.</small>
+                  <div style={{ marginTop: '16px' }}>
+                    <button className="button button-primary" onClick={() => setActiveTab('overview')}>
+                      சேவையைத் தேர்வு செய்க ➔
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} cloudExpiryDocs={cloudExpiryDocs} />}
         {activeTab === 'compressor' && (
           <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
@@ -4382,40 +5071,35 @@ const getServiceVisual = (group, title = '') => {
       const file = event.target.files?.[0];
       if (!file || !application) return;
 
-      let targetMaxKb = 300;
-      const reqLower = String(requirement || '').toLowerCase();
-      const isPhotoOrImage = reqLower.includes('photo') || file.type.startsWith('image/');
+      const fileName = file.name || '';
+      const fileExt = fileName.split('.').pop().toLowerCase();
+      const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+      const isAllowedType = validExts.includes(fileExt) || file.type.startsWith('image/') || file.type === 'application/pdf';
 
-      if (isPhotoOrImage) {
-        const val = validatePhotoUpload(file, 1);
-        if (!val.valid) {
-          notify(val.error);
-          event.target.value = '';
-          return;
-        }
-      }
-      if (reqLower.includes('photo') || reqLower.includes('signature') || reqLower.includes('thumb')) {
-        targetMaxKb = 100;
-      } else if (reqLower.includes('pdf') || reqLower.includes('certificate') || reqLower.includes('card') || reqLower.includes('aadhaar')) {
-        targetMaxKb = 200;
-      } else {
-        targetMaxKb = 300;
-      }
-
-      const rawKb = Math.round(file.size / 1024);
-      if (rawKb > 5 * 1024 && !file.type.startsWith('image/')) {
-        notify(`⚠️ Size High! (${rawKb} KB) — PDF file is too large! Please upload a file under 5 MB.`);
+      if (!isAllowedType) {
+        notify('❌ தவறான கோப்பு வகை (Invalid file format)! தயவுசெய்து PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும் (Select PDF or JPG/PNG).');
         event.target.value = '';
         return;
       }
 
-      if (rawKb > targetMaxKb) {
-        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ${targetMaxKb} KB-க்குள் இருக்க வேண்டும். தானாக அமுக்கப்படுகிறது (Compressing)...`);
+      const targetMaxKb = 100;
+      const rawKb = Math.round(file.size / 1024);
+      const isImage = file.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt);
+
+      // PDF validation: Must be <= 100 KB
+      if (!isImage && rawKb > targetMaxKb) {
+        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ஆவணத்தின் அளவு கண்டிப்பாக 100 KB-க்குள் மட்டுமே இருக்க வேண்டும். (PDF must be <= 100 KB)`);
+        event.target.value = '';
+        return;
+      }
+
+      if (rawKb > targetMaxKb && isImage) {
+        notify(`⏳ கோப்பின் அளவு ${rawKb} KB. 100 KB வரம்பிற்குள் தானாக அமுக்கப்படுகிறது (Auto-compressing image under 100 KB)...`);
       } else {
         notify(`⏳ Processing ${file.name}...`);
       }
 
-      // 1. Read file as Data URL INSTANTLY & Compress Images to target size!
+      // 1. Read file as Data URL INSTANTLY & Compress Images strictly <= 100 KB!
       const rawDataUrl = await new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target?.result || '');
@@ -4430,14 +5114,14 @@ const getServiceVisual = (group, title = '') => {
       }
 
       let localDataUrl = rawDataUrl;
-      if (file.type && file.type.startsWith('image/')) {
+      if (isImage) {
         try {
           localDataUrl = await new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
               let w = img.width;
               let h = img.height;
-              const maxDim = targetMaxKb <= 100 ? 800 : 1200;
+              const maxDim = 800;
               if (w > maxDim || h > maxDim) {
                 if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
                 else { w = Math.round((w * maxDim) / h); h = maxDim; }
@@ -4447,8 +5131,18 @@ const getServiceVisual = (group, title = '') => {
               canvas.height = h;
               const ctx = canvas.getContext('2d');
               ctx.drawImage(img, 0, 0, w, h);
-              const quality = targetMaxKb <= 100 ? 0.65 : 0.78;
-              resolve(canvas.toDataURL('image/jpeg', quality));
+              
+              let quality = 0.70;
+              let result = canvas.toDataURL('image/jpeg', quality);
+              let calcKb = Math.round((result.length * 3) / 4 / 1024);
+              
+              // Incrementally reduce quality if needed to ensure <= 100 KB
+              while (calcKb > 100 && quality > 0.15) {
+                quality -= 0.10;
+                result = canvas.toDataURL('image/jpeg', quality);
+                calcKb = Math.round((result.length * 3) / 4 / 1024);
+              }
+              resolve(result);
             };
             img.onerror = () => resolve(rawDataUrl);
             img.src = rawDataUrl;
@@ -4458,8 +5152,16 @@ const getServiceVisual = (group, title = '') => {
         }
       }
 
+      const finalKb = Math.round((localDataUrl.length * 3) / 4 / 1024);
+      if (finalKb > targetMaxKb && !isImage) {
+        notify(`⚠️ கோப்பின் அளவு அதிகம் (${finalKb} KB)! ஆவணம் 100 KB-க்குள் இருக்க வேண்டும்.`);
+        event.target.value = '';
+        return;
+      }
+
       // UNIQUE docId ensures EVERY document uploaded by a customer is saved separately!
-      const docId = `DOC-${(customer.phone || 'guest').replace(/\D/g, '')}-${requirement.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}`;
+      const cleanPhone = (customer.phone || 'guest').replace(/\D/g, '');
+      const docId = `DOC-${cleanPhone}-${requirement.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}`;
       const documentObj = {
         id: docId,
         applicationId: application.id,
@@ -4475,7 +5177,14 @@ const getServiceVisual = (group, title = '') => {
 
       const existingDocs = customer?.documents || [];
       const filteredDocs = existingDocs.filter(
-        (item) => item.id !== docId && item.requirement !== requirement && item.requirement?.toLowerCase() !== requirement.toLowerCase()
+        (item) =>
+          item.id !== docId &&
+          !(
+            (item.applicationId === application.id || !item.applicationId) &&
+            item.requirement &&
+            requirement &&
+            item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()
+          )
       );
 
       const updatedCustomerRecord = {
@@ -4498,7 +5207,7 @@ const getServiceVisual = (group, title = '') => {
         uploadedAt: new Date().toISOString()
       });
 
-      notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name})`);
+      notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name} - ${finalKb} KB)`);
       try {
         event.target.value = '';
       } catch (e) {}
@@ -4564,25 +5273,28 @@ const getServiceVisual = (group, title = '') => {
 
             const document = customerDocs.find(
               (item) =>
-                item.requirement === requirement ||
+                (item.applicationId === application.id || !item.applicationId) &&
+                (item.requirement === requirement ||
                 item.id === `${application.id}-${requirement}` ||
-                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()) ||
-                (item.name && requirement && item.name.trim().toLowerCase().includes(requirement.trim().toLowerCase()))
+                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()))
             ) || globalExpiryDocs.filter(d => {
               const docPhone = (d.customerPhone || '').replace(/\D/g, '');
-              return cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
+              const docAppId = d.applicationId || '';
+              const matchesPhone = cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
+              const matchesApp = !docAppId || docAppId === application.id;
+              return matchesPhone && matchesApp;
             }).map(d => ({
               id: d.id || d.url,
+              applicationId: d.applicationId,
               requirement: d.requirement || d.title || d.name,
               name: d.name || 'Uploaded Document',
               uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
-              data: d.url
+              data: d.url || d.data
             })).find(
               (item) =>
                 item.requirement === requirement ||
                 item.id === `${application.id}-${requirement}` ||
-                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()) ||
-                (item.name && requirement && item.name.trim().toLowerCase().includes(requirement.trim().toLowerCase()))
+                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase())
             );
 
             return (

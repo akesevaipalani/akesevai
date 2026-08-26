@@ -1,15 +1,85 @@
-import { useState, useEffect } from 'react';
-import { BriefcaseBusiness, CalendarDays, GraduationCap, ExternalLink, FileText, Search, Download, Trash2, Plus, X, Check, ShieldAlert } from 'lucide-react';
-import { saveLiveQueueCloud, deleteNotificationCloud } from '../utils/dataService';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  BriefcaseBusiness,
+  CalendarDays,
+  GraduationCap,
+  ExternalLink,
+  FileText,
+  Search,
+  Download,
+  Trash2,
+  Plus,
+  X,
+  Check,
+  ShieldAlert,
+  Landmark,
+  RefreshCw,
+  Clock,
+  Building2,
+  Award,
+  Sparkles,
+  Train,
+  Shield,
+  Stethoscope,
+  BookOpen,
+  Cpu,
+  Flame,
+  CheckCircle2,
+  AlertCircle
+} from 'lucide-react';
+import {
+  fetchNotificationsCloud,
+  saveNotificationCloud,
+  deleteNotificationCloud,
+  syncBankingNotificationsCloud,
+  subscribeNotificationsCloud
+} from '../utils/dataService';
+import { INITIAL_NOTIFICATIONS } from '../data/initialNotifications';
+
+export function normalizeCategory(cat) {
+  if (!cat) return 'all';
+  const c = String(cat).toLowerCase().replace(/[^a-z]/g, '');
+  if (c.includes('bank')) return 'banking';
+  if (c.includes('upsc') || c.includes('central') || c.includes('ias')) return 'upsc';
+  if (c.includes('ssc') || c.includes('cgl') || c.includes('chsl')) return 'ssc';
+  if (c.includes('rail') || c.includes('rrb') || c.includes('rrc')) return 'railway';
+  if (c.includes('tnpsc') || c.includes('state') || c.includes('vao')) return 'tnpsc';
+  if (c.includes('police') || c.includes('defence') || c.includes('army') || c.includes('tnusrb')) return 'police_defence';
+  if (c.includes('teach') || c.includes('trb') || c.includes('tet') || c.includes('school')) return 'teaching';
+  if (c.includes('med') || c.includes('nurse') || c.includes('mrb') || c.includes('doctor') || c.includes('health') || c.includes('hospital')) return 'medical';
+  if (c.includes('enter') || c.includes('entrance') || c.includes('jee') || c.includes('neet') || c.includes('cuet') || c.includes('gate') || c.includes('tancet')) return 'entrance';
+  if (c.includes('psu') || c.includes('iocl') || c.includes('ongc') || c.includes('bhel') || c.includes('tneb') || c.includes('tech')) return 'psu';
+  return cat;
+}
 
 export function parseDateString(dateStr) {
   if (!dateStr) return null;
-  const parts = dateStr.trim().split('/');
-  if (parts.length !== 3) return null;
-  const day = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const year = parseInt(parts[2], 10);
-  return new Date(year, month, day);
+  const str = String(dateStr).trim();
+  // Handle DD/MM/YYYY
+  if (str.includes('/')) {
+    const parts = str.split('/');
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        return new Date(year, month, day);
+      }
+    }
+  }
+  // Handle YYYY-MM-DD
+  if (str.includes('-')) {
+    const parts = str.split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+        return new Date(year, month, day);
+      }
+    }
+  }
+  return null;
 }
 
 export function getDateStatus(openingDateStr, closingDateStr) {
@@ -22,848 +92,862 @@ export function getDateStatus(openingDateStr, closingDateStr) {
   if (closingDate) {
     closingDate.setHours(23, 59, 59, 999);
     if (today > closingDate) {
-      return { code: 'closed', label: 'Closed / முடிந்தது', tagClass: 'status-badge-closed', isClosed: true };
+      return { code: 'closed', label: 'முடிந்தது (Closed)', tagClass: 'status-badge-closed', isClosed: true };
     }
   }
 
   if (openingDate) {
     openingDate.setHours(0, 0, 0, 0);
     if (today < openingDate) {
-      return { code: 'upcoming', label: 'New Opening / விரைவில்', tagClass: 'status-badge-upcoming', isClosed: false };
+      return { code: 'upcoming', label: 'விரைவில் (Upcoming)', tagClass: 'status-badge-upcoming', isClosed: false };
     }
   }
 
-  return { code: 'open', label: 'Open / விண்ணப்பிக்கலாம்', tagClass: 'status-badge-open', isClosed: false };
+  return { code: 'open', label: 'விண்ணப்பிக்கலாம் (Open)', tagClass: 'status-badge-open', isClosed: false };
 }
 
-export function getExamStatus(examDateStr) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const examDate = parseDateString(examDateStr);
-  if (examDate) {
-    examDate.setHours(23, 59, 59, 999);
-    if (today > examDate) {
-      return { code: 'closed', label: 'Exam Over / முடிந்தது', tagClass: 'status-badge-closed', isClosed: true };
-    }
-  }
-  return { code: 'open', label: 'Upcoming Exam / வரவிருக்கிறது', tagClass: 'status-badge-open', isClosed: false };
-}
+// Category Configuration with Icons & Colors
+const CATEGORY_CONFIG = {
+  all: { label: 'அனைத்து தேர்வுகள் (All)', icon: Sparkles, color: '#3b82f6', bg: '#eff6ff' },
+  banking: { label: 'வங்கி & நிதி (Banking)', icon: Landmark, color: '#0284c7', bg: '#f0f9ff' },
+  upsc: { label: 'மத்திய அரசு (UPSC / Central)', icon: Building2, color: '#7c3aed', bg: '#f5f3ff' },
+  ssc: { label: 'பணியாளர் தேர்வாணையம் (SSC)', icon: BriefcaseBusiness, color: '#d97706', bg: '#fffbeb' },
+  railway: { label: 'ரயில்வே (Railway / RRB)', icon: Train, color: '#dc2626', bg: '#fef2f2' },
+  tnpsc: { label: 'தமிழ்நாடு அரசு (TNPSC / State)', icon: Award, color: '#16a34a', bg: '#f0fdf4' },
+  police_defence: { label: 'காவல்துறை / ராணுவம் (Police & Defence)', icon: Shield, color: '#0f766e', bg: '#f0fdfa' },
+  teaching: { label: 'ஆசிரியர் பணி (Teaching & TET)', icon: BookOpen, color: '#9333ea', bg: '#faf5ff' },
+  medical: { label: 'மருத்துவம் & நர்சிங் (Medical & Health)', icon: Stethoscope, color: '#e11d48', bg: '#fff1f2' },
+  entrance: { label: 'நுழைவுத் தேர்வுகள் (Entrance Exams)', icon: GraduationCap, color: '#4f46e5', bg: '#eef2ff' },
+  psu: { label: 'பொதுத்துறை & தொழில்முறை (PSU & Technical)', icon: Cpu, color: '#0284c7', bg: '#f0f9ff' }
+};
 
-export const initialJobData = [
-  {
-    id: 'job-1',
-    service: "TNPSC Combined Technical Services Examination (Degree Level)",
-    qualification: "Any Degree / B.E / B.Tech",
-    posts: "26",
-    openingDate: "30/06/2026",
-    closingDate: "29/07/2026",
-    detailsLink: "https://drive.google.com/file/d/1YaQW3WCVY7_QGzPOXuWxIEdLqrdloytI/view?usp=sharing",
-    applyLink: "https://apply.tnpscexams.in/apply-now?app_id=UElZMDAwMDAwMQ=="
-  },
-  {
-    id: 'job-2',
-    service: "RRB Technician Recruitment 2026",
-    qualification: "ITI, Diploma, B.E / B.Tech, B.Sc",
-    posts: "6565",
-    openingDate: "30/06/2026",
-    closingDate: "29/07/2026",
-    detailsLink: "https://drive.google.com/file/d/1WKhiqrw1BPi3yU5E92nLVrs33zRPhPRC/view?usp=sharing",
-    applyLink: "https://www.rrbapply.gov.in/#/auth/landing"
-  },
-  {
-    id: 'job-3',
-    service: "TNPSC Combined Technical Services Examination (Diploma / ITI Level)",
-    qualification: "ITI / DIPLOMA / B.E / B.TECH",
-    posts: "839",
-    openingDate: "17/07/2026",
-    closingDate: "15/08/2026",
-    detailsLink: "https://drive.google.com/file/d/1Ua399DASWc-y6ntRRLDOM4Kwr6PjsyrK/view?usp=sharing",
-    applyLink: "https://apply.tnpscexams.in/apply-now?app_id=UElZMDAwMDAwMQ=="
-  },
-  {
-    id: 'job-4',
-    service: "SSC CGL (Combined Graduate Level) Examination 2026",
-    qualification: "Any Bachelor's Degree",
-    posts: "17727",
-    openingDate: "24/06/2026",
-    closingDate: "27/07/2026",
-    detailsLink: "https://ssc.gov.in/",
-    applyLink: "https://ssc.gov.in/login"
-  },
-  {
-    id: 'job-5',
-    service: "TNUSRB Police Constable & Sub Inspector Recruitment",
-    qualification: "10th / 12th / Any Graduation",
-    posts: "3359",
-    openingDate: "01/08/2026",
-    closingDate: "31/08/2026",
-    detailsLink: "https://www.tnusrb.tn.gov.in/",
-    applyLink: "https://www.tnusrb.tn.gov.in/"
-  },
-  {
-    id: 'job-6',
-    service: "TNPSC Group 4 Examination 2026",
-    qualification: "10th SSLC Passed",
-    posts: "6244",
-    openingDate: "30/01/2026",
-    closingDate: "28/02/2026",
-    detailsLink: "https://www.tnpsc.gov.in/",
-    applyLink: "https://apply.tnpscexams.in/"
-  }
-];
-
-export const initialExamData = [
-  {
-    id: 'exam-1',
-    service: "TNPSC Combined Technical Services Exam (Diploma Level)",
-    examDate: "12/09/2026",
-    hallTicketLink: "https://apply.tnpscexams.in/"
-  },
-  {
-    id: 'exam-2',
-    service: "RRB Technician CBT-1 Online Examination",
-    examDate: "18/10/2026",
-    hallTicketLink: "https://www.rrbapply.gov.in/"
-  },
-  {
-    id: 'exam-3',
-    service: "SSC CGL Tier-I Computer Based Examination",
-    examDate: "09/09/2026",
-    hallTicketLink: "https://ssc.gov.in/"
-  },
-  {
-    id: 'exam-4',
-    service: "TNEA Engineering Counselling & Rank List Release",
-    examDate: "10/08/2026",
-    hallTicketLink: "https://www.tneaonline.org/"
-  },
-  {
-    id: 'exam-5',
-    service: "TNUSRB Police Constable Written Examination",
-    examDate: "25/08/2026",
-    hallTicketLink: "https://www.tnusrb.tn.gov.in/"
-  },
-  {
-    id: 'exam-6',
-    service: "TNPSC Group 4 Preliminary Examination 2026",
-    examDate: "09/06/2026",
-    hallTicketLink: "https://www.tnpsc.gov.in/"
-  }
-];
-
-export const initialEducationData = [
-  {
-    id: 'edu-1',
-    institution: "MEDICAL EDUCATION DEPARTMENT",
-    courses: "UG - AYURVEDHA, HOMEOPATHY, SIDDHA, UNANI (AYUSH)",
-    startDate: "13/07/2026",
-    endDate: "31/07/2026",
-    detailsLink: "https://drive.google.com/file/d/13J5N-i7G0h-QUADh0Y6YH1V9jFKtu4dL/view?usp=sharing",
-    applyLink: "https://tnayushonline.co.in/2026/REG/UGAYUSH/"
-  },
-  {
-    id: 'edu-2',
-    institution: "TAMIL NADU PARAMEDICAL DEGREE ADMISSIONS 2026",
-    courses: "B.Sc Nursing, B.Pharm, BPT, BOT, B.Sc MLT Degrees",
-    startDate: "20/07/2026",
-    endDate: "10/08/2026",
-    detailsLink: "https://tnmedicalselection.net/",
-    applyLink: "https://tnmedicalselection.net/"
-  },
-  {
-    id: 'edu-3',
-    institution: "GOVT POLYTECHNIC COLLEGES TAMIL NADU (TNGPTA)",
-    courses: "Diploma in Engineering (Civil, Mech, EEE, ECE, CSE)",
-    startDate: "15/07/2026",
-    endDate: "05/08/2026",
-    detailsLink: "https://www.tnpoly.in/",
-    applyLink: "https://www.tnpoly.in/"
-  },
-  {
-    id: 'edu-4',
-    institution: "TAMIL NADU LAW UNIVERSITY (TNDALU ADMISSIONS)",
-    courses: "5-Year Integrated B.A LL.B & 3-Year LL.B Degree",
-    startDate: "01/08/2026",
-    endDate: "25/08/2026",
-    detailsLink: "https://tndalu.ac.in/",
-    applyLink: "https://tndalu.ac.in/"
-  },
-  {
-    id: 'edu-5',
-    institution: "TNEA - TAMIL NADU ENGINEERING ADMISSIONS",
-    courses: "B.E / B.Tech Engineering Degree Counselling",
-    startDate: "06/05/2026",
-    endDate: "06/06/2026",
-    detailsLink: "https://www.tneaonline.org/",
-    applyLink: "https://www.tneaonline.org/"
-  },
-  {
-    id: 'edu-6',
-    institution: "TNGASA - GOVT ARTS & SCIENCE COLLEGES",
-    courses: "B.A, B.Sc, B.Com, B.B.A, B.C.A Undergraduate Courses",
-    startDate: "08/05/2026",
-    endDate: "24/05/2026",
-    detailsLink: "https://www.tngasa.in/",
-    applyLink: "https://www.tngasa.in/"
-  }
-];
-
-export const jobNotificationsData = initialJobData;
-export const examScheduleData = initialExamData;
-export const educationNotificationsData = initialEducationData;
-
-export default function NotificationTables({ forceAdmin }) {
+export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
   const [query, setQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeCategory, setActiveCategory] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [autoHideExpired, setAutoHideExpired] = useState(true);
+  const [autoHideExpired, setAutoHideExpired] = useState(false);
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
 
-  // Dynamic notification lists initialized from default data
-  const [jobs, setJobs] = useState(initialJobData);
-  const [exams, setExams] = useState(initialExamData);
-  const [education, setEducation] = useState(initialEducationData);
+  // Admin Add Modal State
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [formData, setFormData] = useState({
+    category: 'banking',
+    organization: '',
+    service: '',
+    postName: '',
+    qualification: '',
+    ageLimit: '18 - 30 Years',
+    posts: '',
+    openingDate: '',
+    closingDate: '',
+    examDate: '',
+    applicationFee: '₹100',
+    detailsLink: '',
+    applyLink: '',
+    importantDetails: ''
+  });
 
-  // Admin status check (only true when forceAdmin prop is explicitly true)
   const isAdmin = forceAdmin === true;
 
-  // Automated Next Upcoming Notifications Pipeline
-  const upcomingJobsPool = [
-    {
-      id: 'job-next-1',
-      service: "TN Village Administrative Officer (VAO) Group 4 Recruitment 2026",
-      qualification: "10th SSLC Pass / Any Graduation",
-      posts: "6250",
-      openingDate: "05/08/2026",
-      closingDate: "05/09/2026",
-      detailsLink: "https://www.tnpsc.gov.in/",
-      applyLink: "https://apply.tnpscexams.in/"
-    },
-    {
-      id: 'job-next-2',
-      service: "India Post Gramin Dak Sevak (GDS) Recruitment Cycle VI",
-      qualification: "10th Standard Pass (Maths & English)",
-      posts: "38400",
-      openingDate: "12/08/2026",
-      closingDate: "12/09/2026",
-      detailsLink: "https://indiapostgdsonline.gov.in/",
-      applyLink: "https://indiapostgdsonline.gov.in/"
+  // Real-time MongoDB notifications subscription & Auto-Sync on mount
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        const data = await fetchNotificationsCloud();
+        if (isMounted && Array.isArray(data) && data.length > 0) {
+          setNotifications(data);
+        } else if (isMounted && (!data || data.length === 0)) {
+          // Trigger automatic background master sync if DB was empty
+          syncBankingNotificationsCloud().then(async () => {
+            const fresh = await fetchNotificationsCloud();
+            if (isMounted && Array.isArray(fresh) && fresh.length > 0) {
+              setNotifications(fresh);
+            }
+          });
+        }
+      } catch (e) {}
+    };
+
+    loadData();
+
+    const unsub = subscribeNotificationsCloud((liveNotifs) => {
+      if (isMounted && Array.isArray(liveNotifs) && liveNotifs.length > 0) {
+        setNotifications(liveNotifs);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, []);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    setSyncMessage('');
+    try {
+      const res = await syncBankingNotificationsCloud(); // Calls POST /api/notifications/sync-all
+      if (res?.success) {
+        setSyncMessage(`✅ ${res.count || 'அனைத்து'} அரசு & போட்டித் தேர்வு அறிவிப்புகள் MongoDB Atlas-ல் வெற்றிகரமாக புதுப்பிக்கப்பட்டன!`);
+        const fresh = await fetchNotificationsCloud();
+        if (Array.isArray(fresh) && fresh.length > 0) {
+          setNotifications(fresh);
+        }
+      }
+    } catch (err) {
+      setSyncMessage('⚠️ புதுப்பித்தலில் பிழை ஏற்பட்டது.');
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncMessage(''), 4500);
     }
-  ];
-
-  const upcomingExamsPool = [
-    {
-      id: 'exam-next-1',
-      service: "TNPSC Group 2 & 2A Preliminary Exam 2026",
-      examDate: "28/09/2026",
-      hallTicketLink: "https://apply.tnpscexams.in/hall-ticket"
-    },
-    {
-      id: 'exam-next-2',
-      service: "SSC GD Constable Computer Based Test (CBT)",
-      examDate: "15/10/2026",
-      hallTicketLink: "https://ssc.gov.in/"
-    }
-  ];
-
-  const upcomingEduPool = [
-    {
-      id: 'edu-next-1',
-      institution: "TNEA Engineering Lateral Entry Admissions 2026",
-      courses: "B.E / B.Tech Direct 2nd Year Admissions",
-      startDate: "01/08/2026",
-      endDate: "25/08/2026",
-      detailsLink: "https://www.tneaonline.org/",
-      applyLink: "https://www.tneaonline.org/"
-    },
-    {
-      id: 'edu-next-2',
-      institution: "TNGASA Govt Arts & Science College Phase 2 Counselling",
-      courses: "All UG Degree Courses (B.A, B.Sc, B.Com)",
-      startDate: "05/08/2026",
-      endDate: "20/08/2026",
-      detailsLink: "https://www.tngasa.in/",
-      applyLink: "https://www.tngasa.in/"
-    }
-  ];
-
-  // Modal State for adding new notification
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [categoryType, setCategoryType] = useState('job'); // 'job', 'exam', 'education'
-  const [newTitle, setNewTitle] = useState('');
-  const [newQual, setNewQual] = useState('');
-  const [newPosts, setNewPosts] = useState('');
-  const [newStartDate, setNewStartDate] = useState('');
-  const [newEndDate, setNewEndDate] = useState('');
-  const [newDetailsLink, setNewDetailsLink] = useState('');
-  const [newApplyLink, setNewApplyLink] = useState('');
-
-  const saveLists = (updatedJobs, updatedExams, updatedEdu) => {
-    setJobs(updatedJobs);
-    setExams(updatedExams);
-    setEducation(updatedEdu);
   };
 
-  const autoReplenishIfEmpty = (updatedJobs, updatedExams, updatedEdu) => {
-    let nextJobs = [...updatedJobs];
-    let nextExams = [...updatedExams];
-    let nextEdu = [...updatedEdu];
-
-    if (nextJobs.length === 0) {
-      nextJobs = [...upcomingJobsPool];
-    }
-    if (nextExams.length === 0) {
-      nextExams = [...upcomingExamsPool];
-    }
-    if (nextEdu.length === 0) {
-      nextEdu = [...upcomingEduPool];
-    }
-
-    return { nextJobs, nextExams, nextEdu };
-  };
-
-  const handleDeleteJob = async (id) => {
-    if (window.confirm('இந்த வேலைவாய்ப்பு அறிவிப்பை நீக்க வேண்டுமா? (Delete this notification?)')) {
-      const filtered = jobs.filter(item => item.id !== id);
-      const { nextJobs, nextExams, nextEdu } = autoReplenishIfEmpty(filtered, exams, education);
-      setJobs(nextJobs);
-      setExams(nextExams);
-      setEducation(nextEdu);
-      saveLists(nextJobs, nextExams, nextEdu);
+  const handleDeleteNotification = async (id) => {
+    if (window.confirm('இந்த அறிவிப்பை நீக்க வேண்டுமா? (Delete this notification?)')) {
       await deleteNotificationCloud(id);
+      setNotifications(prev => prev.filter(n => n.id !== id));
     }
   };
 
-  const handleDeleteExam = async (id) => {
-    if (window.confirm('இந்த தேர்வு அறிவிப்பை நீக்க வேண்டுமா? (Delete this exam schedule?)')) {
-      const filtered = exams.filter(item => item.id !== id);
-      const { nextJobs, nextExams, nextEdu } = autoReplenishIfEmpty(jobs, filtered, education);
-      setJobs(nextJobs);
-      setExams(nextExams);
-      setEducation(nextEdu);
-      saveLists(nextJobs, nextExams, nextEdu);
-      await deleteNotificationCloud(id);
-    }
-  };
-
-  const handleDeleteEdu = async (id) => {
-    if (window.confirm('இந்த கல்வி அறிவிப்பை நீக்க வேண்டுமா? (Delete this education application?)')) {
-      const filtered = education.filter(item => item.id !== id);
-      const { nextJobs, nextExams, nextEdu } = autoReplenishIfEmpty(jobs, exams, filtered);
-      setJobs(nextJobs);
-      setExams(nextExams);
-      setEducation(nextEdu);
-      saveLists(nextJobs, nextExams, nextEdu);
-      await deleteNotificationCloud(id);
-    }
-  };
-
-  const handleClearExpiredAndAutoAddNext = () => {
-    const activeJ = jobs.filter(j => !getDateStatus(j.openingDate, j.closingDate).isClosed);
-    const activeE = exams.filter(e => !getExamStatus(e.examDate).isClosed);
-    const activeEdu = education.filter(ed => !getDateStatus(ed.startDate, ed.endDate).isClosed);
-
-    // Merge next upcoming entries automatically if empty or reduced
-    const mergedJobs = [...activeJ, ...upcomingJobsPool.filter(poolItem => !activeJ.some(x => x.service === poolItem.service))];
-    const mergedExams = [...activeE, ...upcomingExamsPool.filter(poolItem => !activeE.some(x => x.service === poolItem.service))];
-    const mergedEdu = [...activeEdu, ...upcomingEduPool.filter(poolItem => !activeEdu.some(x => x.institution === poolItem.institution))];
-
-    setJobs(mergedJobs);
-    setExams(mergedExams);
-    setEducation(mergedEdu);
-    saveLists(mergedJobs, mergedExams, mergedEdu);
-    alert('🧹 தேதி முடிந்த அறிவிப்புகள் நீக்கப்பட்டு, அடுத்த புதிய அறிவிப்புகள் தானாக சேர்க்கப்பட்டன!');
-  };
-
-  const handleAddNotification = (e) => {
+  const handleAddSubmit = async (e) => {
     e.preventDefault();
-    if (!newTitle) return;
+    if (!formData.service.trim()) return;
 
-    if (categoryType === 'job') {
-      const newItem = {
-        id: `job-${Date.now()}`,
-        service: newTitle,
-        qualification: newQual || 'Any Qualification',
-        posts: newPosts || 'Multiple',
-        openingDate: newStartDate || new Date().toLocaleDateString('en-IN'),
-        closingDate: newEndDate || '31/12/2026',
-        detailsLink: newDetailsLink || 'https://www.tn.gov.in/',
-        applyLink: newApplyLink || 'https://www.tn.gov.in/'
-      };
-      const updated = [newItem, ...jobs];
-      setJobs(updated);
-      saveLists(updated, exams, education);
-    } else if (categoryType === 'exam') {
-      const newItem = {
-        id: `exam-${Date.now()}`,
-        service: newTitle,
-        examDate: newEndDate || new Date().toLocaleDateString('en-IN'),
-        hallTicketLink: newApplyLink || 'https://www.tn.gov.in/'
-      };
-      const updated = [newItem, ...exams];
-      setExams(updated);
-      saveLists(jobs, updated, education);
-    } else if (categoryType === 'education') {
-      const newItem = {
-        id: `edu-${Date.now()}`,
-        institution: newTitle,
-        courses: newQual || 'Undergraduate / Postgraduate Courses',
-        startDate: newStartDate || new Date().toLocaleDateString('en-IN'),
-        endDate: newEndDate || '31/12/2026',
-        detailsLink: newDetailsLink || 'https://www.tn.gov.in/',
-        applyLink: newApplyLink || 'https://www.tn.gov.in/'
-      };
-      const updated = [newItem, ...education];
-      setEducation(updated);
-      saveLists(jobs, exams, updated);
+    const notifPayload = {
+      id: `notif-${Date.now()}`,
+      category: formData.category,
+      organization: formData.organization || 'Official Govt Agency',
+      service: formData.service,
+      postName: formData.postName || formData.service,
+      qualification: formData.qualification || 'Any Graduation / Relevant Qualification',
+      ageLimit: formData.ageLimit || 'As per official rules',
+      posts: formData.posts || 'Multiple Vacancies',
+      openingDate: formData.openingDate || new Date().toLocaleDateString('en-IN'),
+      closingDate: formData.closingDate || '31/12/2026',
+      examDate: formData.examDate || 'Announced Soon',
+      applicationFee: formData.applicationFee || 'Official Fee',
+      notificationDate: formData.openingDate || new Date().toLocaleDateString('en-IN'),
+      importantDetails: formData.importantDetails || 'Official Verified Government Exam Notification',
+      detailsLink: formData.detailsLink || 'https://www.india.gov.in/',
+      applyLink: formData.applyLink || 'https://www.india.gov.in/',
+      isVerified: true,
+      source: 'Verified Admin Entry',
+      isNew: true,
+      status: 'active'
+    };
+
+    await saveNotificationCloud(notifPayload);
+    setNotifications(prev => [notifPayload, ...prev]);
+    setShowAddModal(false);
+    setFormData({
+      category: 'banking',
+      organization: '',
+      service: '',
+      postName: '',
+      qualification: '',
+      ageLimit: '18 - 30 Years',
+      posts: '',
+      openingDate: '',
+      closingDate: '',
+      examDate: '',
+      applicationFee: '₹100',
+      detailsLink: '',
+      applyLink: '',
+      importantDetails: ''
+    });
+  };
+
+  // Category counts with normalization
+  const counts = useMemo(() => {
+    const res = { all: notifications.length };
+    Object.keys(CATEGORY_CONFIG).forEach(k => {
+      if (k !== 'all') {
+        res[k] = notifications.filter(n => normalizeCategory(n.category) === k).length;
+      }
+    });
+    return res;
+  }, [notifications]);
+
+  // Filtered & Smart Sorted Notifications (Active/Upcoming First)
+  const filteredNotifications = useMemo(() => {
+    let list = (notifications && notifications.length > 0 ? notifications : INITIAL_NOTIFICATIONS).filter(item => {
+      // 1. Normalized Category Filter
+      if (activeCategory !== 'all') {
+        const itemNorm = normalizeCategory(item.category);
+        if (itemNorm !== activeCategory) return false;
+      }
+
+      // 2. Status Calculation
+      const statusObj = getDateStatus(item.openingDate, item.closingDate);
+      if (autoHideExpired && statusObj.isClosed) return false;
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'open' && statusObj.code !== 'open') return false;
+        if (statusFilter === 'upcoming' && statusObj.code !== 'upcoming') return false;
+        if (statusFilter === 'closed' && !statusObj.isClosed) return false;
+      }
+
+      // 3. Search Query Filter
+      if (query.trim()) {
+        const matchText = `${item.service} ${item.organization || ''} ${item.postName || ''} ${item.qualification || ''} ${item.importantDetails || ''} ${item.category || ''}`.toLowerCase();
+        if (!matchText.includes(query.toLowerCase())) return false;
+      }
+
+      return true;
+    });
+
+    // Intelligent Fallback: If autoHideExpired caused 0 results in an active category, relax it to show all available
+    if (list.length === 0 && !query.trim() && autoHideExpired) {
+      list = (notifications && notifications.length > 0 ? notifications : INITIAL_NOTIFICATIONS).filter(item => {
+        if (activeCategory !== 'all') {
+          return normalizeCategory(item.category) === activeCategory;
+        }
+        return true;
+      });
     }
 
-    // Reset Form
-    setNewTitle('');
-    setNewQual('');
-    setNewPosts('');
-    setNewStartDate('');
-    setNewEndDate('');
-    setNewDetailsLink('');
-    setNewApplyLink('');
-    setShowAddModal(false);
-    alert('🎉 புதிய அறிவிப்பு வெற்றிகரமாக சேர்க்கப்பட்டது!');
-  };
-
-  const filterItem = (text, statusObj) => {
-    if (autoHideExpired && statusObj.isClosed) return false;
-    const matchesQuery = text.toLowerCase().includes(query.toLowerCase());
-    if (!matchesQuery) return false;
-    if (statusFilter === 'all') return true;
-    return statusObj.code === statusFilter;
-  };
-
-  const filteredJobs = jobs.filter(item => {
-    const status = getDateStatus(item.openingDate, item.closingDate);
-    return filterItem(`${item.service} ${item.qualification}`, status);
-  });
-
-  const filteredExams = exams.filter(item => {
-    const status = getExamStatus(item.examDate);
-    return filterItem(`${item.service} ${item.examDate}`, status);
-  });
-
-  const filteredEducation = education.filter(item => {
-    const status = getDateStatus(item.startDate, item.endDate);
-    return filterItem(`${item.institution} ${item.courses}`, status);
-  });
+    // Sort: Active & Upcoming First, Expired Last
+    return list.sort((a, b) => {
+      const statusA = getDateStatus(a.openingDate, a.closingDate);
+      const statusB = getDateStatus(b.openingDate, b.closingDate);
+      if (statusA.isClosed !== statusB.isClosed) {
+        return statusA.isClosed ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [notifications, activeCategory, statusFilter, autoHideExpired, query]);
 
   return (
-    <div className="notification-tables-wrapper">
-      {/* Category Quick Selector & Search */}
-      <div className="table-filter-bar" style={{ display: 'grid', gap: '14px' }}>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div className="service-search search-in-tables" style={{ flex: 1, margin: 0 }}>
-            <Search size={18} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="🔍 அறிவிப்புகளை தேடவும்... Search notifications, exams & admissions"
-            />
-            {query && <span className="search-count-pill">Filtering results</span>}
+    <div className="notification-tables-wrapper" style={{ marginTop: '16px', maxWidth: '1440px', marginInline: 'auto' }}>
+      
+      {/* 1. TOP HEADER & SEARCH CONTROLS */}
+      <div style={{ background: '#ffffff', borderRadius: '18px', padding: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 18px rgba(0,0,0,0.03)', display: 'grid', gap: '16px' }}>
+        
+        {/* Title & Live Status Indicator */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h2 style={{ font: '800 20px/1.3 Manrope, sans-serif', color: '#0f172a', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>📢 அனைத்து அரசு & போட்டித் தேர்வு நேரலை அறிவிப்புகள்</span>
+              <span style={{ fontSize: '11px', fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '3px 10px', borderRadius: '20px' }}>
+                🟢 நேரடி அதிகாரப்பூர்வ Feed
+              </span>
+            </h2>
+            <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+              UPSC, SSC, வங்கி, ரயில்வே, TNPSC, காவல்துறை, ஆசிரியர் பணி, மருத்துவம் மற்றும் நுழைவுத் தேர்வுகள் உடனுக்குடன் தானாகப் புதுப்பிக்கப்படுகிறது.
+            </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#fffbeb', border: '1px solid #fde68a', padding: '8px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 800, color: '#b45309', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={autoHideExpired}
-                onChange={(e) => setAutoHideExpired(e.target.checked)}
-                style={{ accentColor: '#d97706', width: '16px', height: '16px', cursor: 'pointer' }}
-              />
-              🚫 தேதி முடிந்தவற்றை தானாக மறை (Auto-Hide Expired)
-            </label>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              style={{
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '10px 18px',
+                borderRadius: '12px',
+                fontWeight: 800,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <RefreshCw size={16} className={isSyncing ? 'animate-spin' : ''} />
+              <span>{isSyncing ? 'புதுப்பிக்கிறது...' : '🔄 அறிவிப்புகளைப் புதுப்பி (Sync All Exams)'}</span>
+            </button>
 
             {isAdmin && (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={handleClearExpiredAndAutoAddNext}
-                  title="Clear Expired Notifications and automatically add next upcoming items"
-                  style={{ background: '#dc2626', color: 'white', border: 'none', padding: '9px 14px', borderRadius: '10px', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)' }}
-                >
-                  <Trash2 size={15} /> 🧹 தேதி முடிந்தவற்றை நீக்குக (Auto-Clean Expired)
-                </button>
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  style={{ background: '#16a34a', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '10px', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)' }}
-                >
-                  <Plus size={16} /> ➕ புதிய அறிவிப்பு சேர்க்க (Add Notification)
-                </button>
-              </div>
+              <button
+                onClick={() => setShowAddModal(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '10px 18px',
+                  borderRadius: '12px',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                }}
+              >
+                <Plus size={16} /> <span>➕ புதிய அறிவிப்பு சேர்க்க (Add)</span>
+              </button>
             )}
           </div>
         </div>
 
-        <div className="category-tabs category-table-tabs">
-          <button className={activeTab === 'all' ? 'category-active' : ''} onClick={() => setActiveTab('all')}>
-            அனைத்து அட்டவணைகள் / All Tables
-          </button>
-          <button className={activeTab === 'jobs' ? 'category-active' : ''} onClick={() => setActiveTab('jobs')}>
-            📢 வேலைவாய்ப்பு ({filteredJobs.length})
-          </button>
-          <button className={activeTab === 'exams' ? 'category-active' : ''} onClick={() => setActiveTab('exams')}>
-            📅 தேர்வு அட்டவணை ({filteredExams.length})
-          </button>
-          <button className={activeTab === 'education' ? 'category-active' : ''} onClick={() => setActiveTab('education')}>
-            🎓 கல்வி விண்ணப்பங்கள் ({filteredEducation.length})
-          </button>
+        {syncMessage && (
+          <div style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircle2 size={18} color="#16a34a" />
+            <span>{syncMessage}</span>
+          </div>
+        )}
+
+        {/* Search Bar & Auto-Hide Filter */}
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="service-search search-in-tables" style={{ flex: 1, margin: 0, minWidth: '280px' }}>
+            <Search size={18} />
+            <input
+              id="notifications-search-input"
+              name="notifications_search"
+              type="text"
+              autoComplete="off"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="🔍 தேர்வுப் பெயர், அமைப்பு (UPSC, TNPSC, SSC, RRB, SBI...), கல்வித் தகுதி தேடவும்..."
+            />
+            {query && <span className="search-count-pill">{filteredNotifications.length} Results</span>}
+          </div>
+
+          <label htmlFor="notifications-autohide-expired" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fffbeb', border: '1px solid #fde68a', padding: '9px 16px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, color: '#b45309', cursor: 'pointer' }}>
+            <input
+              id="notifications-autohide-expired"
+              name="autohide_expired"
+              type="checkbox"
+              checked={autoHideExpired}
+              onChange={(e) => setAutoHideExpired(e.target.checked)}
+              style={{ accentColor: '#d97706', width: '16px', height: '16px', cursor: 'pointer' }}
+            />
+            <span>🚫 கடைசி தேதி முடிந்தவற்றை மறை (Hide Expired)</span>
+          </label>
         </div>
 
-        {/* STATUS FILTER PILLS */}
-        <div className="status-filter-pills">
-          <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--muted)' }}>நிலையை தேர்ந்தெடுக்கவும் / Filter Status:</span>
+        {/* 2. CATEGORY SELECTOR CHIPS */}
+        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'thin' }}>
+          {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => {
+            const Icon = cfg.icon;
+            const isSelected = activeCategory === key;
+            const count = counts[key] || 0;
+
+            return (
+              <button
+                key={key}
+                data-category={key}
+                className={`category-chip tab-btn ${isSelected ? 'category-active' : ''}`}
+                onClick={() => setActiveCategory(key)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '9px 14px',
+                  borderRadius: '12px',
+                  border: isSelected ? `2px solid ${cfg.color}` : '1px solid #e2e8f0',
+                  background: isSelected ? cfg.color : '#ffffff',
+                  color: isSelected ? '#ffffff' : '#334155',
+                  fontWeight: 800,
+                  fontSize: '12px',
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: isSelected ? `0 4px 12px ${cfg.color}33` : 'none'
+                }}
+              >
+                <Icon size={14} />
+                <span>{cfg.label}</span>
+                <span
+                  style={{
+                    background: isSelected ? 'rgba(255,255,255,0.25)' : '#f1f5f9',
+                    color: isSelected ? '#ffffff' : '#475569',
+                    padding: '2px 7px',
+                    borderRadius: '10px',
+                    fontSize: '11px',
+                    fontWeight: 800
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 3. STATUS FILTER PILLS */}
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid #f1f5f9' }}>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>தேர்வு நிலை (Status):</span>
           <button className={`status-pill-btn ${statusFilter === 'all' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('all')}>
-            📋 அனைத்து அறிவிப்புகள் (All)
+            📋 அனைத்து நிலைகள் (All)
           </button>
           <button className={`status-pill-btn ${statusFilter === 'open' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('open')}>
             🟢 தற்போது விண்ணப்பிக்கலாம் (Active Open)
           </button>
           <button className={`status-pill-btn ${statusFilter === 'upcoming' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('upcoming')}>
-            ⏳ புதிய அறிவிப்புகள் / விரைவில் (New Opening)
+            ⏳ விரைவில் தொடங்கும் (Upcoming)
           </button>
           <button className={`status-pill-btn ${statusFilter === 'closed' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('closed')}>
-            🔴 முடிந்தது (Closed)
+            🔴 முடிவடைந்தது (Closed / Expired)
           </button>
         </div>
       </div>
 
-      {/* ADMIN ADD NOTIFICATION MODAL */}
+      {/* 4. NOTIFICATION CARDS DISPLAY */}
+      <div style={{ marginTop: '20px' }}>
+        {filteredNotifications.length === 0 ? (
+          <div style={{ textAlign: 'center', background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: '18px', padding: '50px 20px', color: '#64748b' }}>
+            <Building2 size={48} color="#94a3b8" style={{ marginBottom: '14px' }} />
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#334155', margin: '0 0 8px' }}>
+              அறிவிப்புகள் எதுவும் கிடைக்கவில்லை / No Notifications Found
+            </h3>
+            <p style={{ fontSize: '13px', margin: '0 0 20px', maxWidth: '500px', marginInline: 'auto' }}>
+              தேர்ந்தெடுக்கப்பட்ட பிரிவில் அறிவிப்புகள் இல்லை அல்லது கடைசி தேதி முடிந்துவிட்டது. புதிய அறிவிப்புகளைப் பெற கீழே உள்ள பொத்தானை அழுத்தவும்.
+            </p>
+            <button
+              onClick={handleManualSync}
+              style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '11px 22px', borderRadius: '12px', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}
+            >
+              🔄 அனைத்துத் தேர்வுகளையும் உடனே புதுப்பிக்க (Sync Master Feed)
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '18px' }}>
+            {filteredNotifications.map((notif) => {
+              const statusObj = getDateStatus(notif.openingDate, notif.closingDate);
+              const catCfg = CATEGORY_CONFIG[notif.category] || CATEGORY_CONFIG.all;
+              const Icon = catCfg.icon || Building2;
+              const isNew = notif.isNew === true;
+
+              return (
+                <div
+                  key={notif.id}
+                  className="notification-card govt-job-card notification-row-card"
+                  data-category={notif.category}
+                  data-id={notif.id}
+                  style={{
+                    background: '#ffffff',
+                    border: `1.5px solid ${statusObj.isClosed ? '#f1f5f9' : (isNew ? '#93c5fd' : '#e2e8f0')}`,
+                    borderRadius: '18px',
+                    padding: '22px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: isNew ? '0 8px 24px rgba(59, 130, 246, 0.08)' : '0 4px 14px rgba(0, 0, 0, 0.03)',
+                    position: 'relative',
+                    opacity: statusObj.isClosed ? 0.75 : 1,
+                    transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+                  }}
+                >
+                  <div>
+                    {/* Top Badges: Category & Status */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            background: catCfg.bg,
+                            color: catCfg.color,
+                            border: `1px solid ${catCfg.color}33`,
+                            padding: '4px 10px',
+                            borderRadius: '20px',
+                            fontSize: '11px',
+                            fontWeight: 800
+                          }}
+                        >
+                          <Icon size={12} />
+                          <span>{notif.organization || 'Official Agency'}</span>
+                        </span>
+
+                        {isNew && !statusObj.isClosed && (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              background: '#ef4444',
+                              color: '#ffffff',
+                              padding: '3px 8px',
+                              borderRadius: '20px',
+                              fontSize: '10px',
+                              fontWeight: 900,
+                              letterSpacing: '0.5px'
+                            }}
+                          >
+                            <Flame size={11} /> NEW
+                          </span>
+                        )}
+                      </div>
+
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          padding: '4px 10px',
+                          borderRadius: '20px',
+                          background: statusObj.isClosed ? '#fee2e2' : (statusObj.code === 'upcoming' ? '#fef3c7' : '#dcfce7'),
+                          color: statusObj.isClosed ? '#dc2626' : (statusObj.code === 'upcoming' ? '#d97706' : '#15803d'),
+                          border: `1px solid ${statusObj.isClosed ? '#fca5a5' : (statusObj.code === 'upcoming' ? '#fde68a' : '#86efac')}`,
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {statusObj.label}
+                      </span>
+                    </div>
+
+                    {/* Exam Name Title */}
+                    <h3 style={{ font: '800 16px/1.35 Manrope, sans-serif', color: '#0f172a', margin: '0 0 8px' }}>
+                      {notif.service}
+                    </h3>
+
+                    {/* Post Name & Posts Count */}
+                    {notif.postName && (
+                      <div style={{ fontSize: '12px', color: '#0284c7', fontWeight: 800, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>🎯 {notif.postName}</span>
+                        {notif.posts && <span style={{ color: '#047857', background: '#d1fae5', padding: '2px 8px', borderRadius: '8px', fontSize: '11px' }}>{notif.posts}</span>}
+                      </div>
+                    )}
+
+                    {/* Qualification & Age Limit Box */}
+                    <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '10px 0', fontSize: '12px', color: '#334155', display: 'grid', gap: '5px' }}>
+                      <div>
+                        <strong>🎓 கல்வித் தகுதி:</strong> {notif.qualification || 'Any Graduation'}
+                      </div>
+                      {notif.ageLimit && (
+                        <div style={{ color: '#475569' }}>
+                          <strong>⏳ வயது வரம்பு:</strong> {notif.ageLimit}
+                        </div>
+                      )}
+                      {notif.applicationFee && (
+                        <div style={{ color: '#64748b', fontSize: '11.5px' }}>
+                          <strong>💳 கட்டணம்:</strong> {notif.applicationFee}
+                        </div>
+                      )}
+                      {notif.importantDetails && (
+                        <div style={{ color: '#475569', fontSize: '11.5px', marginTop: '2px', lineHeight: 1.4, borderTop: '1px dashed #e2e8f0', paddingTop: '6px' }}>
+                          ℹ️ {notif.importantDetails}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Key Dates Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11.5px', color: '#475569', margin: '12px 0' }}>
+                      <div style={{ background: '#ffffff', border: '1px solid #f1f5f9', padding: '8px 10px', borderRadius: '8px' }}>
+                        <span style={{ color: '#94a3b8', fontSize: '10.5px' }}>தொடங்கும் தேதி:</span><br />
+                        <strong style={{ color: '#334155' }}>{notif.openingDate || '-'}</strong>
+                      </div>
+                      <div style={{ background: statusObj.isClosed ? '#fef2f2' : '#f0fdf4', border: `1px solid ${statusObj.isClosed ? '#fecaca' : '#bbf7d0'}`, padding: '8px 10px', borderRadius: '8px' }}>
+                        <span style={{ color: statusObj.isClosed ? '#dc2626' : '#15803d', fontSize: '10.5px', fontWeight: 800 }}>கடைசி தேதி (Last Date):</span><br />
+                        <strong style={{ color: statusObj.isClosed ? '#dc2626' : '#15803d' }}>{notif.closingDate || '-'}</strong>
+                      </div>
+                      {notif.examDate && (
+                        <div style={{ gridColumn: '1 / -1', background: '#fefce8', padding: '8px 10px', borderRadius: '8px', border: '1px solid #fef08a', color: '#854d0e', fontWeight: 700, fontSize: '11.5px' }}>
+                          📅 தேர்வு தேதி: {notif.examDate}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions & Official Links */}
+                  <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {notif.detailsLink && (
+                      <a
+                        href={notif.detailsLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          flex: 1,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: '#f8fafc',
+                          color: '#334155',
+                          border: '1px solid #cbd5e1',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <FileText size={14} /> <span>PDF விவரம்</span>
+                      </a>
+                    )}
+
+                    {notif.applyLink && !statusObj.isClosed && (
+                      <a
+                        href={notif.applyLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          flex: 1.2,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          textDecoration: 'none',
+                          boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
+                        }}
+                      >
+                        <span>விண்ணப்பிக்க</span> <ExternalLink size={14} />
+                      </a>
+                    )}
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteNotification(notif.id)}
+                        title="Delete notification"
+                        style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', padding: '9px', borderRadius: '10px', cursor: 'pointer' }}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 5. ADMIN ADD NOTIFICATION MODAL */}
       {showAddModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(6px)', zIndex: 99999, display: 'grid', placeItems: 'center', padding: '20px' }}>
-          <div style={{ background: 'white', borderRadius: '16px', padding: '24px 28px', width: 'min(520px, 94vw)', boxShadow: '0 25px 60px rgba(0,0,0,0.4)', position: 'relative' }}>
+          <div style={{ background: 'white', borderRadius: '18px', padding: '24px 28px', width: 'min(580px, 94vw)', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 60px rgba(0,0,0,0.4)', position: 'relative' }}>
             <button onClick={() => setShowAddModal(false)} style={{ position: 'absolute', right: '16px', top: '16px', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
               <X size={18} />
             </button>
 
             <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 16px' }}>
-              ➕ புதிய அறிவிப்பு சேர்க்கவும் (Add New Notification)
+              ➕ புதிய தேர்வு / வேலைவாய்ப்பு அறிவிப்பு சேர்க்க
             </h2>
 
-            <form onSubmit={handleAddNotification} style={{ display: 'grid', gap: '12px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                அறிவிப்பு வகை (Notification Category):
-                <select value={categoryType} onChange={(e) => setCategoryType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }}>
-                  <option value="job">📢 வேலைவாய்ப்பு அறிவிப்பு (Recruitment Job)</option>
-                  <option value="exam">📅 தேர்வு கால அட்டவணை (Exam Schedule & Hall Ticket)</option>
-                  <option value="education">🎓 கல்லூரி & பல்கலைக்கழக சேர்க்கை (College Admissions)</option>
+            <form onSubmit={handleAddSubmit} style={{ display: 'grid', gap: '12px' }}>
+              <label htmlFor="modal-notif-category" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                பிரிவு (Category):
+                <select
+                  id="modal-notif-category"
+                  name="notification_category"
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }}
+                >
+                  <option value="banking">🏦 வங்கி & நிதி (Banking & Finance)</option>
+                  <option value="upsc">🏛️ மத்திய அரசு (UPSC / Central Govt)</option>
+                  <option value="ssc">📑 பணியாளர் தேர்வாணையம் (SSC)</option>
+                  <option value="railway">🚆 ரயில்வே (Railway / RRB)</option>
+                  <option value="tnpsc">🏢 தமிழ்நாடு அரசு (TNPSC / State Govt)</option>
+                  <option value="police_defence">👮 காவல்துறை / ராணுவம் (Police & Defence)</option>
+                  <option value="teaching">👨‍🏫 ஆசிரியர் பணி (Teaching & TET)</option>
+                  <option value="medical">🏥 மருத்துவம் & நர்சிங் (Medical & Health)</option>
+                  <option value="entrance">🎓 நுழைவுத் தேர்வுகள் (Entrance Exams)</option>
+                  <option value="psu">🏭 பொதுத்துறை & தொழில்முறை (PSU & Technical)</option>
                 </select>
               </label>
 
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                அறிவிப்பு தலைப்பு / Title Name:
-                <input type="text" required value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="e.g. TNPSC Combined Engineering Services" style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
+              <label htmlFor="modal-notif-organization" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                நிறுவனம் / அமைப்பு (Organization):
+                <input
+                  id="modal-notif-organization"
+                  name="notification_organization"
+                  type="text"
+                  required
+                  value={formData.organization}
+                  onChange={(e) => setFormData({ ...formData, organization: e.target.value })}
+                  placeholder="e.g. UPSC / SSC / TNPSC / SBI / Railway"
+                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                />
               </label>
 
-              {categoryType !== 'exam' && (
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  கல்வித் தகுதி / படிப்புகள் (Qualification / Courses):
-                  <input type="text" value={newQual} onChange={(e) => setNewQual(e.target.value)} placeholder="e.g. B.E / B.Tech / Any Graduation" style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
-                </label>
-              )}
-
-              {categoryType === 'job' && (
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  காலிப்பணியிடங்கள் (No. of Posts):
-                  <input type="text" value={newPosts} onChange={(e) => setNewPosts(e.target.value)} placeholder="e.g. 1540" style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
-                </label>
-              )}
+              <label htmlFor="modal-notif-service" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                அறிவிப்பு தலைப்பு (Exam / Recruitment Title):
+                <input
+                  id="modal-notif-service"
+                  name="notification_title"
+                  type="text"
+                  required
+                  value={formData.service}
+                  onChange={(e) => setFormData({ ...formData, service: e.target.value })}
+                  placeholder="e.g. TNPSC Group 4 & VAO Services Examination 2026"
+                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                />
+              </label>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  தொடங்கும் தேதி / Start Date:
-                  <input type="text" value={newStartDate} onChange={(e) => setNewStartDate(e.target.value)} placeholder="DD/MM/YYYY" style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
+                <label htmlFor="modal-notif-post" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  பதவிப் பெயர் (Post Name):
+                  <input
+                    id="modal-notif-post"
+                    name="notification_post"
+                    type="text"
+                    value={formData.postName}
+                    onChange={(e) => setFormData({ ...formData, postName: e.target.value })}
+                    placeholder="e.g. VAO / Junior Assistant"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
                 </label>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  முடிவடையும் தேதி / End Date:
-                  <input type="text" value={newEndDate} onChange={(e) => setNewEndDate(e.target.value)} placeholder="DD/MM/YYYY" style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
+                <label htmlFor="modal-notif-posts" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  காலிப்பணியிடங்கள் (Posts):
+                  <input
+                    id="modal-notif-posts"
+                    name="notification_posts_count"
+                    type="text"
+                    value={formData.posts}
+                    onChange={(e) => setFormData({ ...formData, posts: e.target.value })}
+                    placeholder="e.g. 8932+ Posts"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
                 </label>
               </div>
 
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                PDF / விவரங்கள் URL (Details Link):
-                <input type="url" value={newDetailsLink} onChange={(e) => setNewDetailsLink(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label htmlFor="modal-notif-qualification" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  கல்வித் தகுதி (Qualification):
+                  <input
+                    id="modal-notif-qualification"
+                    name="notification_qualification"
+                    type="text"
+                    value={formData.qualification}
+                    onChange={(e) => setFormData({ ...formData, qualification: e.target.value })}
+                    placeholder="e.g. 10th Pass / Degree"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+                <label htmlFor="modal-notif-age" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  வயது வரம்பு (Age Limit):
+                  <input
+                    id="modal-notif-age"
+                    name="notification_age_limit"
+                    type="text"
+                    value={formData.ageLimit}
+                    onChange={(e) => setFormData({ ...formData, ageLimit: e.target.value })}
+                    placeholder="e.g. 18 - 32 Years"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label htmlFor="modal-notif-opening-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  தொடங்கும் தேதி (DD/MM/YYYY):
+                  <input
+                    id="modal-notif-opening-date"
+                    name="notification_opening_date"
+                    type="text"
+                    value={formData.openingDate}
+                    onChange={(e) => setFormData({ ...formData, openingDate: e.target.value })}
+                    placeholder="01/08/2026"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+                <label htmlFor="modal-notif-closing-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  கடைசி தேதி (DD/MM/YYYY):
+                  <input
+                    id="modal-notif-closing-date"
+                    name="notification_closing_date"
+                    type="text"
+                    value={formData.closingDate}
+                    onChange={(e) => setFormData({ ...formData, closingDate: e.target.value })}
+                    placeholder="30/08/2026"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label htmlFor="modal-notif-exam-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  தேர்வு தேதி (Exam Date):
+                  <input
+                    id="modal-notif-exam-date"
+                    name="notification_exam_date"
+                    type="text"
+                    value={formData.examDate}
+                    onChange={(e) => setFormData({ ...formData, examDate: e.target.value })}
+                    placeholder="e.g. October 2026"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+                <label htmlFor="modal-notif-fee" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  விண்ணப்பக் கட்டணம் (Fee):
+                  <input
+                    id="modal-notif-fee"
+                    name="notification_fee"
+                    type="text"
+                    value={formData.applicationFee}
+                    onChange={(e) => setFormData({ ...formData, applicationFee: e.target.value })}
+                    placeholder="e.g. ₹100 (SC/ST Nil)"
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+              </div>
+
+              <label htmlFor="modal-notif-details" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                முக்கிய விவரங்கள் (Important Details):
+                <input
+                  id="modal-notif-details"
+                  name="notification_details"
+                  type="text"
+                  value={formData.importantDetails}
+                  onChange={(e) => setFormData({ ...formData, importantDetails: e.target.value })}
+                  placeholder="e.g. Tamil Eligibility Test + Single Paper OMR Test"
+                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                />
               </label>
 
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                விண்ணப்பிக்கும் URL (Apply Link / Hall Ticket Link):
-                <input type="url" value={newApplyLink} onChange={(e) => setNewApplyLink(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }} />
-              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label htmlFor="modal-notif-pdf-url" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  PDF / அறிவிப்பு URL:
+                  <input
+                    id="modal-notif-pdf-url"
+                    name="notification_pdf_url"
+                    type="url"
+                    value={formData.detailsLink}
+                    onChange={(e) => setFormData({ ...formData, detailsLink: e.target.value })}
+                    placeholder="https://..."
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+                <label htmlFor="modal-notif-apply-url" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                  விண்ணப்பிக்கும் URL:
+                  <input
+                    id="modal-notif-apply-url"
+                    name="notification_apply_url"
+                    type="url"
+                    value={formData.applyLink}
+                    onChange={(e) => setFormData({ ...formData, applyLink: e.target.value })}
+                    placeholder="https://..."
+                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
+                  />
+                </label>
+              </div>
 
-              <button type="submit" style={{ background: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '10px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', marginTop: '8px' }}>
-                💾 அறிவிப்பைச் சேமிக்கவும் (Save Notification)
+              <button
+                type="submit"
+                style={{
+                  background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  marginTop: '8px'
+                }}
+              >
+                💾 அறிவிப்பை MongoDB Atlas-ல் சேமிக்கவும் (Save Notification)
               </button>
             </form>
           </div>
         </div>
-      )}
-
-      {/* TABLE 1: RECRUITMENT NOTIFICATIONS */}
-      {(activeTab === 'all' || activeTab === 'jobs') && (
-        <section className="tdcsc-table-card green-theme-card" id="recruitment-table">
-          <div className="tdcsc-table-header green-header">
-            <div className="header-icon-box">
-              <BriefcaseBusiness size={22} />
-            </div>
-            <div>
-              <h3>📢 வேலைவாய்ப்பு அறிவிப்புகள் / Recruitment Notifications</h3>
-              <p>கீழே உள்ள அறிவிப்புகளைப் பார்க்கவும் / View notifications below</p>
-            </div>
-          </div>
-          <div className="tdcsc-table-scroll">
-            <table className="tdcsc-data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '50px', textAlign: 'center' }}>S.No</th>
-                  <th>Services / பணி</th>
-                  <th>Qualification / தகுதி</th>
-                  <th style={{ textAlign: 'center' }}>No of Post / காலிப்பணியிடம்</th>
-                  <th style={{ textAlign: 'center' }}>Opening Date</th>
-                  <th style={{ textAlign: 'center' }}>Closing Date</th>
-                  <th style={{ textAlign: 'center' }}>Status / நிலை</th>
-                  <th style={{ textAlign: 'center' }}>Details (PDF/Link)</th>
-                  <th style={{ textAlign: 'center' }}>Apply Link</th>
-                  {isAdmin && <th style={{ textAlign: 'center' }}>Admin Action</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredJobs.length > 0 ? (
-                  filteredJobs.map((row, idx) => {
-                    const status = getDateStatus(row.openingDate, row.closingDate);
-                    return (
-                      <tr key={row.id || row.sno || idx}>
-                        <td data-label="S.No" style={{ textAlign: 'center', fontWeight: 'bold' }}>{idx + 1}</td>
-                        <td data-label="Services / பணி">
-                          <strong className="table-service-title">{row.service}</strong>
-                        </td>
-                        <td data-label="Qualification / தகுதி">
-                          <span className="qual-badge">{row.qualification}</span>
-                        </td>
-                        <td data-label="Vacancies / காலிப்பணியிடம்" style={{ textAlign: 'center' }}>
-                          <span className="post-count-chip">{row.posts}</span>
-                        </td>
-                        <td data-label="Opening Date" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>{row.openingDate}</td>
-                        <td data-label="Closing Date" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {status.isClosed ? (
-                            <span className="closing-date-tag-expired">{row.closingDate}</span>
-                          ) : (
-                            <span className="closing-date-tag">{row.closingDate}</span>
-                          )}
-                        </td>
-                        <td data-label="Status / நிலை" style={{ textAlign: 'center' }}>
-                          <span className={status.tagClass}>{status.label}</span>
-                        </td>
-                        <td data-label="Details Link" style={{ textAlign: 'center' }}>
-                          {row.detailsLink ? (
-                            <a href={row.detailsLink} target="_blank" rel="noreferrer" className="tdcsc-btn btn-details-green">
-                              <FileText size={14} /> 📄 View Details
-                            </a>
-                          ) : '—'}
-                        </td>
-                        <td data-label="Apply Link" style={{ textAlign: 'center' }}>
-                          {status.isClosed ? (
-                            <span className="tdcsc-btn btn-closed">❌ Closed / முடிந்தது</span>
-                          ) : row.applyLink ? (
-                            <a href={row.applyLink} target="_blank" rel="noreferrer" className="tdcsc-btn btn-apply-orange">
-                              <ExternalLink size={14} /> 📝 Apply Now
-                            </a>
-                          ) : '—'}
-                        </td>
-                        {isAdmin && (
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleDeleteJob(row.id)}
-                              style={{ background: '#dc2626', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Trash2 size={13} /> நீக்கு
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={isAdmin ? "10" : "9"} className="empty-table-msg">
-                      வேலைவாய்ப்பு அறிவிப்புகள் எதுவும் கிடைக்கவில்லை / No active job notifications found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {/* TABLE 2: EXAM SCHEDULE & HALL TICKET */}
-      {(activeTab === 'all' || activeTab === 'exams') && (
-        <section className="tdcsc-table-card orange-theme-card" id="exam-table">
-          <div className="tdcsc-table-header orange-header">
-            <div className="header-icon-box">
-              <CalendarDays size={22} />
-            </div>
-            <div>
-              <h3>📅 தேர்வு கால அட்டவணை / Exam Schedule & Hall Ticket</h3>
-              <p>தேர்வு தேதிகள் மற்றும் ஹால் டிக்கெட் இணைப்பு</p>
-            </div>
-          </div>
-          <div className="tdcsc-table-scroll">
-            <table className="tdcsc-data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '50px', textAlign: 'center' }}>S.No</th>
-                  <th>Services / தேர்வு பெயர்</th>
-                  <th style={{ textAlign: 'center' }}>Exam Date / தேர்வு தேதி</th>
-                  <th style={{ textAlign: 'center' }}>Status / நிலை</th>
-                  <th style={{ textAlign: 'center' }}>Hall Ticket Download Link</th>
-                  {isAdmin && <th style={{ textAlign: 'center' }}>Admin Action</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredExams.length > 0 ? (
-                  filteredExams.map((row, idx) => {
-                    const status = getExamStatus(row.examDate);
-                    return (
-                      <tr key={row.id || row.sno || idx}>
-                        <td data-label="S.No" style={{ textAlign: 'center', fontWeight: 'bold' }}>{idx + 1}</td>
-                        <td data-label="Services / தேர்வு">
-                          <strong className="table-service-title">{row.service}</strong>
-                        </td>
-                        <td data-label="Exam Date / தேர்வு தேதி" style={{ textAlign: 'center' }}>
-                          <span className="exam-date-badge">📅 {row.examDate}</span>
-                        </td>
-                        <td data-label="Status / நிலை" style={{ textAlign: 'center' }}>
-                          <span className={status.tagClass}>{status.label}</span>
-                        </td>
-                        <td data-label="Hall Ticket Link" style={{ textAlign: 'center' }}>
-                          {status.isClosed ? (
-                            <span className="tdcsc-btn btn-closed">Completed</span>
-                          ) : row.hallTicketLink ? (
-                            <a href={row.hallTicketLink} target="_blank" rel="noreferrer" className="tdcsc-btn btn-ticket-blue">
-                              <Download size={14} /> 🎫 Download Hall Ticket
-                            </a>
-                          ) : '—'}
-                        </td>
-                        {isAdmin && (
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleDeleteExam(row.id)}
-                              style={{ background: '#dc2626', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Trash2 size={13} /> நீக்கு
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={isAdmin ? "6" : "5"} className="empty-table-msg">
-                      தேர்வு அறிவிப்புகள் எதுவும் கிடைக்கவில்லை / No active exam schedules found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {/* TABLE 3: EDUCATION APPLICATION NOTIFICATIONS */}
-      {(activeTab === 'all' || activeTab === 'education') && (
-        <section className="tdcsc-table-card purple-theme-card" id="education-table">
-          <div className="tdcsc-table-header purple-header">
-            <div className="header-icon-box">
-              <GraduationCap size={22} />
-            </div>
-            <div>
-              <h3>🎓 கல்லூரி மற்றும் பல்கலைக்கழகம் விண்ணப்பங்களுக்கான அறிவிப்புகள்</h3>
-              <p>EDUCATION APPLICATION NOTIFICATIONS</p>
-            </div>
-          </div>
-          <div className="tdcsc-table-scroll">
-            <table className="tdcsc-data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '50px', textAlign: 'center' }}>S.No</th>
-                  <th>Institution Name</th>
-                  <th>Courses</th>
-                  <th style={{ textAlign: 'center' }}>Start Date</th>
-                  <th style={{ textAlign: 'center' }}>End Date</th>
-                  <th style={{ textAlign: 'center' }}>Status / நிலை</th>
-                  <th style={{ textAlign: 'center' }}>Details (Notification)</th>
-                  <th style={{ textAlign: 'center' }}>Apply Link</th>
-                  {isAdmin && <th style={{ textAlign: 'center' }}>Admin Action</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredEducation.length > 0 ? (
-                  filteredEducation.map((row, idx) => {
-                    const status = getDateStatus(row.startDate, row.endDate);
-                    return (
-                      <tr key={row.id || row.sno || idx}>
-                        <td data-label="S.No" style={{ textAlign: 'center', fontWeight: 'bold' }}>{idx + 1}</td>
-                        <td data-label="Institution / நிறுவனம்">
-                          <strong className="table-institution-title">{row.institution}</strong>
-                        </td>
-                        <td data-label="Courses / படிப்புகள்">
-                          <span className="course-text-desc">{row.courses}</span>
-                        </td>
-                        <td data-label="Start Date" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>{row.startDate}</td>
-                        <td data-label="End Date" style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {status.isClosed ? (
-                            <span className="closing-date-tag-expired">{row.endDate}</span>
-                          ) : (
-                            <span className="closing-date-tag">{row.endDate}</span>
-                          )}
-                        </td>
-                        <td data-label="Status / நிலை" style={{ textAlign: 'center' }}>
-                          <span className={status.tagClass}>{status.label}</span>
-                        </td>
-                        <td data-label="Details Link" style={{ textAlign: 'center' }}>
-                          {row.detailsLink ? (
-                            <a href={row.detailsLink} target="_blank" rel="noreferrer" className="tdcsc-btn btn-details-blue">
-                              <FileText size={14} /> 📄 Notification
-                            </a>
-                          ) : '—'}
-                        </td>
-                        <td data-label="Apply Link" style={{ textAlign: 'center' }}>
-                          {status.isClosed ? (
-                            <span className="tdcsc-btn btn-closed">❌ Closed / முடிந்தது</span>
-                          ) : row.applyLink ? (
-                            <a href={row.applyLink} target="_blank" rel="noreferrer" className="tdcsc-btn btn-apply-purple">
-                              <ExternalLink size={14} /> 📝 Apply Now
-                            </a>
-                          ) : '—'}
-                        </td>
-                        {isAdmin && (
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleDeleteEdu(row.id)}
-                              style={{ background: '#dc2626', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Trash2 size={13} /> நீக்கு
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={isAdmin ? "9" : "8"} className="empty-table-msg">
-                      கல்வி விண்ணப்ப அறிவிப்புகள் எதுவும் கிடைக்கவில்லை / No active education applications found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
       )}
     </div>
   );

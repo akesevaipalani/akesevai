@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node server.js",
+    "start": "node --max-old-space-size=4096 server.js",
+    "server": "node --max-old-space-size=4096 server.js",
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
@@ -17,6 +18,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "firebase": "^12.16.0",
+    "jspdf": "^4.2.1",
     "lucide-react": "latest",
     "mongoose": "^8.10.1",
     "react": "latest",

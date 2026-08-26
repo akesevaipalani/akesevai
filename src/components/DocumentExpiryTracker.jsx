@@ -129,9 +129,11 @@ export default function DocumentExpiryTracker({ onBookTokenForRenewal }) {
             <PlusCircle size={18} color="#0052cc" /> புதிய ஆவணத்தைச் சேர்க்க:
           </h4>
 
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+          <label htmlFor="expiry-doc-type" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
             சான்றிதழ் / ஆவண வகை (Document Type)
             <select
+              id="expiry-doc-type"
+              name="document_type"
               value={docName}
               onChange={(e) => setDocName(e.target.value)}
               style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', background: 'white' }}
@@ -142,10 +144,13 @@ export default function DocumentExpiryTracker({ onBookTokenForRenewal }) {
             </select>
           </label>
 
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+          <label htmlFor="expiry-cert-no" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
             சான்றிதழ் / பதிவு எண் (Certificate / Application No)
             <input
+              id="expiry-cert-no"
+              name="certificate_number"
               type="text"
+              autoComplete="off"
               placeholder="எ.கா: TN-7202601004"
               value={certNo}
               onChange={(e) => setCertNo(e.target.value)}
@@ -153,9 +158,11 @@ export default function DocumentExpiryTracker({ onBookTokenForRenewal }) {
             />
           </label>
 
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+          <label htmlFor="expiry-date-input" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
             காலாவதி தேதி (Expiry Date) *
             <input
+              id="expiry-date-input"
+              name="expiry_date"
               type="date"
               required
               value={expiryDate}

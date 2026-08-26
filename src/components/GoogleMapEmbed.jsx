@@ -229,7 +229,7 @@ export default function GoogleMapEmbed() {
           </div>
           <div style={{ fontSize: '13px', color: '#374151' }}>
             <span style={{ fontWeight: 800 }}>⏰ நேரம்:</span>{' '}
-            <span style={{ color: '#374151', fontWeight: 700 }}>திங்கள் - சனி (9:00 AM – 7:00 PM)</span>
+            <span style={{ color: '#374151', fontWeight: 700 }}>திங்கள் - சனி (10:00 AM – 8:00 PM)</span>
           </div>
           <div style={{ fontSize: '13px', color: '#374151' }}>
             <span style={{ fontWeight: 800 }}>🚌 லேண்ட்மார்க்:</span>{' '}

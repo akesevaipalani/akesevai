@@ -1,16 +1,17 @@
 # Dependencies
 node_modules/
 
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
 # Logs
 logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Environment variables
-.env
-.env.*
 
 # Build output
 dist/
@@ -27,3 +28,27 @@ Thumbs.db
 # Cache
 .cache/
 coverage/
+
+# QA / Diagnostic artifacts
+test_*.cjs
+test_*.js
+*_qa.cjs
+*_report.json
+debug_*.cjs
+diag_*.cjs
+verify_*.cjs
+capture_*_screenshot.cjs
+clean_production_database_fresh.cjs
+customer_portal_close_qa.cjs
+customer_session_flow_qa.cjs
+full_production_browser_qa.cjs
+home_centre_image_chrome_qa.cjs
+mobile_and_desktop_menu_qa.cjs
+notifications_auto_load_qa.cjs
+final_office_gallery_chrome_verification.cjs
+real_office_gallery_full_qa.cjs
+real_chrome_browser_qa_suite.cjs
+qa_*.cjs
+scripts/
+real_browser_downloads/
+test_downloads/

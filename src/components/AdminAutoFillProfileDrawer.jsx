@@ -163,11 +163,13 @@ export default function AdminAutoFillProfileDrawer({ notify }) {
                     gap: '4px'
                   }}
                 >
-                  <label style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <label htmlFor={`autofill-${f.key}`} style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <IconComponent size={13} color="#0052cc" /> {f.label}
                   </label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <input
+                      id={`autofill-${f.key}`}
+                      name={`autofill_${f.key}`}
                       type="text"
                       value={f.val}
                       onChange={(e) => setProfile({ ...profile, [f.key]: e.target.value })}

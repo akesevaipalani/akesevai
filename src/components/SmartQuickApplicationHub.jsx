@@ -112,8 +112,11 @@ export default function SmartQuickApplicationHub({ notify, navigate }) {
         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#93c5fd', display: 'block', marginBottom: '4px' }}>👤 விண்ணப்பதாரர் பெயர் *</label>
+              <label htmlFor="quick-hub-applicant-name" style={{ fontSize: '11px', fontWeight: 700, color: '#93c5fd', display: 'block', marginBottom: '4px' }}>👤 விண்ணப்பதாரர் பெயர் *</label>
               <input
+                id="quick-hub-applicant-name"
+                name="applicant_name"
+                autoComplete="name"
                 type="text"
                 required
                 value={name}
@@ -124,8 +127,11 @@ export default function SmartQuickApplicationHub({ notify, navigate }) {
             </div>
 
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#93c5fd', display: 'block', marginBottom: '4px' }}>📞 கைபேசி எண் *</label>
+              <label htmlFor="quick-hub-applicant-phone" style={{ fontSize: '11px', fontWeight: 700, color: '#93c5fd', display: 'block', marginBottom: '4px' }}>📞 கைபேசி எண் *</label>
               <input
+                id="quick-hub-applicant-phone"
+                name="applicant_phone"
+                autoComplete="tel"
                 type="tel"
                 required
                 value={phone}
@@ -136,8 +142,10 @@ export default function SmartQuickApplicationHub({ notify, navigate }) {
             </div>
 
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 700, color: '#93c5fd', display: 'block', marginBottom: '4px' }}>📋 சேவைத் தேர்வு *</label>
+              <label htmlFor="quick-hub-service-select" style={{ fontSize: '11px', fontWeight: 700, color: '#93c5fd', display: 'block', marginBottom: '4px' }}>📋 சேவைத் தேர்வு *</label>
               <select
+                id="quick-hub-service-select"
+                name="service_selection"
                 value={service}
                 onChange={e => setService(e.target.value)}
                 style={{ width: '100%', padding: '10px 12px', border: '1px solid rgba(255,255,255,0.25)', borderRadius: '10px', background: '#1e3a8a', color: 'white', fontSize: '13px', outline: 'none', cursor: 'pointer', boxSizing: 'border-box' }}

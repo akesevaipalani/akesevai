@@ -107,34 +107,39 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
 
   const stageInfoMap = {
     1: {
-      statusLabel: 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)',
+      statusLabel: 'Application Submitted (விண்ணப்பம் பெறப்பட்டது)',
       statusColor: '#3b82f6',
-      remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பெறப்பட்டுள்ளது.'
+      remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பதிவு செய்யப்பட்டு பெறப்பட்டுள்ளது.'
     },
     2: {
-      statusLabel: 'Step 2: Documents Verified (ஆவணங்கள் சரிபார்க்கப்பட்டது)',
+      statusLabel: 'Document Verification (ஆவணங்கள் சரிபார்க்கப்படுகிறது)',
       statusColor: '#0284c7',
-      remarks: 'வாடிக்கையாளரின் அனைத்து ஆவணங்களும் சரிபார்க்கப்பட்டுவிட்டது.'
+      remarks: 'வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள் சரிபார்க்கப்பட்டு வருகின்றன.'
     },
     3: {
-      statusLabel: 'Step 3: Fee Confirmed (கட்டணம் பெறப்பட்டு செயலாக்கத்தில் உள்ளது)',
-      statusColor: '#0052cc',
-      remarks: 'கட்டணம் பெறப்பட்டு அரசு இணையதளத் தாக்கல் நிலுவையில் உள்ளது.'
+      statusLabel: 'Document Pending (கூடுதல் ஆவணம் தேவை)',
+      statusColor: '#d97706',
+      remarks: 'விண்ணப்பத்தை தொடர வாடிக்கையாளரிடமிருந்து கூடுதல் ஆவணம் தேவைப்படுகிறது.'
     },
     4: {
-      statusLabel: 'Step 4: Submitted to Govt (அரசு தளத்தில் தாக்கல் செய்யப்பட்டது)',
-      statusColor: '#d97706',
-      remarks: 'அரசு இ-சேவை இணையதளத்தில் வெற்றிகரமாக விண்ணப்பம் தாக்கல் செய்யப்பட்டது.'
+      statusLabel: 'Under Process / Fee Paid (செயலாக்கத்தில் உள்ளது)',
+      statusColor: '#0052cc',
+      remarks: 'அரசு கட்டணம் செலுத்தப்பட்டு இணையதளத்தில் தாக்கல் செய்யப்பட்டுள்ளது.'
     },
     5: {
-      statusLabel: 'Step 5: Officer Review (அதிகாரி பரிசீலனையில் உள்ளது)',
+      statusLabel: 'Officer Review (அதிகாரி பரிசீலனையில் உள்ளது)',
       statusColor: '#8b5cf6',
-      remarks: 'அரசு அதிகாரி / VAO / RI பரிசீலனையில் உள்ளது.'
+      remarks: 'அரசு அதிகாரி / VAO / RI கள ஆய்வு மற்றும் பரிசீலனையில் உள்ளது.'
     },
     6: {
-      statusLabel: 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)',
+      statusLabel: 'Approved & Completed (சான்றிதழ் தயார் / நிறைவடைந்தது)',
       statusColor: '#16a34a',
       remarks: 'விண்ணப்பம் வெற்றிகரமாக ஒப்புதல் பெறப்பட்டு சான்றிதழ் தயாராக உள்ளது.'
+    },
+    7: {
+      statusLabel: 'Rejected (விண்ணப்பம் நிராகரிக்கப்பட்டது)',
+      statusColor: '#ef4444',
+      remarks: 'அரசு விதிமுறைகளுக்கு உட்படாததால் விண்ணப்பம் நிராகரிக்கப்பட்டது.'
     }
   };
 

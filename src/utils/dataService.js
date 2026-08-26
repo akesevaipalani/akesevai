@@ -1,5 +1,5 @@
-import { deleteApplicationRecord, getDeletedAppsSet } from './statusStore';
 import {
+  fetchSingleCustomerProfileMongo,
   saveCustomerProfileMongo,
   fetchAllCustomerProfilesMongo,
   deleteCustomerProfileMongo,
@@ -13,14 +13,69 @@ import {
   deleteExpiryDocumentMongo,
   subscribeExpiryDocumentsMongo,
   saveTokenBookingMongo,
+  requestTokenBookingMongo,
+  verifyTokenPaymentMongo,
+  rejectTokenPaymentMongo,
+  checkDuplicateUtrMongo,
   fetchAllTokensMongo,
   deleteTokenBookingMongo,
   subscribeTokensMongo,
   fetchDeletedCustomersMongo,
   saveDeletedCustomerMongo,
   subscribeDeletedCustomersMongo,
-  uploadFileToMongoStorage
+  uploadFileToMongoStorage,
+  fetchNotificationsMongo,
+  saveNotificationMongo,
+  deleteNotificationMongo,
+  syncBankingNotificationsMongo,
+  subscribeNotificationsMongo,
+  sendOtpMongo,
+  verifyOtpMongo,
+  resendOtpMongo,
+  fetchAllAdvertisementsMongo,
+  saveAdvertisementMongo,
+  deleteAdvertisementMongo
 } from './mongoService';
+
+export const sendOtpCloud = async (phone, purpose) => {
+  return await sendOtpMongo(phone, purpose);
+};
+
+export const verifyOtpCloud = async (phone, otp, purpose) => {
+  return await verifyOtpMongo(phone, otp, purpose);
+};
+
+export const resendOtpCloud = async (phone, purpose) => {
+  return await resendOtpMongo(phone, purpose);
+};
+
+export const fetchAllTokensCloud = async () => {
+  return await fetchAllTokensMongo();
+};
+
+export const fetchNotificationsCloud = async (category, status) => {
+  return await fetchNotificationsMongo(category, status);
+};
+
+export const saveNotificationCloud = async (notifData) => {
+  return await saveNotificationMongo(notifData);
+};
+
+export const deleteNotificationCloud = async (notifId) => {
+  return await deleteNotificationMongo(notifId);
+};
+
+export const syncBankingNotificationsCloud = async () => {
+  return await syncBankingNotificationsMongo();
+};
+
+export const subscribeNotificationsCloud = (callback) => {
+  return subscribeNotificationsMongo(callback);
+};
+
+export const fetchSingleCustomerProfileCloud = async (phone) => {
+  return await fetchSingleCustomerProfileMongo(phone);
+};
 
 const logNotice = (tag, err) => {
   const msg = err?.message || String(err || '');
@@ -69,13 +124,15 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
     const rawRecords = localStorage.getItem('akesevai-customer-records') || '{}';
     const records = JSON.parse(rawRecords);
     
-    // Strip heavy base64 strings from documents before saving to localStorage to prevent QuotaExceededError
+    // Never store sensitive base64 scan data or large payloads in localStorage
     const storageSafeDocs = (profileData.documents || []).map((docItem) => {
-      const dUrl = docItem.url || docItem.data || '';
-      if (typeof dUrl === 'string' && dUrl.length > 100000) {
-        return { ...docItem, data: '', url: dUrl.startsWith('data:') ? '' : dUrl };
-      }
-      return docItem;
+      const { data, ...safeDoc } = docItem || {};
+      const dUrl = safeDoc.url || '';
+      return {
+        ...safeDoc,
+        data: '',
+        url: (typeof dUrl === 'string' && dUrl.startsWith('data:')) ? '' : dUrl
+      };
     });
 
     const storageSafeProfile = {
@@ -281,17 +338,154 @@ export const subscribeApplications = (callback) => {
   });
 };
 
-// --- TOKENS & QUEUE (MONGODB DATABASE) ---
+// --- TOKENS & PRIORITY PAYMENT VERIFICATION (MONGODB DATABASE) ---
+
+export const checkDuplicateUtrCloud = async (utr) => {
+  if (!utr) return false;
+  const cleanUtr = String(utr).trim().toUpperCase();
+  // Check localStorage first
+  try {
+    const rawTokens = localStorage.getItem('akesevai-token-bookings') || '[]';
+    const tokensArr = JSON.parse(rawTokens);
+    const existsLocally = tokensArr.some(t => t.utr && String(t.utr).toUpperCase() === cleanUtr && t.paymentStatus !== 'REJECTED');
+    if (existsLocally) return true;
+  } catch (e) {}
+
+  // Check MongoDB
+  try {
+    return await checkDuplicateUtrMongo(cleanUtr);
+  } catch (e) {
+    return false;
+  }
+};
+
+export const requestTokenBookingCloud = async (tokenRequest) => {
+  if (!tokenRequest) return null;
+  const cleanPhone = String(tokenRequest.phone || '').replace(/\D/g, '');
+  const cleanUtr = String(tokenRequest.utr || '').trim().toUpperCase();
+  const requestId = tokenRequest.id || `REQ-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+  const requestData = {
+    ...tokenRequest,
+    id: requestId,
+    tokenNo: '', // Gated: No token number until verified!
+    phone: cleanPhone,
+    customerPhone: cleanPhone,
+    utr: cleanUtr,
+    amount: 50,
+    paymentStatus: 'PENDING_VERIFICATION',
+    status: 'PAYMENT PENDING',
+    updatedAt: new Date().toISOString()
+  };
+
+  // Submit to MongoDB first (Enforce server-side anti-duplicate UTR & ₹50 validation)
+  let savedData = requestData;
+  try {
+    const res = await requestTokenBookingMongo(requestData);
+    if (res && res.token) {
+      savedData = res.token;
+    } else if (res && !res.error) {
+      savedData = res;
+    }
+  } catch (err) {
+    logNotice('MongoDB Token Request', err);
+    throw err;
+  }
+
+  // Update local storage only after successful validation
+  if (typeof window !== 'undefined') {
+    try {
+      const rawTokens = localStorage.getItem('akesevai-token-bookings') || '[]';
+      const tokensArr = JSON.parse(rawTokens);
+      const filtered = tokensArr.filter(t => String(t.id) !== requestId);
+      filtered.unshift(savedData);
+      localStorage.setItem('akesevai-token-bookings', JSON.stringify(filtered));
+
+      if (cleanPhone) {
+        ['akesevai-customer-records', 'akesevai-customers'].forEach(storageKey => {
+          const rawCusts = localStorage.getItem(storageKey);
+          if (rawCusts) {
+            const custs = JSON.parse(rawCusts);
+            if (custs[cleanPhone]) {
+              custs[cleanPhone].lastToken = savedData;
+              localStorage.setItem(storageKey, JSON.stringify(custs));
+            }
+          }
+        });
+      }
+      window.dispatchEvent(new Event('akesevai-data-changed'));
+    } catch (e) {}
+  }
+
+  return savedData;
+};
+
+export const verifyTokenPaymentCloud = async (id) => {
+  if (!id) return null;
+  try {
+    const res = await verifyTokenPaymentMongo(id);
+    const token = res?.token || res;
+    if (token && typeof window !== 'undefined') {
+      const cleanPhone = String(token.phone || '').replace(/\D/g, '');
+      const rawTokens = localStorage.getItem('akesevai-token-bookings') || '[]';
+      const tokensArr = JSON.parse(rawTokens);
+      const updatedArr = tokensArr.map(t => (t.id === id || t.tokenNo === id || (t.utr && token.utr && t.utr === token.utr)) ? { ...t, ...token } : t);
+      if (!updatedArr.some(t => t.id === token.id || t.tokenNo === token.tokenNo || (t.utr && token.utr && t.utr === token.utr))) {
+        updatedArr.unshift(token);
+      }
+      localStorage.setItem('akesevai-token-bookings', JSON.stringify(updatedArr));
+
+      if (cleanPhone) {
+        ['akesevai-customer-records', 'akesevai-customers'].forEach(storageKey => {
+          const rawCusts = localStorage.getItem(storageKey);
+          if (rawCusts) {
+            const custs = JSON.parse(rawCusts);
+            if (custs[cleanPhone]) {
+              custs[cleanPhone].lastToken = token;
+              localStorage.setItem(storageKey, JSON.stringify(custs));
+            }
+          }
+        });
+      }
+      window.dispatchEvent(new Event('akesevai-data-changed'));
+    }
+    return { success: true, token };
+  } catch (err) {
+    logNotice('MongoDB Token Verify', err);
+    return null;
+  }
+};
+
+export const rejectTokenPaymentCloud = async (id, reason = '') => {
+  if (!id) return null;
+  try {
+    const res = await rejectTokenPaymentMongo(id, reason);
+    const token = res?.token || res;
+    if (token && typeof window !== 'undefined') {
+      const rawTokens = localStorage.getItem('akesevai-token-bookings') || '[]';
+      const tokensArr = JSON.parse(rawTokens);
+      const updatedArr = tokensArr.map(t => (t.id === id || t.tokenNo === id || (t.utr && token.utr && t.utr === token.utr)) ? { ...t, ...token } : t);
+      localStorage.setItem('akesevai-token-bookings', JSON.stringify(updatedArr));
+      window.dispatchEvent(new Event('akesevai-data-changed'));
+    }
+    return { success: true, token };
+  } catch (err) {
+    logNotice('MongoDB Token Reject', err);
+    return null;
+  }
+};
 
 export const saveTokenBookingCloud = async (tokenData) => {
   if (!tokenData) return;
-  const tokenNo = tokenData.tokenNo || tokenData.tokenId || tokenData.id || `TOK-${Date.now()}`;
+  const isVerified = tokenData.paymentStatus === 'VERIFIED' || String(tokenData.status || '').includes('VERIFIED') || (tokenData.tokenNo && String(tokenData.tokenNo).startsWith('TOK-'));
+  const tokenNo = isVerified ? (tokenData.tokenNo || tokenData.tokenId || `TOK-${Date.now()}`) : '';
   const cleanPhone = String(tokenData.phone || tokenData.customerPhone || '').replace(/\D/g, '');
+  const recordId = tokenData.id || tokenNo || `REQ-${Date.now()}`;
 
   const dataToSave = {
     ...tokenData,
     tokenNo: String(tokenNo),
-    id: String(tokenNo),
+    id: String(recordId),
     phone: cleanPhone,
     customerPhone: cleanPhone,
     updatedAt: new Date().toISOString()
@@ -301,7 +495,7 @@ export const saveTokenBookingCloud = async (tokenData) => {
     try {
       const rawTokens = localStorage.getItem('akesevai-token-bookings') || '[]';
       const tokensArr = JSON.parse(rawTokens);
-      const filtered = tokensArr.filter(t => String(t.tokenNo || t.tokenId || t.id) !== String(tokenNo));
+      const filtered = tokensArr.filter(t => String(t.id || t.tokenNo || t.tokenId) !== String(recordId) && (!t.utr || !tokenData.utr || t.utr !== tokenData.utr));
       filtered.unshift(dataToSave);
       localStorage.setItem('akesevai-token-bookings', JSON.stringify(filtered));
 
@@ -396,9 +590,9 @@ export const subscribeTokens = (callback) => {
     try {
       const localToks = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
       const tokenMap = new Map();
-      [...localToks, ...(Array.isArray(mongoTokens) ? mongoTokens : [])].forEach(t => {
+      [...(Array.isArray(mongoTokens) ? mongoTokens : []), ...localToks].forEach(t => {
         if (!t) return;
-        const key = String(t.tokenNo || t.tokenId || t.id || '');
+        const key = String(t.id || t.tokenNo || t.tokenId || t.utr || '');
         if (key && !tokenMap.has(key)) tokenMap.set(key, t);
       });
       if (callback) callback(Array.from(tokenMap.values()));
@@ -471,10 +665,12 @@ export const saveExpiryDocumentCloud = async (docData) => {
 
   if (typeof window !== 'undefined') {
     try {
+      const { data, ...safeDocData } = fullDocData;
+      const dUrl = safeDocData.url || '';
       const storageSafeDoc = {
-        ...fullDocData,
-        data: (fullDocData.data && fullDocData.data.length > 100000) ? '' : fullDocData.data,
-        url: (fullDocData.url && fullDocData.url.length > 100000 && fullDocData.url.startsWith('data:')) ? '' : fullDocData.url
+        ...safeDocData,
+        data: '',
+        url: (typeof dUrl === 'string' && dUrl.startsWith('data:')) ? '' : dUrl
       };
 
       const rawExpDocs = localStorage.getItem('akesevai_expiry_docs') || '[]';
@@ -689,13 +885,22 @@ export const subscribeExpiryDocuments = (callback) => {
   });
 };
 
-export const deleteNotificationCloud = async (notifId) => {};
 export const saveLiveQueueCloud = async (queueState) => {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem('akesevai-live-center-status', JSON.stringify(queueState));
     window.dispatchEvent(new Event('akesevai-data-changed'));
   } catch (e) {}
+};
+
+export const readTokenBookings = () => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem('akesevai-token-bookings') || localStorage.getItem('akesevai-tokens') || '[]';
+    return JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
 };
 
 export const subscribeLiveQueue = (callback) => {
@@ -758,41 +963,29 @@ export const fetchAllCloudRecords = async () => {
     mongoTokens = (await fetchAllTokensMongo()) || [];
     mongoDocs = (await fetchAllExpiryDocumentsMongo()) || [];
     mongoApps = (await fetchAllApplicationsMongo()) || {};
-  } catch (e) {}
 
-  try {
-    const localCust1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
-    const localCust2 = JSON.parse(localStorage.getItem('akesevai-customers') || '{}');
-    const mergedCust = { ...localCust2, ...localCust1, ...mongoCustomers };
-
-    const localToks = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
-    const tokenMap = new Map();
-    [...localToks, ...(Array.isArray(mongoTokens) ? mongoTokens : [])].forEach(t => {
-      if (!t) return;
-      const key = String(t.tokenNo || t.tokenId || t.id || '');
-      if (key && !tokenMap.has(key)) tokenMap.set(key, t);
-    });
-
-    const localDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
-    const docMap = new Map();
-    [...localDocs, ...(Array.isArray(mongoDocs) ? mongoDocs : [])].forEach(d => {
-      if (!d) return;
-      const key = String(d.id || d.url || d.name || '');
-      if (key && !docMap.has(key)) docMap.set(key, d);
-    });
-
-    const localApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
-    const mergedApps = { ...localApps, ...mongoApps };
-
-    return {
-      customers: mergedCust,
-      tokens: Array.from(tokenMap.values()),
-      documents: Array.from(docMap.values()),
-      applications: mergedApps
-    };
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem('akesevai-customer-records', JSON.stringify(mongoCustomers));
+      localStorage.setItem('akesevai-customers', JSON.stringify(mongoCustomers));
+      localStorage.setItem('akesevai-token-bookings', JSON.stringify(mongoTokens));
+      localStorage.setItem('akesevai_expiry_docs', JSON.stringify(mongoDocs));
+      localStorage.setItem('akesevai-application-records', JSON.stringify(mongoApps));
+    }
   } catch (e) {
-    return { customers: mongoCustomers, tokens: mongoTokens, documents: mongoDocs, applications: mongoApps };
+    if (typeof window !== 'undefined' && window.localStorage) {
+      mongoCustomers = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+      mongoTokens = JSON.parse(localStorage.getItem('akesevai-token-bookings') || '[]');
+      mongoDocs = JSON.parse(localStorage.getItem('akesevai_expiry_docs') || '[]');
+      mongoApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+    }
   }
+
+  return {
+    customers: mongoCustomers,
+    tokens: mongoTokens,
+    documents: mongoDocs,
+    applications: mongoApps
+  };
 };
 
 export const purgeAllFirebaseCloudData = async () => {
@@ -859,7 +1052,7 @@ export const getDeletedSponsoredAdsSet = () => {
   }
 };
 
-export const saveSponsoredAdCloud = (adData) => {
+export const saveSponsoredAdCloud = async (adData) => {
   if (!adData || !adData.id) return;
   try {
     const raw = localStorage.getItem('akesevai-sponsored-ads');
@@ -875,6 +1068,8 @@ export const saveSponsoredAdCloud = (adData) => {
       window.dispatchEvent(new Event('akesevai-ads-changed'));
       window.dispatchEvent(new Event('storage'));
     }
+    // Sync with MongoDB Atlas
+    await saveAdvertisementMongo(adData);
   } catch (e) {}
 };
 
@@ -897,11 +1092,13 @@ export const deleteSponsoredAdCloud = async (adId) => {
       window.dispatchEvent(new Event('akesevai-ads-changed'));
       window.dispatchEvent(new Event('storage'));
     }
+    // Sync with MongoDB Atlas
+    await deleteAdvertisementMongo(strId);
   } catch (e) {}
 };
 
 export const subscribeSponsoredAds = (callback) => {
-  const notifyCallback = () => {
+  const notifyCallback = async () => {
     try {
       const delSet = getDeletedSponsoredAdsSet();
       const hasCustom = localStorage.getItem('akesevai-has-custom-sponsored-ads') === 'true';
@@ -910,8 +1107,20 @@ export const subscribeSponsoredAds = (callback) => {
       let ads = [];
       if (raw) {
         ads = JSON.parse(raw);
-      } else if (!hasCustom) {
-        // Return null for initial fallback to default mock ads
+      }
+      
+      // If local is empty, try to fetch from MongoDB Atlas
+      if (ads.length === 0) {
+        try {
+          const mongoAds = await fetchAllAdvertisementsMongo(true);
+          if (Array.isArray(mongoAds) && mongoAds.length > 0) {
+            ads = mongoAds;
+            localStorage.setItem('akesevai-sponsored-ads', JSON.stringify(ads));
+          }
+        } catch (err) {}
+      }
+
+      if (ads.length === 0 && !hasCustom) {
         if (callback) callback(null);
         return;
       }
@@ -926,11 +1135,13 @@ export const subscribeSponsoredAds = (callback) => {
   notifyCallback();
   if (typeof window !== 'undefined') {
     window.addEventListener('akesevai-ads-changed', notifyCallback);
+    window.addEventListener('akesevai-data-changed', notifyCallback);
     window.addEventListener('storage', notifyCallback);
   }
   return () => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('akesevai-ads-changed', notifyCallback);
+      window.removeEventListener('akesevai-data-changed', notifyCallback);
       window.removeEventListener('storage', notifyCallback);
     }
   };

@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download, Trash2, Clock3, AlertCircle, RefreshCw, X } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
-import { saveTokenBookingCloud, saveCustomerProfileCloud, deleteTokenBookingCloud } from '../utils/dataService';
+import { requestTokenBookingCloud, checkDuplicateUtrCloud, subscribeTokens, deleteTokenBookingCloud, fetchAllTokensCloud } from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
-import { getNextDailyTokenNumber } from '../utils/tokenHelper';
+import { APPOINTMENT_TIME_SLOTS } from '../config/businessHours';
 
 export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDeleted, initialName = '', initialPhone = '' }) {
   const [time, setTime] = useState(new Date());
@@ -12,10 +12,15 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
     phone: initialPhone,
     service: 'Government Certificates (வருமானம், சாதி, இருப்பிடம்)',
     date: new Date().toISOString().split('T')[0],
-    slot: '10:30 AM - 11:00 AM'
+    slot: APPOINTMENT_TIME_SLOTS[0] || '10:00 AM - 11:00 AM'
   });
 
   const [generatedToken, setGeneratedToken] = useState(defaultToken);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [utrNumber, setUtrNumber] = useState('');
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
+  const [copiedUpi, setCopiedUpi] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -34,46 +39,113 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
 
   useEffect(() => {
     if (defaultToken) {
-      setGeneratedToken(defaultToken);
+      setGeneratedToken((prev) => {
+        if (!prev && !defaultToken) return prev;
+        if (prev && defaultToken && (prev.id === defaultToken.id || prev.tokenNo === defaultToken.tokenNo) && prev.paymentStatus === defaultToken.paymentStatus) {
+          return prev;
+        }
+        return defaultToken;
+      });
     }
   }, [defaultToken]);
 
+  const syncedKeyRef = useRef('');
+
+  // Real-time synchronization: if current token is pending, listen for Admin Verification
+  useEffect(() => {
+    if (!generatedToken || (generatedToken.tokenNo && generatedToken.paymentStatus === 'VERIFIED')) return;
+
+    const targetId = generatedToken.id || generatedToken.tokenNo;
+    const targetUtr = generatedToken.utr;
+
+    const syncFoundToken = (found) => {
+      if (!found) return;
+      const isComplete = Boolean(found.tokenNo || found.paymentStatus === 'VERIFIED' || found.paymentStatus === 'REJECTED');
+      if (isComplete) {
+        setGeneratedToken(prev => {
+          if (prev && prev.tokenNo === found.tokenNo && prev.paymentStatus === found.paymentStatus && prev.status === found.status) {
+            return prev;
+          }
+          return found;
+        });
+
+        const syncKey = `${found.id || ''}_${found.tokenNo || ''}_${found.paymentStatus || ''}`;
+        if (syncedKeyRef.current !== syncKey) {
+          syncedKeyRef.current = syncKey;
+          if (found.tokenNo && found.paymentStatus === 'VERIFIED' && typeof onTokenSaved === 'function') {
+            setTimeout(() => {
+              try { onTokenSaved(found); } catch (e) {}
+            }, 0);
+          }
+        }
+      }
+    };
+
+    const unsub = subscribeTokens((allTokens) => {
+      if (Array.isArray(allTokens)) {
+        const found = allTokens.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
+        if (found) syncFoundToken(found);
+      }
+    });
+
+    const handleDataChanged = async () => {
+      try {
+        const raw = localStorage.getItem('akesevai-token-bookings');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const found = list.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
+          if (found && (found.tokenNo || found.paymentStatus === 'VERIFIED' || found.paymentStatus === 'REJECTED')) {
+            syncFoundToken(found);
+            return;
+          }
+        }
+        const cloudTokens = await fetchAllTokensCloud();
+        if (Array.isArray(cloudTokens)) {
+          const found = cloudTokens.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
+          if (found) syncFoundToken(found);
+        }
+      } catch (e) {}
+    };
+
+    const intervalTimer = setInterval(handleDataChanged, 2000);
+    window.addEventListener('akesevai-data-changed', handleDataChanged);
+    window.addEventListener('storage', handleDataChanged);
+
+    return () => {
+      clearInterval(intervalTimer);
+      if (typeof unsub === 'function') unsub();
+      window.removeEventListener('akesevai-data-changed', handleDataChanged);
+      window.removeEventListener('storage', handleDataChanged);
+    };
+  }, [generatedToken?.id, generatedToken?.utr]);
+
   const handleDeleteToken = async () => {
-    if (!generatedToken || !generatedToken.tokenNo) return;
-    const tokenNum = generatedToken.tokenNo;
+    const targetTokenNo = generatedToken?.tokenNo || generatedToken?.id;
+    if (!targetTokenNo) return;
     const confirmDelete = window.confirm(
-      `⚠️ உங்கள் டோக்கன் சீட்டை (${tokenNum}) நிச்சயமாக ரத்து செய்து நீக்க விரும்புகிறீர்களா?\n\n(Are you sure you want to cancel and delete your active token slip ${tokenNum}?)`
+      `⚠️ உங்கள் டோக்கன் சீட்டை (${targetTokenNo}) நிச்சயமாக ரத்து செய்து நீக்க விரும்புகிறீர்களா?\n\n(Are you sure you want to cancel and delete your active token slip ${targetTokenNo}?)`
     );
     if (!confirmDelete) return;
 
     if (typeof onTokenDeleted === 'function') {
       try {
-        onTokenDeleted(tokenNum);
+        onTokenDeleted(targetTokenNo);
       } catch (err) {}
     } else {
       try {
-        await deleteTokenBookingCloud(tokenNum, generatedToken.phone || formData.phone);
+        await deleteTokenBookingCloud(targetTokenNo, generatedToken.phone || formData.phone);
       } catch (err) {}
     }
 
     setGeneratedToken(null);
-    alert(`🗑️ டோக்கன் எண் ${tokenNum} வெற்றிகரமாக ரத்து செய்யப்பட்டது. (Token ${tokenNum} cancelled & deleted)`);
+    alert(`🗑️ டோக்கன் பதிவு வெற்றிகரமாக ரத்து செய்யப்பட்டது. (Token cancelled & deleted)`);
   };
 
   const timeString = time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const dateString = time.toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
 
-  // Daily sequential token numbers (TOK-001, TOK-002, TOK-003...) resetting daily to 1
-  const getNextSequentialTokenNo = () => {
-    let stored = [];
-    try {
-      stored = JSON.parse(localStorage.getItem('akesevai-tokens') || '[]');
-    } catch (e) {}
-    return getNextDailyTokenNumber(stored);
-  };
-
-  // Direct Instant Token Booking Handler — 0ms Instant Generation
-  const handleGenerateToken = (e) => {
+  // Step 1: Validate Form & Open Payment Modal
+  const handleInitiateTokenPayment = (e) => {
     if (e) e.preventDefault();
 
     if (!formData.name.trim()) {
@@ -86,78 +158,83 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
       return;
     }
 
-    const tokenNum = getNextSequentialTokenNo();
-    const appId = `TN-AK-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+    setPaymentError('');
+    setShowPaymentModal(true);
+  };
+
+  // Step 2: Customer Submits UTR for Verification (Status: PENDING_VERIFICATION)
+  const handleConfirmPaymentAndGenerate = async () => {
+    setPaymentError('');
+    const cleanUtr = String(utrNumber || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    if (!cleanUtr) {
+      setPaymentError('⚠️ தயவுசெய்து உங்கள் UPI UTR / பரிவர்த்தனை எண்ணை உள்ளிடவும்.');
+      return;
+    }
+
+    if (cleanUtr.length < 6) {
+      setPaymentError('⚠️ சரியான 12-இலக்க UPI UTR எண்ணை உள்ளிடவும்.');
+      return;
+    }
+
+    setPaymentLoading(true);
+
+    // 1. Anti-Duplicate UTR Check
+    try {
+      const isDuplicate = await checkDuplicateUtrCloud(cleanUtr);
+      if (isDuplicate) {
+        setPaymentError(`⚠️ இந்த UTR எண் (${cleanUtr}) ஏற்கனவே பயன்படுத்தப்பட்டுள்ளது! ஒருமுறை பயன்படுத்திய UTR-ஐ மீண்டும் பயன்படுத்த முடியாது. (Duplicate UTR).`);
+        setPaymentLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.warn('UTR duplicate check error:', e);
+    }
+
+    const cleanPhone = String(formData.phone || '').replace(/\D/g, '');
     const issuedAt = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
     const issuedDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-    const newTok = {
-      tokenNo: tokenNum,
+    // Build Token Payment Request (No Token Number yet!)
+    const tokenRequest = {
       customerName: formData.name.trim(),
       phone: cleanPhone,
       service: formData.service,
       date: formData.date,
       slot: formData.slot,
-      amount: 60,
-      paymentStatus: '✅ டோக்கன் உறுதி செய்யப்பட்டது (Confirmed)',
+      amount: 50,
+      paymentStatus: 'PENDING_VERIFICATION',
+      status: 'PAYMENT PENDING',
+      utr: cleanUtr,
       issuedAt,
-      issuedDate,
-      status: 'Token Active'
+      issuedDate
     };
 
-    // 1. INSTANTLY RENDER TOKEN SLIP ON SCREEN (0ms DELAY)!
-    setGeneratedToken(newTok);
-
-    if (typeof onTokenSaved === 'function') {
-      try {
-        onTokenSaved(newTok);
-      } catch (err) {
-        console.warn('onTokenSaved callback notice:', err);
-      }
-    }
-
-    // 2. SAVE TO LOCAL & CLOUD STORAGE ASYNCHRONOUSLY IN BACKGROUND
     try {
-      saveApplicationRecord({
-        id: appId,
-        tokenId: tokenNum,
-        applicantName: formData.name.trim(),
-        phone: cleanPhone,
-        service: formData.service,
-        fee: '₹60',
-        currentStage: 2,
-        statusLabel: 'டோக்கன் பதிவு செய்யப்பட்டு அனுமதி தயார் நிலையில் உள்ளது',
-        remarks: `டோக்கன் எண் ${tokenNum} (${formData.date} - ${formData.slot}) வெற்றிகரமாக உருவாக்கப்பட்டது.`
-      });
-    } catch (err) {
-      console.warn('Local app save notice:', err);
-    }
+      const savedToken = await requestTokenBookingCloud(tokenRequest);
+      setGeneratedToken(savedToken || tokenRequest);
+      setShowPaymentModal(false);
+      setPaymentLoading(false);
+      setUtrNumber('');
 
-    (async () => {
-      try {
-        await saveTokenBookingCloud(newTok);
-        if (cleanPhone) {
-          saveCustomerProfileCloud(cleanPhone, {
-            phone: cleanPhone,
-            name: formData.name.trim(),
-            lastToken: newTok,
-            updatedAt: new Date().toISOString()
-          });
-        }
-      } catch (err) {
-        console.warn('Cloud token save notice:', err);
+      if (typeof onTokenSaved === 'function') {
+        try {
+          onTokenSaved(savedToken || tokenRequest);
+        } catch (err) {}
       }
-    })();
+    } catch (err) {
+      setPaymentError(`❌ பிழை: ${err.message || 'கட்டணத்தை சமர்ப்பிக்க முடியவில்லை'}`);
+      setPaymentLoading(false);
+    }
   };
 
-  // Send Direct WhatsApp Slip Notification
   const sendWhatsAppMessages = (tok) => {
     if (!tok) return;
 
     const customerMsg = `🧾 *AkEsevai - OFFICIAL DIGITAL TOKEN SLIP*
     
 ━━━━━━━━━━━━━━━━━━━━━
-🎫 *TOKEN NO:* *${tok.tokenNo}*
+🎫 *TOKEN NO:* *${tok.tokenNo || 'VERIFICATION PENDING'}*
 👤 *APPLICANT:* ${tok.customerName}
 📱 *MOBILE:* +91 ${tok.phone}
 🛠️ *SERVICE:* ${tok.service}
@@ -165,7 +242,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
 ⏰ *TIME SLOT:* ${tok.slot}
 ━━━━━━━━━━━━━━━━━━━━━
 ✅ *STATUS:* ${tok.paymentStatus}
-🕐 *ISSUED AT:* ${tok.issuedAt} on ${tok.issuedDate}
+🕐 *ISSUED AT:* ${tok.issuedAt || ''} on ${tok.issuedDate || tok.date}
 
 📍 *LOCATION & COUNTER DESK:*
 AkEsevai Digital Service Centre
@@ -174,21 +251,37 @@ Mill Road, Sanmugapuram, Palani - 624601
 
 நன்றி / Thank you! 🙏`;
 
-    const customerPhone = tok.phone.replace(/\D/g, '').slice(-10);
+    const customerPhone = String(tok.phone || '').replace(/\D/g, '').slice(-10);
     const customerWAUrl = `https://wa.me/91${customerPhone}?text=${encodeURIComponent(customerMsg)}`;
     window.open(customerWAUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const currentToken = (generatedToken && generatedToken.token) ? generatedToken.token : generatedToken;
+  const isVerified = Boolean(
+    currentToken &&
+    (currentToken.paymentStatus === 'VERIFIED' || String(currentToken.paymentStatus || '').includes('PAID') || String(currentToken.status || '').includes('VERIFIED')) &&
+    currentToken.tokenNo
+  );
+  const isRejected = Boolean(
+    currentToken &&
+    (currentToken.paymentStatus === 'REJECTED' || String(currentToken.status || '').includes('REJECTED'))
+  );
+  const isPending = Boolean(
+    currentToken &&
+    !isVerified &&
+    !isRejected &&
+    (currentToken.paymentStatus === 'PENDING_VERIFICATION' || String(currentToken.status || '').includes('PENDING') || currentToken.utr)
+  );
+
   return (
     <div className="token-generator-wrapper">
-      {/* DIGITAL CLOCK & HEADER BANNER */}
       <div className="clock-banner-card">
         <div className="clock-live-pill">
           <span className="live-pulse-dot" /> LIVE TOKEN SERVER
         </div>
         <div className="digital-clock-display">{timeString}</div>
         <div className="current-date-display">{dateString}</div>
-        <p className="clock-subtext">AkEsevai Digital Service Centre • Palani Appointment & Queue Management</p>
+        <p className="clock-subtext">AkEsevai Digital Service Centre • Palani Appointment & Queue Management (10:00 AM – 8:00 PM)</p>
       </div>
 
       <div className="token-layout-grid">
@@ -197,15 +290,18 @@ Mill Road, Sanmugapuram, Palani - 624601
           <div className="card-badge-header">
             <Ticket size={18} /> OFFICIAL TOKEN GENERATOR
           </div>
-          <h3>டோக்கன் பெற / Book Appointment Token</h3>
+          <h3>முன்னுரிமை டோக்கன் பதிவு / Book Priority Token</h3>
           <p style={{ color: '#64748b', fontSize: '13px', margin: '4px 0 16px' }}>
-            விவரங்களை உள்ளிட்டு உடனுக்குடன் டோக்கன் சீட்டு பெறலாம்.
+            ₹50 கட்டணம் செலுத்தி UTR எண்ணைப் பதிவிடவும். சரிபார்க்கப்பட்டதும் முன்னுரிமை டோக்கன் சீட்டு வழங்கப்படும்.
           </p>
 
-          <form onSubmit={handleGenerateToken} className="token-form">
-            <label>
+          <form onSubmit={handleInitiateTokenPayment} className="token-form">
+            <label htmlFor="token-input-name">
               Full Name / பெயர் *
               <input
+                id="token-input-name"
+                name="applicant_name"
+                autoComplete="name"
                 type="text"
                 required
                 value={formData.name}
@@ -214,9 +310,12 @@ Mill Road, Sanmugapuram, Palani - 624601
               />
             </label>
 
-            <label>
+            <label htmlFor="token-input-phone">
               Mobile Number / மொபைல் எண் *
               <input
+                id="token-input-phone"
+                name="applicant_phone"
+                autoComplete="tel"
                 type="tel"
                 required
                 maxLength="10"
@@ -226,9 +325,11 @@ Mill Road, Sanmugapuram, Palani - 624601
               />
             </label>
 
-            <label>
+            <label htmlFor="token-select-service">
               Service Required / சேவை
               <select
+                id="token-select-service"
+                name="token_service"
                 value={formData.service}
                 onChange={(e) => setFormData({ ...formData, service: e.target.value })}
               >
@@ -243,9 +344,11 @@ Mill Road, Sanmugapuram, Palani - 624601
             </label>
 
             <div className="form-row-2">
-              <label>
+              <label htmlFor="token-input-date">
                 Visit Date / நாள்
                 <input
+                  id="token-input-date"
+                  name="token_date"
                   type="date"
                   required
                   value={formData.date}
@@ -253,55 +356,52 @@ Mill Road, Sanmugapuram, Palani - 624601
                 />
               </label>
 
-              <label>
-                Time Slot / நேரம்
+              <label htmlFor="token-select-slot">
+                Time Slot / நேரம் (10 AM - 8 PM)
                 <select
+                  id="token-select-slot"
+                  name="token_slot"
                   value={formData.slot}
                   onChange={(e) => setFormData({ ...formData, slot: e.target.value })}
                 >
-                  <option>10:00 AM - 10:30 AM</option>
-                  <option>10:30 AM - 11:00 AM</option>
-                  <option>11:00 AM - 11:30 AM</option>
-                  <option>11:30 AM - 12:00 PM</option>
-                  <option>12:00 PM - 12:30 PM</option>
-                  <option>02:00 PM - 02:30 PM</option>
-                  <option>02:30 PM - 03:00 PM</option>
-                  <option>03:00 PM - 03:30 PM</option>
-                  <option>04:00 PM - 04:30 PM</option>
-                  <option>04:30 PM - 05:00 PM</option>
+                  {APPOINTMENT_TIME_SLOTS.map((slot) => (
+                    <option key={slot} value={slot}>{slot}</option>
+                  ))}
                 </select>
               </label>
             </div>
 
             <button
+              id="token-submit-pay-btn"
               type="submit"
               className="button button-primary"
               style={{
-                background: 'linear-gradient(135deg, #022c7a 0%, #0052cc 100%)',
+                background: 'linear-gradient(135deg, #16a34a 0%, #059669 100%)',
                 color: 'white',
                 padding: '14px',
                 borderRadius: '10px',
-                fontSize: '15px',
+                fontSize: '14px',
                 fontWeight: 900,
                 cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(0,82,204,0.4)',
+                boxShadow: '0 4px 14px rgba(22,163,74,0.4)',
                 marginTop: '14px',
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                justify: 'center',
+                justifyContent: 'center',
                 gap: '8px'
               }}
             >
-              <Sparkles size={18} /> 🎫 டோக்கன் சீட்டு பெறுக (Get Token Slip)
+              <Sparkles size={18} /> 🎫 டோக்கன் கட்டணம் செலுத்துக (₹50)
             </button>
           </form>
         </div>
 
-        {/* 100% ULTRA PROFESSIONAL INSTANT TOKEN SLIP DISPLAY */}
+        {/* TOKEN SLIP DISPLAY / PENDING / REJECTED VIEW */}
         <div className="token-display-card">
-          {generatedToken ? (
-            <div id="token-print-area" className="official-pass-card" style={{
+          {/* CASE 1: VERIFIED TOKEN SLIP WITH QR CODE */}
+          {isVerified && (
+            <div id="token-verified-pass-card" className="official-pass-card" style={{
               background: '#ffffff',
               borderRadius: '16px',
               border: '2.5px solid #022c7a',
@@ -315,7 +415,7 @@ Mill Road, Sanmugapuram, Palani - 624601
                 color: 'white',
                 padding: '18px 20px',
                 display: 'flex',
-                justify: 'space-between',
+                justifyContent: 'space-between',
                 alignItems: 'center'
               }}>
                 <div>
@@ -337,7 +437,7 @@ Mill Road, Sanmugapuram, Palani - 624601
                   boxShadow: '0 4px 12px rgba(251,191,36,0.4)'
                 }}>
                   <small style={{ display: 'block', fontSize: '9px', fontWeight: 900, letterSpacing: '0.5px' }}>TOKEN NO</small>
-                  <strong style={{ fontSize: '24px', fontWeight: 900, display: 'block', lineHeight: 1 }}>{generatedToken.tokenNo}</strong>
+                  <strong style={{ fontSize: '24px', fontWeight: 900, display: 'block', lineHeight: 1 }}>{currentToken.tokenNo}</strong>
                 </div>
               </div>
 
@@ -367,11 +467,11 @@ Mill Road, Sanmugapuram, Palani - 624601
                 }}>
                   <div>
                     <span className="token-lbl" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>APPLICANT NAME / பெயர்</span>
-                    <strong className="token-val-name" style={{ display: 'block', fontSize: '16px', color: '#0f172a', fontWeight: 900 }}>{generatedToken.customerName}</strong>
+                    <strong className="token-val-name" style={{ display: 'block', fontSize: '16px', color: '#0f172a', fontWeight: 900 }}>{currentToken.customerName}</strong>
                   </div>
                   <div>
                     <span className="token-lbl" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>MOBILE / மொபைல்</span>
-                    <strong className="token-val-phone" style={{ display: 'block', fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>+91 {generatedToken.phone}</strong>
+                    <strong className="token-val-phone" style={{ display: 'block', fontSize: '14px', color: '#0f172a', fontWeight: 800 }}>+91 {currentToken.phone}</strong>
                   </div>
                 </div>
 
@@ -384,11 +484,11 @@ Mill Road, Sanmugapuram, Palani - 624601
                 }}>
                   <div>
                     <span className="token-lbl" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>SERVICE / சேவை</span>
-                    <strong className="token-service-val" style={{ display: 'block', fontSize: '13px', color: '#022c7a', fontWeight: 800 }}>{generatedToken.service}</strong>
+                    <strong className="token-service-val" style={{ display: 'block', fontSize: '13px', color: '#022c7a', fontWeight: 800 }}>{currentToken.service}</strong>
                   </div>
                   <div>
                     <span className="token-lbl" style={{ fontSize: '10px', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>VISIT DATE & TIME / நேரம்</span>
-                    <strong className="token-datetime-val" style={{ display: 'block', fontSize: '13px', color: '#d97706', fontWeight: 800 }}>{generatedToken.date} ({generatedToken.slot})</strong>
+                    <strong className="token-datetime-val" style={{ display: 'block', fontSize: '13px', color: '#d97706', fontWeight: 800 }}>{currentToken.date} ({currentToken.slot})</strong>
                   </div>
                 </div>
 
@@ -400,12 +500,14 @@ Mill Road, Sanmugapuram, Palani - 624601
                   padding: '10px 14px',
                   margin: '14px 0',
                   display: 'flex',
-                  justify: 'space-between',
+                  justifyContent: 'space-between',
                   alignItems: 'center'
                 }}>
                   <div>
                     <small className="token-lbl" style={{ fontSize: '10px', color: '#166534', fontWeight: 800, display: 'block' }}>TOKEN STATUS (டோக்கன் நிலை)</small>
-                    <strong className="token-status-val" style={{ fontSize: '13.5px', color: '#15803d', fontWeight: 900 }}>{generatedToken.paymentStatus}</strong>
+                    <strong className="token-status-val" style={{ fontSize: '13.5px', color: '#15803d', fontWeight: 900 }}>
+                      ✅ VERIFIED (₹50 PAID) • UTR: {currentToken.utr || 'CONFIRMED'}
+                    </strong>
                   </div>
                   <span style={{ background: '#16a34a', color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 800 }}>
                     ACTIVE
@@ -415,7 +517,7 @@ Mill Road, Sanmugapuram, Palani - 624601
                 {/* SCANNABLE QR CODE FOR COUNTER */}
                 <div className="token-qr-box" style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '12px', padding: '12px', textAlign: 'center' }}>
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`AkEsevai Token: ${generatedToken.tokenNo}\nApplicant: ${generatedToken.customerName}\nService: ${generatedToken.service}\nStatus: ${generatedToken.paymentStatus}`)}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`AkEsevai Token: ${currentToken.tokenNo}\nApplicant: ${currentToken.customerName}\nService: ${currentToken.service}\nStatus: VERIFIED\nUTR: ${currentToken.utr}`)}`}
                     alt="Scannable Token QR Pass"
                     style={{ width: '130px', height: '130px', display: 'block', margin: '0 auto' }}
                   />
@@ -425,13 +527,13 @@ Mill Road, Sanmugapuram, Palani - 624601
                 </div>
               </div>
 
-              {/* ACTION BUTTONS FOOTER — data-no-print hides these buttons when printing PDF */}
+              {/* ACTION BUTTONS FOOTER */}
               <div data-no-print="true" style={{
                 background: '#f1f5f9',
                 padding: '14px 20px',
                 display: 'flex',
                 gap: '10px',
-                justify: 'space-between',
+                justifyContent: 'space-between',
                 flexWrap: 'wrap'
               }}>
                 <button
@@ -443,81 +545,383 @@ Mill Road, Sanmugapuram, Palani - 624601
                     background: '#022c7a',
                     color: 'white',
                     border: 'none',
-                    padding: '12px',
                     borderRadius: '8px',
-                    fontSize: '13px',
+                    padding: '10px 14px',
+                    fontSize: '12px',
                     fontWeight: 800,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    justify: 'center',
-                    gap: '6px',
-                    boxShadow: '0 4px 12px rgba(2, 44, 122, 0.3)'
+                    justifyContent: 'center',
+                    gap: '6px'
                   }}
                 >
-                  <Download size={16} /> 🖨️ PDF / பதிவிறக்குக (Download PDF)
+                  <Printer size={15} /> பிரிண்ட் / PDF
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => sendWhatsAppMessages(generatedToken)}
+                  onClick={() => sendWhatsAppMessages(currentToken)}
                   style={{
                     flex: 1,
                     minWidth: '140px',
                     background: '#25D366',
                     color: 'white',
                     border: 'none',
-                    padding: '12px',
                     borderRadius: '8px',
-                    fontSize: '13px',
+                    padding: '10px 14px',
+                    fontSize: '12px',
                     fontWeight: 800,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    justify: 'center',
-                    gap: '6px',
-                    boxShadow: '0 4px 12px rgba(37, 211, 102, 0.4)'
+                    justifyContent: 'center',
+                    gap: '6px'
                   }}
                 >
-                  <MessageCircle size={16} /> 📲 WhatsApp-ல் அனுப்ப (Send WA)
+                  <MessageCircle size={15} /> WhatsApp ரசீது
                 </button>
 
                 <button
                   type="button"
                   onClick={handleDeleteToken}
                   style={{
-                    flex: '1 1 100%',
-                    minWidth: '140px',
-                    background: '#fef2f2',
+                    background: '#fee2e2',
                     color: '#dc2626',
-                    border: '1.5px solid #fca5a5',
-                    padding: '12px',
+                    border: '1px solid #fca5a5',
                     borderRadius: '8px',
-                    fontSize: '13px',
+                    padding: '10px 14px',
+                    fontSize: '12px',
                     fontWeight: 800,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    justify: 'center',
-                    gap: '6px',
-                    marginTop: '4px'
+                    justifyContent: 'center',
+                    gap: '6px'
                   }}
                 >
-                  <Trash2 size={16} /> 🗑️ டோக்கனை ரத்து செய் (Cancel & Delete Token)
+                  <Trash2 size={15} /> ரத்து செய்
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="empty-pass-placeholder" style={{ background: '#ffffff', border: '2px dashed #cbd5e1', borderRadius: '16px', padding: '40px 20px', textAlign: 'center' }}>
-              <Ticket size={52} color="#022c7a" style={{ margin: '0 auto 12px', opacity: 0.8 }} />
-              <h4 style={{ color: '#022c7a', font: '800 16px Manrope' }}>உங்களின் டோக்கன் சீட்டு இங்கு தோன்றும்</h4>
-              <p style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.5, maxWidth: '320px', margin: '8px auto 0' }}>
-                இடதுபுற படிவத்தில் விவரங்களை நிரப்பி <strong>"🎫 டோக்கன் சீட்டு பெறுக"</strong> பொத்தானைக் கிளிக் செய்தவுடன் டோக்கன் உடனடியாக உருவாக்கப்படும்.
+          )}
+
+          {/* CASE 2: PAYMENT PENDING VERIFICATION (NO TOKEN NUMBER GENERATED YET) */}
+          {isPending && (
+            <div id="token-pending-card" style={{
+              background: '#fffbeb',
+              border: '2px solid #f59e0b',
+              borderRadius: '16px',
+              padding: '24px',
+              textAlign: 'center',
+              boxShadow: '0 8px 24px rgba(245,158,11,0.15)'
+            }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fef3c7', color: '#d97706', display: 'grid', placeItems: 'center', margin: '0 auto 14px' }}>
+                <Clock3 size={28} />
+              </div>
+              <span style={{ background: '#fef3c7', color: '#b45309', padding: '4px 12px', borderRadius: '12px', fontSize: '11px', fontWeight: 900, letterSpacing: '0.5px' }}>
+                PAYMENT SUBMITTED • AWAITING VERIFICATION
+              </span>
+              <h3 style={{ margin: '10px 0 6px', fontSize: '18px', color: '#92400e', fontWeight: 900 }}>
+                ⏳ கட்டணம் சரிபார்ப்பில் உள்ளது
+              </h3>
+              <p style={{ fontSize: '13px', color: '#78350f', lineHeight: 1.5, margin: '0 0 16px' }}>
+                உங்கள் ₹50 கட்டண விவரம் (UTR: <strong>{currentToken.utr}</strong>) சமர்ப்பிக்கப்பட்டுள்ளது. AkEsevai நிர்வாகி சரிபார்த்தவுடன் உங்கள் அதிகாரப்பூர்வ டோக்கன் எண் தானாக இங்கு தோன்றும்.
+              </p>
+
+              <div style={{ background: '#ffffff', borderRadius: '12px', border: '1px solid #fde68a', padding: '14px', textAlign: 'left', marginBottom: '18px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12.5px' }}>
+                  <div><span style={{ color: '#64748b' }}>பெயர்:</span> <strong>{currentToken.customerName}</strong></div>
+                  <div><span style={{ color: '#64748b' }}>மொபைல்:</span> <strong>+91 {currentToken.phone}</strong></div>
+                  <div><span style={{ color: '#64748b' }}>சேவை:</span> <strong>{currentToken.service}</strong></div>
+                  <div><span style={{ color: '#64748b' }}>தேதி & நேரம்:</span> <strong>{currentToken.date} ({currentToken.slot})</strong></div>
+                  <div><span style={{ color: '#64748b' }}>தொகை:</span> <strong style={{ color: '#16a34a' }}>₹50.00</strong></div>
+                  <div><span style={{ color: '#64748b' }}>UTR No:</span> <strong style={{ color: '#022c7a' }}>{currentToken.utr}</strong></div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const all = await fetchAllTokensCloud();
+                      const targetId = generatedToken?.id || generatedToken?.tokenNo;
+                      const targetUtr = generatedToken?.utr;
+                      if (Array.isArray(all)) {
+                        const found = all.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
+                        if (found) {
+                          setGeneratedToken(found);
+                          if (found.tokenNo && found.paymentStatus === 'VERIFIED' && typeof onTokenSaved === 'function') {
+                            onTokenSaved(found);
+                          }
+                        }
+                      }
+                    } catch (e) {}
+                    window.dispatchEvent(new Event('akesevai-data-changed'));
+                  }}
+                  style={{
+                    background: '#022c7a',
+                    color: 'white',
+                    border: 'none',
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <RefreshCw size={14} /> நிலையைச் சரிபார்க்க (Refresh Status)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteToken}
+                  style={{
+                    background: '#fee2e2',
+                    color: '#dc2626',
+                    border: '1px solid #fca5a5',
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                >
+                  பதிவை ரத்து செய் (Cancel Request)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* CASE 3: PAYMENT REJECTED VIEW */}
+          {isRejected && (
+            <div id="token-rejected-card" style={{
+              background: '#fef2f2',
+              border: '2px solid #f87171',
+              borderRadius: '16px',
+              padding: '24px',
+              textAlign: 'center',
+              boxShadow: '0 8px 24px rgba(220,38,38,0.15)'
+            }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'grid', placeItems: 'center', margin: '0 auto 14px' }}>
+                <AlertCircle size={28} />
+              </div>
+              <span style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 12px', borderRadius: '12px', fontSize: '11px', fontWeight: 900, letterSpacing: '0.5px' }}>
+                PAYMENT REJECTED
+              </span>
+              <h3 style={{ margin: '10px 0 6px', fontSize: '18px', color: '#991b1b', fontWeight: 900 }}>
+                ❌ கட்டணம் நிராகரிக்கப்பட்டது
+              </h3>
+              <p style={{ fontSize: '13px', color: '#7f1d1d', lineHeight: 1.5, margin: '0 0 16px' }}>
+                காரணம்: <strong>{currentToken.rejectionReason || 'தவறான UTR அல்லது கட்டணம் பெறப்படவில்லை.'}</strong>
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setGeneratedToken(null);
+                  setShowPaymentModal(true);
+                }}
+                style={{
+                  background: '#dc2626',
+                  color: 'white',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 சரியான UTR உடன் மீண்டும் முயற்சிக்கவும்
+              </button>
+            </div>
+          )}
+
+          {/* CASE 4: EMPTY / INITIAL STATE */}
+          {!generatedToken && (
+            <div className="token-preview-placeholder" style={{
+              background: '#f8fafc',
+              border: '2px dashed #cbd5e1',
+              borderRadius: '16px',
+              padding: '48px 20px',
+              textAlign: 'center'
+            }}>
+              <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#e0f2fe', color: '#0052cc', display: 'grid', placeItems: 'center', margin: '0 auto 14px' }}>
+                <Ticket size={28} />
+              </div>
+              <h4 style={{ margin: '0 0 6px', fontSize: '16px', color: '#0f172a' }}>டோக்கன் சீட்டு தயார் நிலை</h4>
+              <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                இடதுபுற படிவத்தில் உங்கள் விவரங்களை உள்ளிட்டு ₹50 கட்டணம் செலுத்துங்கள்.
               </p>
             </div>
           )}
         </div>
       </div>
+
+      {/* SECURE PAYMENT MODAL */}
+      {showPaymentModal && (
+        <div className="token-modal-overlay" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(6px)',
+          display: 'grid',
+          placeItems: 'center',
+          zIndex: 99999,
+          padding: '16px'
+        }}>
+          <div className="token-modal-card" style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            maxWidth: '460px',
+            width: '100%',
+            overflow: 'hidden',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+            animation: 'modalSlideUp 0.25s ease'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              background: 'linear-gradient(135deg, #022c7a 0%, #001a4d 100%)',
+              color: 'white',
+              padding: '18px 22px',
+              position: 'relative'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.5px' }}>
+                  🔒 SECURE PRIORITY PAYMENT GATEWAY
+                </span>
+                <button
+                  onClick={() => setShowPaymentModal(false)}
+                  style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', width: '28px', height: '28px', borderRadius: '50%', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: '14px' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <h3 style={{ margin: '6px 0 0', fontSize: '18px', fontWeight: 900, color: 'white' }}>
+                முன்னுரிமை டோக்கன் கட்டணம் (Token Fee)
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#bfdbfe' }}>
+                ₹50 செலுத்திய பின் UTR எண்ணைப் பதிவிடவும்.
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '20px' }}>
+              {/* Summary Box */}
+              <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '12px 16px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>விண்ணப்பதாரர்:</span>
+                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>{formData.name} (+91 {formData.phone})</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>சேவை & நேரம்:</span>
+                  <span style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700 }}>{formData.date} ({formData.slot})</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #cbd5e1' }}>
+                  <strong style={{ fontSize: '13px', color: '#022c7a' }}>செலுத்த வேண்டிய தொகை:</strong>
+                  <strong style={{ fontSize: '20px', color: '#16a34a', fontWeight: 900 }}>₹50.00</strong>
+                </div>
+              </div>
+
+              {/* QR Code and UPI ID */}
+              <div style={{ textAlign: 'center', background: '#f0fdf4', border: '1.5px dashed #86efac', borderRadius: '14px', padding: '14px', marginBottom: '14px' }}>
+                <div style={{ width: '120px', height: '120px', margin: '0 auto 8px', background: '#ffffff', padding: '6px', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent('upi://pay?pa=alakesh.kumar7@okhdfcbank&pn=AkEsevai%20Palani&am=50&cu=INR&tn=AkEsevai%20Token%20Fee')}`}
+                    alt="UPI QR Code"
+                    style={{ width: '100%', height: '100%', display: 'block' }}
+                  />
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                  📱 GPay / PhonePe / Paytm மூலம் ₹50 ஸ்கேன் செய்யவும்
+                </span>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#dcfce7', padding: '4px 10px', borderRadius: '6px' }}>
+                  <code style={{ color: '#166534', fontSize: '12px', fontWeight: 800 }}>
+                    alakesh.kumar7@okhdfcbank
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText('alakesh.kumar7@okhdfcbank');
+                      setCopiedUpi(true);
+                      setTimeout(() => setCopiedUpi(false), 2000);
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#15803d', display: 'flex', alignItems: 'center' }}
+                    title="Copy UPI ID"
+                  >
+                    {copiedUpi ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* UTR / Reference Input */}
+              <div style={{ marginBottom: '14px' }}>
+                <label htmlFor="token-modal-utr-input" style={{ fontSize: '11px', fontWeight: 800, color: '#334155', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                  UPI TRANSACTION ID / 12-DIGIT UTR NO *
+                </label>
+                <input
+                  id="token-modal-utr-input"
+                  name="utr_number"
+                  autoComplete="off"
+                  type="text"
+                  required
+                  value={utrNumber}
+                  onChange={(e) => setUtrNumber(e.target.value)}
+                  placeholder="எ.கா: 402839482910 (12-digit UTR)"
+                  style={{ width: '100%', padding: '10px 12px', border: paymentError ? '2px solid #ef4444' : '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              {paymentError && (
+                <div id="token-modal-error" style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', padding: '8px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 700, marginBottom: '14px' }}>
+                  {paymentError}
+                </div>
+              )}
+
+              {/* Confirm Buttons */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px' }}>
+                <button
+                  id="token-modal-cancel-btn"
+                  type="button"
+                  onClick={() => setShowPaymentModal(false)}
+                  style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', borderRadius: '10px', padding: '12px', fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}
+                >
+                  ரத்து (Cancel)
+                </button>
+                <button
+                  id="token-modal-submit-btn"
+                  type="button"
+                  disabled={paymentLoading}
+                  onClick={handleConfirmPaymentAndGenerate}
+                  style={{
+                    background: 'linear-gradient(135deg, #16a34a 0%, #059669 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    fontSize: '13px',
+                    fontWeight: 900,
+                    cursor: paymentLoading ? 'wait' : 'pointer',
+                    boxShadow: '0 4px 14px rgba(22,163,74,0.4)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  {paymentLoading ? '⏳ சரிபார்க்கிறது...' : '✅ UTR சமர்ப்பிக்க (Submit for Verification)'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

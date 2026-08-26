@@ -68,10 +68,12 @@ export default function DocumentReadinessScore({ navigate }) {
 
       <div style={{ padding: '22px 24px' }}>
         {/* Service selector */}
-        <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
+        <label htmlFor="readiness-score-service-select" style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
           1️⃣ சேவையைத் தேர்ந்தெடுங்கள்:
         </label>
         <select
+          id="readiness-score-service-select"
+          name="readiness_service"
           value={selectedService}
           onChange={e => { setSelectedService(e.target.value); setCheckedDocs({}); setSubmitted(false); }}
           style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #e2e8f0', borderRadius: '10px', fontSize: '13px', fontWeight: 600, color: '#0f172a', background: '#f8fafc', outline: 'none', marginBottom: '20px', cursor: 'pointer' }}

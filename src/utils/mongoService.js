@@ -1,23 +1,85 @@
-const getApiBaseUrl = () => {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
-  const host = typeof window !== 'undefined' && window.location && window.location.hostname ? window.location.hostname : 'localhost';
-  return `http://${host}:5000/api`;
+export const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined' && window.location) {
+    const envUrl = import.meta.env.VITE_API_URL;
+    if (envUrl && !envUrl.includes('localhost') && envUrl.startsWith('http')) {
+      return envUrl;
+    }
+    // In browser, relative /api works seamlessly with Vite proxy on any network/device IP
+    return '/api';
+  }
+  return '/api';
 };
 
-const API_BASE_URL = getApiBaseUrl();
+export const API_BASE_URL = getApiBaseUrl();
 
-const fetchJson = async (url, options = {}) => {
+export const getAuthHeaders = () => {
+  const headers = {};
+  if (typeof window !== 'undefined') {
+    try {
+      // 1. Admin Session Check
+      const adminSession = sessionStorage.getItem('akesevai-admin-session') || localStorage.getItem('akesevai-admin-session');
+      if (adminSession === 'true' || adminSession === 'admin-auth-token-2026') {
+        headers['x-admin-token'] = 'admin123';
+      } else if (adminSession) {
+        try {
+          const parsed = JSON.parse(adminSession);
+          if (parsed?.token || parsed?.password) {
+            headers['x-admin-token'] = parsed.token || parsed.password;
+          }
+        } catch (e) {}
+      }
+
+      // 2. Customer Session Check (handles raw phone string or JSON object)
+      const custSession = sessionStorage.getItem('akesevai-customer-session') || localStorage.getItem('akesevai-customer-session');
+      if (custSession) {
+        let phoneStr = '';
+        try {
+          const parsed = JSON.parse(custSession);
+          phoneStr = typeof parsed === 'object' && parsed !== null ? (parsed.phone || '') : String(parsed);
+        } catch (e) {
+          phoneStr = String(custSession);
+        }
+        const digits = String(phoneStr || '').replace(/\D/g, '');
+        if (digits.length >= 10) {
+          headers['x-customer-phone'] = digits.slice(-10);
+        }
+      }
+    } catch (e) {}
+  }
+  return headers;
+};
+
+const fetchJson = async (url, options = {}, timeoutMs = 6000) => {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
+    const authHeaders = getAuthHeaders();
     const res = await fetch(url, {
+      signal: controller?.signal,
       headers: {
         'Content-Type': 'application/json',
+        ...authHeaders,
         ...(options.headers || {})
       },
       ...options
     });
-    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-    return await res.json();
+    if (timeoutId) clearTimeout(timeoutId);
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      data = null;
+    }
+    if (!res.ok) {
+      // Gracefully handle 401 Unauthorized / 403 Forbidden without throwing unhandled promise errors
+      if (res.status === 401 || res.status === 403) {
+        return null;
+      }
+      return null;
+    }
+    return data;
   } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId);
     return null;
   }
 };
@@ -28,6 +90,12 @@ const cleanDigits = (p) => {
 };
 
 // --- CUSTOMERS ---
+
+export const fetchSingleCustomerProfileMongo = async (phone) => {
+  const cleanPhone = cleanDigits(phone);
+  if (!cleanPhone) return null;
+  return await fetchJson(`${API_BASE_URL}/customers/${cleanPhone}`);
+};
 
 export const saveCustomerProfileMongo = async (phone, customerData) => {
   const cleanPhone = cleanDigits(phone);
@@ -105,7 +173,12 @@ export const saveExpiryDocumentMongo = async (docData) => {
 };
 
 export const fetchAllExpiryDocumentsMongo = async () => {
-  return (await fetchJson(`${API_BASE_URL}/documents`)) || [];
+  const auth = getAuthHeaders();
+  if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+    return [];
+  }
+  const query = auth['x-customer-phone'] ? `?customerPhone=${auth['x-customer-phone']}` : '';
+  return (await fetchJson(`${API_BASE_URL}/documents${query}`)) || [];
 };
 
 export const deleteExpiryDocumentMongo = async (id) => {
@@ -117,7 +190,43 @@ export const deleteExpiryDocumentMongo = async (id) => {
   return Boolean(res?.success);
 };
 
-// --- TOKENS ---
+// --- TOKENS & PAYMENT VERIFICATION ---
+
+export const requestTokenBookingMongo = async (tokenRequest) => {
+  if (!tokenRequest) return null;
+  const res = await fetchJson(`${API_BASE_URL}/tokens/request`, {
+    method: 'POST',
+    body: JSON.stringify(tokenRequest)
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'token', id: res?.token?.id || tokenRequest.id } })); } catch (e) {}
+  return res?.token || res;
+};
+
+export const verifyTokenPaymentMongo = async (id) => {
+  if (!id) return null;
+  const res = await fetchJson(`${API_BASE_URL}/tokens/verify`, {
+    method: 'POST',
+    body: JSON.stringify({ id })
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'token', id } })); } catch (e) {}
+  return res?.token || res;
+};
+
+export const rejectTokenPaymentMongo = async (id, reason = '') => {
+  if (!id) return null;
+  const res = await fetchJson(`${API_BASE_URL}/tokens/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ id, reason })
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'token', id } })); } catch (e) {}
+  return res?.token || res;
+};
+
+export const checkDuplicateUtrMongo = async (utr) => {
+  if (!utr) return false;
+  const res = await fetchJson(`${API_BASE_URL}/tokens/check-utr/${encodeURIComponent(utr)}`);
+  return Boolean(res?.exists);
+};
 
 export const saveTokenBookingMongo = async (tokenData) => {
   if (!tokenData) return null;
@@ -222,12 +331,20 @@ export const subscribeTokensMongo = (callback, intervalMs = 1500) => {
   };
 };
 
-export const subscribeExpiryDocumentsMongo = (callback, intervalMs = 1500) => {
+export const subscribeExpiryDocumentsMongo = (callback, intervalMs = 2500) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
+    const auth = getAuthHeaders();
+    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+      // Unauthenticated: do not make network requests to /api/documents
+      if (callback && isMounted) callback([]);
+      return;
+    }
     const data = await fetchAllExpiryDocumentsMongo();
-    if (data && callback) callback(data);
+    if (isMounted && callback && Array.isArray(data)) {
+      callback(data);
+    }
   };
   poll();
   const timer = setInterval(poll, intervalMs);
@@ -252,4 +369,125 @@ export const subscribeDeletedCustomersMongo = (callback, intervalMs = 1500) => {
     isMounted = false;
     clearInterval(timer);
   };
+};
+
+// --- NOTIFICATIONS & BANKING EXAM RECRUITMENT ---
+
+export const fetchNotificationsMongo = async (category = 'all', status = 'all') => {
+  const params = new URLSearchParams();
+  if (category && category !== 'all') params.append('category', category);
+  if (status && status !== 'all') params.append('status', status);
+  const queryStr = params.toString() ? `?${params.toString()}` : '';
+  return (await fetchJson(`${API_BASE_URL}/notifications${queryStr}`)) || [];
+};
+
+export const syncBankingNotificationsMongo = async () => {
+  const res = await fetchJson(`${API_BASE_URL}/notifications/sync-banking`, {
+    method: 'POST'
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'notification' } })); } catch (e) {}
+  return res;
+};
+
+export const saveNotificationMongo = async (notifData) => {
+  if (!notifData) return null;
+  const res = await fetchJson(`${API_BASE_URL}/notifications`, {
+    method: 'POST',
+    body: JSON.stringify(notifData)
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'notification', id: notifData.id } })); } catch (e) {}
+  return res;
+};
+
+export const deleteNotificationMongo = async (id) => {
+  if (!id) return false;
+  const res = await fetchJson(`${API_BASE_URL}/notifications/${id}`, {
+    method: 'DELETE'
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'notification', id } })); } catch (e) {}
+  return Boolean(res?.success);
+};
+
+export const subscribeNotificationsMongo = (callback, intervalMs = 2500) => {
+  let isMounted = true;
+  const poll = async () => {
+    if (!isMounted) return;
+    const data = await fetchNotificationsMongo('all', 'all');
+    if (data && callback) callback(data);
+  };
+  poll();
+  const timer = setInterval(poll, intervalMs);
+  return () => {
+    isMounted = false;
+    clearInterval(timer);
+  };
+};
+
+// --- OTP AUTHENTICATION ---
+
+export const sendOtpMongo = async (phone, purpose = 'register') => {
+  const cleanPhone = cleanDigits(phone);
+  if (!cleanPhone) return { success: false, error: 'INVALID_PHONE', message: '10-இலக்க மொபைல் எண் தேவை.' };
+  
+  try {
+    const res = await fetch(`${API_BASE_URL}/otp/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: cleanPhone, purpose })
+    });
+    const data = await res.json();
+    return { ...data, status: res.status };
+  } catch (err) {
+    return { success: false, error: 'NETWORK_ERROR', message: 'சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.' };
+  }
+};
+
+export const verifyOtpMongo = async (phone, otp, purpose = 'register') => {
+  const cleanPhone = cleanDigits(phone);
+  if (!cleanPhone) return { success: false, error: 'INVALID_PHONE', message: '10-இலக்க மொபைல் எண் தேவை.' };
+  
+  try {
+    const res = await fetch(`${API_BASE_URL}/otp/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: cleanPhone, otp, purpose })
+    });
+    const data = await res.json();
+    return { ...data, status: res.status };
+  } catch (err) {
+    return { success: false, error: 'NETWORK_ERROR', message: 'சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.' };
+  }
+};
+
+export const resendOtpMongo = async (phone, purpose = 'register') => {
+  return await sendOtpMongo(phone, purpose);
+};
+
+// --- ADVERTISEMENTS API ---
+
+export const fetchAllAdvertisementsMongo = async (includeAll = false) => {
+  return (await fetchJson(`${API_BASE_URL}/advertisements${includeAll ? '?all=true' : ''}`)) || [];
+};
+
+export const saveAdvertisementMongo = async (adData) => {
+  if (!adData) return null;
+  const res = await fetchJson(`${API_BASE_URL}/advertisements`, {
+    method: 'POST',
+    body: JSON.stringify(adData)
+  });
+  try {
+    window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'advertisement', id: adData.id } }));
+  } catch (e) {}
+  return res;
+};
+
+export const deleteAdvertisementMongo = async (id) => {
+  if (!id) return false;
+  const res = await fetchJson(`${API_BASE_URL}/advertisements/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  });
+  try {
+    window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'advertisement', id } }));
+  } catch (e) {}
+  return Boolean(res?.success);
 };

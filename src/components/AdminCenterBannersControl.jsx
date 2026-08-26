@@ -22,7 +22,7 @@ export default function AdminCenterBannersControl({ notify }) {
   const [centerStatus, setCenterStatus] = useState('open');
   const [waitingCount, setWaitingCount] = useState('3');
   const [waitTime, setWaitTime] = useState('5-10');
-  const [openTime, setOpenTime] = useState('திங்கள் - சனி காலை 10:00 - மாலை 5:00');
+  const [openTime, setOpenTime] = useState('திங்கள் - சனி காலை 10:00 - இரவு 8:00');
 
   // Service of the Day State
   const [sodTamil, setSodTamil] = useState('சாதிச் சான்றிதழ்');
@@ -121,10 +121,12 @@ export default function AdminCenterBannersControl({ notify }) {
 
         <form onSubmit={handleSaveLiveQueue} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '6px' }}>
+            <label htmlFor="admin-center-status-select" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '6px' }}>
               மையத்தின் தற்போதைய நிலை (Status):
             </label>
             <select
+              id="admin-center-status-select"
+              name="center_status"
               value={centerStatus}
               onChange={(e) => setCenterStatus(e.target.value)}
               style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 800, background: centerStatus === 'open' ? '#f0fdf4' : '#fef2f2', color: centerStatus === 'open' ? '#16a34a' : '#dc2626' }}
@@ -136,10 +138,12 @@ export default function AdminCenterBannersControl({ notify }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+              <label htmlFor="admin-waiting-count-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
                 👥 காத்திருக்கும் நபர்கள்:
               </label>
               <input
+                id="admin-waiting-count-input"
+                name="waiting_count"
                 type="number"
                 value={waitingCount}
                 onChange={(e) => setWaitingCount(e.target.value)}
@@ -148,10 +152,12 @@ export default function AdminCenterBannersControl({ notify }) {
               />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+              <label htmlFor="admin-wait-time-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
                 ⏱️ எதிர்பாக்கும் நேரம்:
               </label>
               <input
+                id="admin-wait-time-input"
+                name="wait_time"
                 type="text"
                 value={waitTime}
                 onChange={(e) => setWaitTime(e.target.value)}
@@ -162,10 +168,12 @@ export default function AdminCenterBannersControl({ notify }) {
           </div>
 
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+            <label htmlFor="admin-open-time-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
               🕒 மையம் செயல்படும் நேரம் (Opening Hours Text):
             </label>
             <input
+              id="admin-open-time-input"
+              name="open_time_text"
               type="text"
               value={openTime}
               onChange={(e) => setOpenTime(e.target.value)}
@@ -241,10 +249,12 @@ export default function AdminCenterBannersControl({ notify }) {
         <form onSubmit={handleSaveServiceOfDay} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+              <label htmlFor="admin-sod-tamil-title" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
                 தமிழ் பெயர் (Tamil Title):
               </label>
               <input
+                id="admin-sod-tamil-title"
+                name="sod_tamil_title"
                 type="text"
                 required
                 value={sodTamil}
@@ -253,10 +263,12 @@ export default function AdminCenterBannersControl({ notify }) {
               />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+              <label htmlFor="admin-sod-emoji-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
                 Emoji:
               </label>
               <input
+                id="admin-sod-emoji-input"
+                name="sod_emoji"
                 type="text"
                 required
                 value={sodEmoji}
@@ -268,10 +280,12 @@ export default function AdminCenterBannersControl({ notify }) {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+              <label htmlFor="admin-sod-english-title" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
                 ஆங்கில பெயர் (English):
               </label>
               <input
+                id="admin-sod-english-title"
+                name="sod_english_title"
                 type="text"
                 value={sodEnglish}
                 onChange={(e) => setSodEnglish(e.target.value)}
@@ -279,10 +293,12 @@ export default function AdminCenterBannersControl({ notify }) {
               />
             </div>
             <div>
-              <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+              <label htmlFor="admin-sod-fee-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
                 கட்டணம் (Fee):
               </label>
               <input
+                id="admin-sod-fee-input"
+                name="sod_fee"
                 type="text"
                 value={sodFee}
                 onChange={(e) => setSodFee(e.target.value)}
@@ -293,10 +309,12 @@ export default function AdminCenterBannersControl({ notify }) {
           </div>
 
           <div>
-            <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+            <label htmlFor="admin-sod-desc-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
               விளக்கம் (Description):
             </label>
             <input
+              id="admin-sod-desc-input"
+              name="sod_description"
               type="text"
               value={sodDesc}
               onChange={(e) => setSodDesc(e.target.value)}

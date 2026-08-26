@@ -75,12 +75,15 @@ export default function AdminPasswordModal({ isOpen, onClose, changeAdminPasswor
         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px' }}>
           {/* Current Password */}
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '5px', textTransform: 'uppercase' }}>
+            <label htmlFor="admin-modal-current-password" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '5px', textTransform: 'uppercase' }}>
               தற்போதைய கடவுச்சொல் (Current Password)
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <LockKeyhole size={16} style={{ color: '#0284c7', marginRight: '8px' }} />
               <input
+                id="admin-modal-current-password"
+                name="admin_current_password"
+                autoComplete="current-password"
                 required
                 type={showCurrent ? 'text' : 'password'}
                 value={currentPassword}
@@ -96,12 +99,15 @@ export default function AdminPasswordModal({ isOpen, onClose, changeAdminPasswor
 
           {/* New Password */}
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '5px', textTransform: 'uppercase' }}>
+            <label htmlFor="admin-modal-new-password" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '5px', textTransform: 'uppercase' }}>
               புதிய கடவுச்சொல் (New Password)
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <LockKeyhole size={16} style={{ color: '#16a34a', marginRight: '8px' }} />
               <input
+                id="admin-modal-new-password"
+                name="admin_new_password"
+                autoComplete="new-password"
                 required
                 type={showNew ? 'text' : 'password'}
                 value={newPassword}
@@ -117,12 +123,15 @@ export default function AdminPasswordModal({ isOpen, onClose, changeAdminPasswor
 
           {/* Confirm New Password */}
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '5px', textTransform: 'uppercase' }}>
+            <label htmlFor="admin-modal-confirm-password" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '5px', textTransform: 'uppercase' }}>
               புதிய கடவுச்சொல் உறுதி செய்க (Confirm New Password)
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <ShieldCheck size={16} style={{ color: '#16a34a', marginRight: '8px' }} />
               <input
+                id="admin-modal-confirm-password"
+                name="admin_confirm_password"
+                autoComplete="new-password"
                 required
                 type="password"
                 value={confirmPassword}

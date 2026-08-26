@@ -429,10 +429,13 @@ I want to feature my business advertisement banner on the AkEsevai Home Page. Pl
             <form onSubmit={handleSendAdEnquiry}>
               {/* Field 1: Business Name */}
               <div style={{ marginBottom: '16px', textAlign: 'left' }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '6px', display: 'block' }}>
+                <label htmlFor="ad-enquiry-business-name" style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '6px', display: 'block' }}>
                   🏢 வணிகம் / கடை பெயர் (Business Name) *
-                </div>
+                </label>
                 <input
+                  id="ad-enquiry-business-name"
+                  name="business_name"
+                  autoComplete="organization"
                   type="text"
                   required
                   value={businessName}
@@ -457,10 +460,13 @@ I want to feature my business advertisement banner on the AkEsevai Home Page. Pl
 
               {/* Field 2: Contact Phone */}
               <div style={{ marginBottom: '16px', textAlign: 'left' }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '6px', display: 'block' }}>
+                <label htmlFor="ad-enquiry-contact-phone" style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '6px', display: 'block' }}>
                   📱 தொடர்பு மொபைல் எண் (Contact Mobile) *
-                </div>
+                </label>
                 <input
+                  id="ad-enquiry-contact-phone"
+                  name="contact_phone"
+                  autoComplete="tel"
                   type="tel"
                   required
                   maxLength="10"
@@ -486,10 +492,12 @@ I want to feature my business advertisement banner on the AkEsevai Home Page. Pl
 
               {/* Field 3: Category */}
               <div style={{ marginBottom: '20px', textAlign: 'left' }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '6px', display: 'block' }}>
+                <label htmlFor="ad-enquiry-category" style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', marginBottom: '6px', display: 'block' }}>
                   🏷️ வணிக வகை (Business Category)
-                </div>
+                </label>
                 <select
+                  id="ad-enquiry-category"
+                  name="ad_category"
                   value={adCategory}
                   onChange={(e) => setAdCategory(e.target.value)}
                   style={{

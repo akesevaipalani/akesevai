@@ -283,6 +283,10 @@ export default function SoftwarePage({ notify, navigate }) {
         <div className="service-search" style={{ margin: 0, marginBottom: '14px' }}>
           <Search size={18} />
           <input
+            id="software-search-input"
+            name="software_search"
+            type="text"
+            autoComplete="off"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search drivers, photo actions, Tamil fonts, software tools..."

@@ -117,9 +117,12 @@ export default function CustomerTestimonials() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+              <label htmlFor="testimonial-full-name" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
                 உங்கள் பெயர் / Full Name *
                 <input
+                  id="testimonial-full-name"
+                  name="full_name"
+                  autoComplete="name"
                   type="text"
                   required
                   value={name}
@@ -129,9 +132,12 @@ export default function CustomerTestimonials() {
                 />
               </label>
 
-              <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+              <label htmlFor="testimonial-place" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
                 ஊர் / பகுதி (Place)
                 <input
+                  id="testimonial-place"
+                  name="place"
+                  autoComplete="address-level2"
                   type="text"
                   value={place}
                   onChange={(e) => setPlace(e.target.value)}
@@ -141,9 +147,11 @@ export default function CustomerTestimonials() {
               </label>
             </div>
 
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+            <label htmlFor="testimonial-service" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
               பெற்ற சேவை / Service Received
               <select
+                id="testimonial-service"
+                name="service_received"
                 value={service}
                 onChange={(e) => setService(e.target.value)}
                 style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', outline: 'none', background: 'white' }}
@@ -158,9 +166,11 @@ export default function CustomerTestimonials() {
               </select>
             </label>
 
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+            <label htmlFor="testimonial-comment" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
               உங்கள் கருத்து / Review Comment *
               <textarea
+                id="testimonial-comment"
+                name="review_comment"
                 required
                 rows="3"
                 value={comment}

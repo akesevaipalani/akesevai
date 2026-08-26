@@ -198,10 +198,12 @@ export default function GovernmentPhotoCropperTool() {
 
           {/* UPLOAD FILE */}
           <div>
-            <label style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
+            <label htmlFor="cropper-file-upload" style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: '6px' }}>
               2. போட்டோ அல்லது கையொப்பத்தைப் பதிவேற்றவும் (JPG format only, Max 1MB):
             </label>
             <input
+              id="cropper-file-upload"
+              name="cropper_file"
               type="file"
               accept="image/jpeg,.jpg,.jpeg"
               onChange={handleFileChange}
@@ -223,8 +225,11 @@ export default function GovernmentPhotoCropperTool() {
                 <Sparkles size={14} /> TNPSC போட்டோ பெயர் & தேதி முத்திரை:
               </div>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 700, color: '#434343' }}>விண்ணப்பதாரர் பெயர் (Candidate Name):</label>
+                <label htmlFor="cropper-candidate-name" style={{ fontSize: '11px', fontWeight: 700, color: '#434343' }}>விண்ணப்பதாரர் பெயர் (Candidate Name):</label>
                 <input
+                  id="cropper-candidate-name"
+                  name="candidate_name"
+                  autoComplete="name"
                   type="text"
                   placeholder="எ.கா: K. RAMESH"
                   value={candidateName}
@@ -233,8 +238,10 @@ export default function GovernmentPhotoCropperTool() {
                 />
               </div>
               <div>
-                <label style={{ fontSize: '11px', fontWeight: 700, color: '#434343' }}>போட்டோ எடுத்த தேதி (Photo Taken Date):</label>
+                <label htmlFor="cropper-photo-date" style={{ fontSize: '11px', fontWeight: 700, color: '#434343' }}>போட்டோ எடுத்த தேதி (Photo Taken Date):</label>
                 <input
+                  id="cropper-photo-date"
+                  name="photo_date"
                   type="date"
                   value={photoDate}
                   onChange={(e) => setPhotoDate(e.target.value)}
@@ -250,9 +257,11 @@ export default function GovernmentPhotoCropperTool() {
               <div style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
                 🔍 போட்டோவை பெரிதாக்கு / நகர்த்து (Zoom & Position):
               </div>
-              <label style={{ fontSize: '11px', color: '#64748b' }}>
+              <label htmlFor="cropper-zoom-range" style={{ fontSize: '11px', color: '#64748b' }}>
                 Zoom: {zoom.toFixed(1)}x
                 <input
+                  id="cropper-zoom-range"
+                  name="zoom_range"
                   type="range"
                   min="0.3"
                   max="3"
@@ -263,9 +272,11 @@ export default function GovernmentPhotoCropperTool() {
                 />
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <label style={{ fontSize: '11px', color: '#64748b' }}>
+                <label htmlFor="cropper-offset-x" style={{ fontSize: '11px', color: '#64748b' }}>
                   இடப்பக்கம் / வலப்பக்கம் (Offset X):
                   <input
+                    id="cropper-offset-x"
+                    name="offset_x"
                     type="range"
                     min="-150"
                     max="150"
@@ -274,9 +285,11 @@ export default function GovernmentPhotoCropperTool() {
                     style={{ width: '100%' }}
                   />
                 </label>
-                <label style={{ fontSize: '11px', color: '#64748b' }}>
+                <label htmlFor="cropper-offset-y" style={{ fontSize: '11px', color: '#64748b' }}>
                   மேலே / கீழே (Offset Y):
                   <input
+                    id="cropper-offset-y"
+                    name="offset_y"
                     type="range"
                     min="-150"
                     max="150"

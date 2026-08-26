@@ -132,12 +132,15 @@ export default function CustomerPasswordChangeTab({ customer, updateCustomer, no
         <form onSubmit={handleSaveProfile} style={{ display: 'grid', gap: '16px' }}>
           {/* Full Name */}
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+            <label htmlFor="cust-profile-name" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
               முழு பெயர் (Full Name) *
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <User size={16} style={{ color: '#0052cc', marginRight: '8px' }} />
               <input
+                id="cust-profile-name"
+                name="profile_name"
+                autoComplete="name"
                 required
                 type="text"
                 value={profileName}
@@ -150,12 +153,15 @@ export default function CustomerPasswordChangeTab({ customer, updateCustomer, no
 
           {/* Date of Birth */}
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+            <label htmlFor="cust-profile-dob" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
               பிறந்த தேதி (Date of Birth / DOB)
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <Calendar size={16} style={{ color: '#16a34a', marginRight: '8px' }} />
               <input
+                id="cust-profile-dob"
+                name="profile_dob"
+                autoComplete="bday"
                 type="date"
                 value={profileDob}
                 onChange={(e) => setProfileDob(e.target.value)}
@@ -166,17 +172,20 @@ export default function CustomerPasswordChangeTab({ customer, updateCustomer, no
 
           {/* Aadhaar Number */}
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+            <label htmlFor="cust-profile-aadhaar" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
               ஆதார் எண் (Aadhaar Card Number - 12 Digits)
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <CreditCard size={16} style={{ color: '#d97706', marginRight: '8px' }} />
               <input
+                id="cust-profile-aadhaar"
+                name="profile_aadhaar"
+                autoComplete="off"
                 type="text"
                 maxLength={12}
                 value={profileAadhaar}
                 onChange={(e) => setProfileAadhaar(e.target.value.replace(/\D/g, ''))}
-                placeholder="12-digit Aadhaar Number (e.g. 123456789012)"
+                placeholder="12-digit Aadhaar Number (e.g. 567890123456)"
                 style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', padding: '10px 0', fontSize: '14px', color: '#0f172a', fontWeight: 700 }}
               />
             </div>
@@ -204,12 +213,15 @@ export default function CustomerPasswordChangeTab({ customer, updateCustomer, no
         <form onSubmit={handleSavePassword} style={{ display: 'grid', gap: '16px' }}>
           {customer?.profile?.password ? (
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+              <label htmlFor="cust-current-password" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
                 தற்போதைய கடவுச்சொல் (Current Password) *
               </label>
               <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
                 <LockKeyhole size={16} style={{ color: '#0284c7', marginRight: '8px' }} />
                 <input
+                  id="cust-current-password"
+                  name="current_password"
+                  autoComplete="current-password"
                   required
                   type={showCurrent ? 'text' : 'password'}
                   value={currentPassword}
@@ -229,12 +241,15 @@ export default function CustomerPasswordChangeTab({ customer, updateCustomer, no
           )}
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+            <label htmlFor="cust-new-password" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
               புதிய கடவுச்சொல் (New Password) *
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <LockKeyhole size={16} style={{ color: '#16a34a', marginRight: '8px' }} />
               <input
+                id="cust-new-password"
+                name="new_password"
+                autoComplete="new-password"
                 required
                 type={showNew ? 'text' : 'password'}
                 value={newPassword}
@@ -249,12 +264,15 @@ export default function CustomerPasswordChangeTab({ customer, updateCustomer, no
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+            <label htmlFor="cust-confirm-password" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
               புதிய கடவுச்சொல் உறுதி செய்க (Confirm New Password) *
             </label>
             <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid #cbd5e1', borderRadius: '10px', padding: '2px 10px', background: '#f8fafc' }}>
               <ShieldCheck size={16} style={{ color: '#16a34a', marginRight: '8px' }} />
               <input
+                id="cust-confirm-password"
+                name="confirm_password"
+                autoComplete="new-password"
                 required
                 type="password"
                 value={confirmPassword}
