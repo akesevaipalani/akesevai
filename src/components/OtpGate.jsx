@@ -64,8 +64,13 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
         setOtpSent(true);
         setResendCountdown(res.resendCooldown || 30);
         setAttemptsRemaining(3);
-        if (typeof notify === 'function') {
-          notify(`📱 SMS OTP +91 ${cleanPhone.slice(0, 5)}***** எண்ணிற்கு அனுப்பப்பட்டது! (OTP sent via SMS)`);
+        if (res.deliveryStatus && res.deliveryStatus.dispatched === false) {
+          const warnMsg = res.deliveryStatus.error ? `SMS அனுப்ப முடியவில்லை: ${res.deliveryStatus.error}` : 'SMS Gateway not dispatched.';
+          if (typeof notify === 'function') notify(`⚠️ ${warnMsg}`);
+        } else {
+          if (typeof notify === 'function') {
+            notify(`📱 SMS OTP +91 ${cleanPhone.slice(0, 5)}***** எண்ணிற்கு அனுப்பப்பட்டது! (OTP sent via SMS)`);
+          }
         }
       } else {
         const msg = res?.message || 'OTP அனுப்புவதில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.';

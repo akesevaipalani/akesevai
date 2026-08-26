@@ -104,17 +104,6 @@ const isSafeUrl = (urlStr) => {
 // Apply General Rate Limiter across /api
 app.use('/api', apiGeneralLimiter);
 
-// Health Check Endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    connected: mongoose.connection.readyState === 1,
-    database: 'MongoDB Atlas Cloud',
-    port: PORT,
-    timestamp: new Date().toISOString()
-  });
-});
-
 // --- MONGOOSE SCHEMAS & MODELS ---
 
 // 1. Customer Schema
@@ -1170,9 +1159,28 @@ const syncAllVerifiedNotificationsFeed = async () => {
 
 // --- REST API ENDPOINTS ---
 
-// Health Check
+// Health Check (Safe production diagnostics without leaking secrets)
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', database: 'MongoDB', connected: mongoose.connection.readyState === 1 });
+  const isProd = process.env.NODE_ENV === 'production';
+  const fast2smsKey = (process.env.FAST2SMS_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+  const provider = (process.env.SMS_GATEWAY_PROVIDER || '').trim().replace(/^["']|["']$/g, '') || (fast2smsKey ? 'fast2sms' : 'none');
+  const route = (process.env.FAST2SMS_ROUTE || 'q').trim().replace(/^["']|["']$/g, '');
+
+  res.json({
+    status: 'ok',
+    database: {
+      connected: mongoose.connection.readyState === 1,
+      provider: 'MongoDB Atlas Cloud'
+    },
+    smsGateway: {
+      provider,
+      route,
+      configured: Boolean(fast2smsKey && fast2smsKey !== 'your_fast2sms_api_key_here'),
+      keyLength: fast2smsKey ? fast2smsKey.length : 0
+    },
+    environment: isProd ? 'production' : 'development',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // --- OTP & SMS GATEWAY SECURITY SYSTEM ---
@@ -1215,20 +1223,20 @@ setInterval(() => {
 async function dispatchSmsOtp(phone, otp, purpose = 'verification') {
   const isProd = process.env.NODE_ENV === 'production';
   const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-  const smsProvider = (process.env.SMS_GATEWAY_PROVIDER || '').toLowerCase();
+  const smsProvider = (process.env.SMS_GATEWAY_PROVIDER || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
+  const apiKey = (process.env.FAST2SMS_API_KEY || '').trim().replace(/^["']|["']$/g, '');
   
   const smsMessage = `Your AkEsevai verification OTP is ${otp}. Valid for ${OTP_EXPIRY_MINUTES} minutes. Do not share this OTP with anyone for security. - AkEsevai Palani`;
 
   // 1. Fast2SMS Provider (Quick OTP or DLT Route)
-  if (smsProvider === 'fast2sms' || process.env.FAST2SMS_API_KEY) {
+  if (smsProvider === 'fast2sms' || apiKey) {
     try {
-      const apiKey = process.env.FAST2SMS_API_KEY;
       if (!apiKey || apiKey === 'your_fast2sms_api_key_here') {
-        console.warn('⚠️ [Fast2SMS Warning]: FAST2SMS_API_KEY placeholder detected in .env.');
-        return { success: false, provider: 'fast2sms', error: 'INVALID_API_KEY_PLACEHOLDER' };
+        console.warn('⚠️ [Fast2SMS Warning]: FAST2SMS_API_KEY placeholder or missing in environment.');
+        return { success: false, provider: 'fast2sms', error: 'FAST2SMS_API_KEY_NOT_CONFIGURED' };
       }
 
-      const route = (process.env.FAST2SMS_ROUTE || 'q').toLowerCase();
+      const route = (process.env.FAST2SMS_ROUTE || 'q').toLowerCase().trim().replace(/^["']|["']$/g, '');
       let payload;
       if (route === 'otp') {
         payload = {
@@ -1239,9 +1247,9 @@ async function dispatchSmsOtp(phone, otp, purpose = 'verification') {
       } else if (route === 'dlt') {
         payload = {
           route: 'dlt',
-          sender_id: process.env.FAST2SMS_SENDER_ID || 'TXTIND',
-          message: process.env.FAST2SMS_DLT_MESSAGE || `Your OTP is ${otp}`,
-          template_id: process.env.FAST2SMS_DLT_TE_ID,
+          sender_id: (process.env.FAST2SMS_SENDER_ID || 'TXTIND').trim().replace(/^["']|["']$/g, ''),
+          message: (process.env.FAST2SMS_DLT_MESSAGE_ID || process.env.FAST2SMS_DLT_MESSAGE || `Your OTP is ${otp}`).trim().replace(/^["']|["']$/g, ''),
+          template_id: (process.env.FAST2SMS_DLT_TE_ID || '').trim().replace(/^["']|["']$/g, ''),
           numbers: cleanPhone
         };
       } else {
@@ -1267,8 +1275,8 @@ async function dispatchSmsOtp(phone, otp, purpose = 'verification') {
       const data = await res.json();
       if (!data.return) {
         const errorMsg = Array.isArray(data.message) ? data.message.join(', ') : (data.message || JSON.stringify(data));
-        console.warn('⚠️ [Fast2SMS Provider Warning]:', errorMsg);
-        return { success: false, provider: 'fast2sms', error: errorMsg };
+        console.warn('❌ [Fast2SMS Gateway Error]:', errorMsg, `(Status Code: ${data.status_code || res.status})`);
+        return { success: false, provider: 'fast2sms', error: errorMsg, statusCode: data.status_code || res.status };
       } else {
         const reqId = data.request_id || (data.message && data.message[0]) || 'ACCEPTED';
         console.log(`📱 ✅ Real SMS OTP accepted for +91 ${cleanPhone} via Fast2SMS (Req ID: ${reqId})`);
@@ -1496,7 +1504,8 @@ app.post('/api/otp/send', otpSendLimiter, async (req, res) => {
           resendCooldown: RESEND_COOLDOWN_SECONDS,
           deliveryStatus: {
             dispatched: Boolean(dispatchResult && dispatchResult.success),
-            provider: dispatchResult ? dispatchResult.provider : 'none'
+            provider: dispatchResult ? dispatchResult.provider : 'none',
+            error: dispatchResult && !dispatchResult.success ? dispatchResult.error : undefined
           }
         };
 
