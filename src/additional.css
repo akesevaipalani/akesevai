@@ -4791,12 +4791,16 @@ button, input, select, textarea, a {
    RESPONSIVE HEADER & MOBILE DRAWER NAVIGATION (Complete 2026 Edition)
    ========================================================================== */
 
-@media (min-width: 1441px) {
+@media (min-width: 1025px) {
   .mobile-drawer-header,
   .mobile-menu-actions,
   .mobile-nav-arrow,
   .menu-button {
     display: none !important;
+  }
+
+  .desktop-only-btn {
+    display: inline-flex !important;
   }
 
   .site-header {
@@ -4823,13 +4827,13 @@ button, input, select, textarea, a {
     justify-content: space-between !important;
     height: 70px !important;
     box-sizing: border-box !important;
-    gap: 12px !important;
+    gap: 8px !important;
   }
 
   .main-nav {
     display: flex !important;
     align-items: center !important;
-    gap: 8px !important;
+    gap: 4px !important;
     margin: 0 auto !important;
     flex-wrap: nowrap !important;
     flex-shrink: 1 !important;
@@ -4838,7 +4842,7 @@ button, input, select, textarea, a {
   .main-nav .nav-links-container {
     display: flex !important;
     align-items: center !important;
-    gap: 6px !important;
+    gap: 4px !important;
     flex-wrap: nowrap !important;
   }
 
@@ -4847,12 +4851,19 @@ button, input, select, textarea, a {
     border: none !important;
     border-bottom: 2px solid transparent !important;
     padding: 5px 6px !important;
-    font-size: 12.5px !important;
+    font-size: 12px !important;
     font-weight: 700 !important;
     color: #475569 !important;
     cursor: pointer !important;
     white-space: nowrap !important;
     transition: all 0.2s ease !important;
+  }
+
+  :lang(ta) .main-nav .nav-link-btn,
+  html[lang="ta"] .main-nav .nav-link-btn {
+    font-size: 11.5px !important;
+    padding: 4px 5px !important;
+    letter-spacing: -0.01em;
   }
 
   .main-nav .nav-link-btn:hover,
@@ -4864,22 +4875,22 @@ button, input, select, textarea, a {
   .header-actions-right {
     display: flex !important;
     align-items: center !important;
-    gap: 8px !important;
+    gap: 6px !important;
     flex-shrink: 0 !important;
   }
 
   .nav-btn-customer {
-    padding: 7px 12px !important;
+    padding: 6px 10px !important;
     font-size: 12px !important;
   }
 
   .nav-btn-admin {
-    padding: 6px 10px !important;
+    padding: 6px 9px !important;
     font-size: 11.5px !important;
   }
 }
 
-@media (max-width: 1440px) {
+@media (max-width: 1024px) {
   .desktop-only-btn,
   .desktop-only-badge {
     display: none !important;

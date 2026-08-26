@@ -485,6 +485,10 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [lang, setLang] = useState(() => {
     try {
+      if (typeof window !== 'undefined' && window.location) {
+        const urlLang = new URLSearchParams(window.location.search).get('lang');
+        if (urlLang === 'en' || urlLang === 'ta') return urlLang;
+      }
       const match = document.cookie.match(/akesevai-lang=(ta|en)/);
       if (match && match[1]) return match[1];
       const saved = localStorage.getItem('akesevai-lang');
@@ -1103,7 +1107,7 @@ function App() {
                     style={{ gridColumn: '1 / -1' }}
                     onClick={() => { logoutCustomer(); setMenuOpen(false); }}
                   >
-                    <LogOut size={16} /> {lang === 'ta' ? 'வெளியேறு (Logout)' : 'Logout'}
+                    <LogOut size={16} /> {lang === 'ta' ? 'வெளியேறு' : 'Logout'}
                   </button>
                 ) : (
                   <>
@@ -1149,7 +1153,7 @@ function App() {
                     onClick={() => { setAdminNavTab('smartdesk'); navigate('admin'); }}
                     style={{ background: '#f0fdf4', border: '1.5px solid #86efac', color: '#15803d', padding: '6px 12px', borderRadius: '8px', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                   >
-                    <ShieldCheck size={14} color="#16a34a" /> {lang === 'ta' ? 'நிர்வாகம் (Admin: ON)' : 'Admin: ON'}
+                    <ShieldCheck size={14} color="#16a34a" /> {lang === 'ta' ? 'நிர்வாகம்' : 'Admin: ON'}
                   </button>
                   <button
                     className="desktop-only-btn"
@@ -1358,19 +1362,19 @@ function HomePage({ navigate, notify, lang, visitorCount = 18472 }) {
           {/* 5 PRIMARY ACTION BUTTONS */}
           <div className="hero-cta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
             <button className="hero-cta-btn hero-cta-primary" onClick={() => navigate('services')}>
-              <Grid size={17} /> {isTa ? '🟢 சேவைகள் (Services)' : '🟢 View Services'}
+              <Grid size={17} /> {isTa ? '🟢 சேவைகள்' : '🟢 View Services'}
             </button>
 
             <button className="hero-cta-btn hero-cta-login" onClick={() => navigate('customer')}>
-              <UserRound size={17} /> {isTa ? '🔵 விண்ணப்பிக்க (Apply)' : '🔵 Apply / Login'}
+              <UserRound size={17} /> {isTa ? '🔵 விண்ணப்பிக்க' : '🔵 Apply / Login'}
             </button>
 
             <button className="hero-cta-btn hero-cta-track" onClick={() => navigate('status-track')}>
-              <Search size={17} /> {isTa ? '🔍 நிலை அறிய (Track)' : '🔍 Track Status'}
+              <Search size={17} /> {isTa ? '🔍 நிலை அறிய' : '🔍 Track Status'}
             </button>
 
             <button className="hero-cta-btn hero-cta-token" onClick={() => navigate('token-generator')}>
-              <Ticket size={17} /> {isTa ? '🎟️ Priority Token' : '🎟️ Priority Token'}
+              <Ticket size={17} /> {isTa ? '🎟️ முன்னுரிமை டோக்கன்' : '🎟️ Priority Token'}
             </button>
 
             <button 
@@ -1392,7 +1396,7 @@ function HomePage({ navigate, notify, lang, visitorCount = 18472 }) {
                 boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)'
               }}
             >
-              <Camera size={17} /> {isTa ? '📸 போட்டோ டூல்ஸ்' : '📸 Photo Tools'}
+              <Camera size={17} /> {isTa ? '📸 போட்டோ கருவிகள்' : '📸 Photo Tools'}
             </button>
           </div>
 

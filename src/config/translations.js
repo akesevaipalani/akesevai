@@ -99,7 +99,7 @@ export const translations = {
     statusTrack: 'நிலை அறிதல்',
     about: 'எங்களைப் பற்றி',
     contact: 'தொடர்பு',
-    customerPortal: 'வாடிக்கையாளர் உள்நுழைவு / பதிவு',
+    customerPortal: 'வாடிக்கையாளர் உள்நுழைவு',
     admin: 'நிர்வாகி',
     weblink: 'அரசு இணையதளங்கள்',
     photoMaker: 'பாஸ்போர்ட் போட்டோ',
