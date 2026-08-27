@@ -7737,3 +7737,438 @@ html, body, #root, .app-shell {
   }
 }
 
+/* ==========================================================================
+   ADMIN PAGE MOBILE RESPONSIVE SYSTEM (375px, 390px, 412px & Tablets)
+   ========================================================================== */
+
+/* Universal table responsiveness in Admin */
+.admin-dashboard .token-bookings-table-wrap,
+.token-bookings-table-wrap {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  display: block !important;
+  border-radius: 14px !important;
+  box-sizing: border-box !important;
+  margin-bottom: 20px !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.token-bookings-table-wrap .admin-token-table {
+  min-width: 650px !important;
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+
+@media (max-width: 900px) {
+  /* Admin Navigation Tabs Horizontal Responsive Touch/Swipe Scroll with 100% readable text */
+  .admin-dashboard .dashboard-tabs,
+  .dashboard-tabs {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-x pan-y !important;
+    overscroll-behavior-x: contain !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    gap: 8px !important;
+    padding: 6px 4px 14px !important;
+    margin: 16px 0 20px !important;
+    border-bottom: 2px solid rgba(0, 82, 204, 0.12) !important;
+    scrollbar-width: thin !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .admin-dashboard .dashboard-tabs::-webkit-scrollbar,
+  .dashboard-tabs::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .admin-dashboard .dashboard-tabs::-webkit-scrollbar-thumb,
+  .dashboard-tabs::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+
+  .admin-dashboard .dashboard-tabs button,
+  .dashboard-tabs button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    padding: 10px 16px !important;
+    font-size: 12.5px !important;
+    font-weight: 800 !important;
+    border-radius: 10px !important;
+    border: 1.5px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #334155 !important;
+    min-height: 42px !important;
+    cursor: pointer !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    touch-action: pan-x pan-y !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-user-drag: none !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.2s ease !important;
+  }
+
+  .admin-dashboard .dashboard-tabs button:after,
+  .dashboard-tabs button:after {
+    display: none !important;
+  }
+
+  .admin-dashboard .dashboard-tabs .tab-active,
+  .dashboard-tabs .tab-active {
+    box-shadow: 0 4px 14px rgba(0, 82, 204, 0.22) !important;
+    border-color: transparent !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Admin Page Container Fluid Fit */
+  .admin-dashboard {
+    padding-top: 24px !important;
+    padding-bottom: 80px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Admin Dashboard Top Header & Buttons */
+  .admin-dashboard .dashboard-top {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 14px !important;
+    width: 100% !important;
+    margin-bottom: 16px !important;
+  }
+
+  .admin-dashboard .dashboard-top > div:first-child h1 {
+    font-size: 26px !important;
+    margin: 4px 0 !important;
+    line-height: 1.25 !important;
+  }
+
+  .admin-dashboard .dashboard-top > div:last-child {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  .admin-dashboard .dashboard-top .logout-button {
+    flex: 1 !important;
+    min-width: 130px !important;
+    justify-content: center !important;
+    padding: 10px 14px !important;
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    border-radius: 8px !important;
+  }
+
+  /* Admin Tools Quick Action Buttons */
+  .admin-tools {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+    margin: 16px 0 !important;
+    width: 100% !important;
+  }
+
+  .admin-tools button {
+    padding: 10px 12px !important;
+    border-radius: 10px !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+    align-items: center !important;
+  }
+
+  .admin-tools button svg {
+    width: 18px !important;
+    height: 18px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .admin-tools button span {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .admin-tools button strong {
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .admin-tools button small {
+    font-size: 9.5px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  /* Dashboard Stats Grid (2 columns on mobile, 1 column on <=360px) */
+  .admin-dashboard .dashboard-stats,
+  .dashboard-stats {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+    margin: 16px 0 !important;
+    width: 100% !important;
+  }
+
+  .dashboard-stats > div {
+    padding: 12px 10px !important;
+    border-radius: 10px !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .dashboard-stats > div .stat-icon {
+    width: 32px !important;
+    height: 32px !important;
+    flex-shrink: 0 !important;
+    border-radius: 8px !important;
+  }
+
+  .dashboard-stats > div strong {
+    font-size: 16px !important;
+    line-height: 1.2 !important;
+  }
+
+  .dashboard-stats > div small {
+    font-size: 9.5px !important;
+    line-height: 1.25 !important;
+    word-break: break-word !important;
+  }
+
+  /* Smart Operator Console Container */
+  #admin-smartdesk-console {
+    padding: 14px 10px !important;
+    border-radius: 14px !important;
+    margin: 12px 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* SmartDesk Module Tabs Horizontal Scroll */
+  .smartdesk-module-tabs {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-x pan-y !important;
+    overscroll-behavior-x: contain !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    gap: 6px !important;
+    padding: 8px 6px !important;
+    margin: 12px 0 18px !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .smartdesk-module-tabs button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    padding: 8px 12px !important;
+    font-size: 11.5px !important;
+    touch-action: pan-x pan-y !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-user-drag: none !important;
+  }
+
+  /* Admin Center Banners Grid in Smart Desk */
+  .admin-center-banners-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    margin: 14px 0 !important;
+    width: 100% !important;
+  }
+
+  .admin-center-banners-grid > div {
+    padding: 14px 10px !important;
+    border-radius: 14px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* SmartDesk Pending Tokens Grid */
+  .smartdesk-pending-tokens-grid,
+  .admin-pending-tokens-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    width: 100% !important;
+  }
+
+  /* Advertisements & Banners Panel */
+  .admin-advertisements-panel {
+    padding: 14px 10px !important;
+    border-radius: 14px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .admin-advertisements-panel .panel-heading h2 {
+    font-size: 17px !important;
+  }
+
+  .admin-ad-form-grid,
+  .admin-ad-create-form > div[style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .admin-active-ads-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    width: 100% !important;
+  }
+
+  .admin-ad-create-form {
+    padding: 14px 10px !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Customer Requests Grid & Panels */
+  .admin-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+    width: 100% !important;
+  }
+
+  .admin-customers,
+  .admin-detail {
+    padding: 14px 10px !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .customer-quick-overview-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+    padding: 10px !important;
+    font-size: 11.5px !important;
+  }
+
+  .admin-service-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 12px 10px !important;
+  }
+
+  .admin-service-row > div:last-child {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    width: 100% !important;
+    gap: 6px !important;
+    justify-content: flex-start !important;
+    margin-left: 0 !important;
+  }
+
+  .admin-service-row select {
+    width: 100% !important;
+  }
+
+  .admin-service-row .document-open {
+    flex: 1 !important;
+    min-width: 80px !important;
+    justify-content: center !important;
+    font-size: 11px !important;
+    padding: 6px 10px !important;
+  }
+
+  /* Visitor Analytics Grid */
+  .visitor-analytics-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* General Admin Headings & Text */
+  .admin-dashboard h2,
+  .admin-dashboard h3 {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+
+  .admin-dashboard p {
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-tools {
+    grid-template-columns: 1fr !important;
+  }
+
+  .customer-quick-overview-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-dashboard .dashboard-stats,
+  .dashboard-stats {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .admin-dashboard .dashboard-stats,
+  .dashboard-stats {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Dark Mode Support for Admin Responsive Elements */
+[data-theme="dark"] .admin-dashboard .dashboard-tabs button,
+[data-theme="dark"] .dashboard-tabs button {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .smartdesk-module-tabs {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+[data-theme="dark"] .smartdesk-module-tabs button {
+  background: #1e293b !important;
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .admin-advertisements-panel,
+[data-theme="dark"] .admin-ad-create-form {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #ffffff !important;
+}
+
+

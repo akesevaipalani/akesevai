@@ -103,7 +103,7 @@ export default function AdminCenterBannersControl({ notify }) {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', margin: '20px 0' }}>
+    <div className="admin-center-banners-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', margin: '20px 0' }}>
       
       {/* 1. CENTER OPERATIONAL STATUS & WAIT TIME BANNER CONTROL */}
       <div style={{ background: '#ffffff', border: '1.5px solid #cbd5e1', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>

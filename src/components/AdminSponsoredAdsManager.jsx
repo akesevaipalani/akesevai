@@ -415,7 +415,7 @@ export default function AdminSponsoredAdsManager({ notify }) {
 
       {/* CREATE & EDIT MANUAL FORM */}
       {showForm && (
-        <form onSubmit={handleSaveAd} style={{ background: '#f8fafc', border: '2px solid #cbd5e1', borderRadius: '16px', padding: '22px', marginBottom: '24px' }}>
+        <form onSubmit={handleSaveAd} className="admin-ad-create-form" style={{ background: '#f8fafc', border: '2px solid #cbd5e1', borderRadius: '16px', padding: '22px', marginBottom: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h4 style={{ margin: 0, color: '#022c7a', fontSize: '17px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Sparkles size={18} color="#16a34a" /> {editingAdId ? '✏️ விளம்பரத்தை மாற்று (Edit Advertisement):' : '➕ புதிய விளம்பரம் உருவாக்கு (Create Ad):'}

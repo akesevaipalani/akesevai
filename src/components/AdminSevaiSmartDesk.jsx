@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Cpu, FileText, CheckCircle2, Printer, MessageCircle, ArrowRight, UploadCloud, 
   RefreshCw, Sparkles, ShieldCheck, Download, PlusCircle, Volume2, Eye, Search, 
@@ -23,6 +23,44 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [applicantName, setApplicantName] = useState('');
   const [phone, setPhone] = useState('');
+  const moduleTabsRef = useRef(null);
+
+  // Smooth Drag-to-Scroll for SmartDesk Module Tabs
+  useEffect(() => {
+    const el = moduleTabsRef.current;
+    if (!el) return;
+    let isDown = false;
+    let startX = 0;
+    let scrollLeft = 0;
+
+    const onMouseDown = (e) => {
+      if (e.button !== 0) return;
+      isDown = true;
+      startX = e.pageX - el.offsetLeft;
+      scrollLeft = el.scrollLeft;
+    };
+    const onMouseLeave = () => { isDown = false; };
+    const onMouseUp = () => { isDown = false; };
+    const onMouseMove = (e) => {
+      if (!isDown) return;
+      e.preventDefault();
+      const x = e.pageX - el.offsetLeft;
+      const walk = (x - startX) * 1.5;
+      el.scrollLeft = scrollLeft - walk;
+    };
+
+    el.addEventListener('mousedown', onMouseDown);
+    el.addEventListener('mouseleave', onMouseLeave);
+    el.addEventListener('mouseup', onMouseUp);
+    el.addEventListener('mousemove', onMouseMove);
+
+    return () => {
+      el.removeEventListener('mousedown', onMouseDown);
+      el.removeEventListener('mouseleave', onMouseLeave);
+      el.removeEventListener('mouseup', onMouseUp);
+      el.removeEventListener('mousemove', onMouseMove);
+    };
+  }, []);
   const [aadhaarNo, setAadhaarNo] = useState('');
   const [service, setService] = useState('வருமானச் சான்றிதழ் (Income Certificate)');
   const [fee, setFee] = useState('60');
@@ -759,10 +797,10 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
       />
 
       {/* SMART OPERATOR CONSOLE MODULE SELECTOR TABS */}
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '16px 0 24px', background: '#ffffff', padding: '10px 14px', borderRadius: '14px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+      <div ref={moduleTabsRef} className="smartdesk-module-tabs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '16px 0 24px', background: '#ffffff', padding: '10px 14px', borderRadius: '14px', border: '1px solid #cbd5e1', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
         <button
           type="button"
-          onClick={() => setDeskTab('all')}
+          onClick={(e) => { setDeskTab('all'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
           style={{
             padding: '8px 14px',
             borderRadius: '10px',
@@ -778,7 +816,7 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
         </button>
         <button
           type="button"
-          onClick={() => setDeskTab('banners')}
+          onClick={(e) => { setDeskTab('banners'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
           style={{
             padding: '8px 14px',
             borderRadius: '10px',
@@ -794,7 +832,7 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
         </button>
         <button
           type="button"
-          onClick={() => setDeskTab('payments')}
+          onClick={(e) => { setDeskTab('payments'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
           style={{
             padding: '8px 14px',
             borderRadius: '10px',
@@ -818,7 +856,7 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
         </button>
         <button
           type="button"
-          onClick={() => setDeskTab('ads')}
+          onClick={(e) => { setDeskTab('ads'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}
           style={{
             padding: '8px 14px',
             borderRadius: '10px',
@@ -883,7 +921,7 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword }) {
                 ✅ அனைத்து டோக்கன் கட்டணங்களும் சரிபார்க்கப்பட்டுவிட்டன. நிலுவையில் எதுவும் இல்லை. (No pending token payment requests)
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+              <div className="smartdesk-pending-tokens-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px', marginBottom: '20px' }}>
                 {pendingTokens.map((t, idx) => (
                   <div key={t.id ? `${t.id}_${idx}` : `pending_token_${t.utr || idx}_${idx}`} style={{ background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: '14px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
                     <div>

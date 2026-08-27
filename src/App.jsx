@@ -2318,6 +2318,44 @@ const getServiceVisual = (group, title = '') => {
     const [adImageAspectRatio, setAdImageAspectRatio] = useState('16/9');
     const [adIsActive, setAdIsActive] = useState(true);
     const [adUploading, setAdUploading] = useState(false);
+    const dashboardTabsRef = useRef(null);
+
+    // Smooth Drag-to-Scroll for Admin Navigation Tabs
+    useEffect(() => {
+      const el = dashboardTabsRef.current;
+      if (!el) return;
+      let isDown = false;
+      let startX = 0;
+      let scrollLeft = 0;
+
+      const onMouseDown = (e) => {
+        if (e.button !== 0) return;
+        isDown = true;
+        startX = e.pageX - el.offsetLeft;
+        scrollLeft = el.scrollLeft;
+      };
+      const onMouseLeave = () => { isDown = false; };
+      const onMouseUp = () => { isDown = false; };
+      const onMouseMove = (e) => {
+        if (!isDown) return;
+        e.preventDefault();
+        const x = e.pageX - el.offsetLeft;
+        const walk = (x - startX) * 1.5;
+        el.scrollLeft = scrollLeft - walk;
+      };
+
+      el.addEventListener('mousedown', onMouseDown);
+      el.addEventListener('mouseleave', onMouseLeave);
+      el.addEventListener('mouseup', onMouseUp);
+      el.addEventListener('mousemove', onMouseMove);
+
+      return () => {
+        el.removeEventListener('mousedown', onMouseDown);
+        el.removeEventListener('mouseleave', onMouseLeave);
+        el.removeEventListener('mouseup', onMouseUp);
+        el.removeEventListener('mousemove', onMouseMove);
+      };
+    }, [loggedIn]);
 
     useEffect(() => {
       const unsubLogs = subscribeDailyVisitorLogsCloud((logs) => {
@@ -2947,14 +2985,14 @@ const getServiceVisual = (group, title = '') => {
             <span><strong id="admin-count-revenue">₹{combinedTokensList.length * 50}</strong><small>Est. Token Revenue (வருமானம்)</small></span>
           </div>
         </div>
-        <div className="dashboard-tabs" style={{ marginBottom: '24px' }}>
-          <button id="admin-tab-applications" className={adminTab === 'applications' ? 'tab-active' : ''} onClick={() => setAdminTab('applications')} style={{ background: adminTab === 'applications' ? '#0052cc' : undefined, color: adminTab === 'applications' ? 'white' : undefined }}>📋 Applications Manager ({allAppsList.length})</button>
-          <button id="admin-tab-customers" className={adminTab === 'customers' ? 'tab-active' : ''} onClick={() => setAdminTab('customers')}>👥 Customer Requests ({customers.length})</button>
-          <button id="admin-tab-tokens" className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={() => setAdminTab('tokens')}>🎫 Token Bookings ({combinedTokensList.length})</button>
-          <button id="admin-tab-photomaker" className={adminTab === 'photomaker' ? 'tab-active' : ''} onClick={() => setAdminTab('photomaker')} style={{ background: adminTab === 'photomaker' ? '#0284c7' : undefined, color: adminTab === 'photomaker' ? 'white' : undefined }}>📸 Photo Maker Studio</button>
-          <button id="admin-tab-notifications" className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={() => setAdminTab('notifications')} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
-          <button id="admin-tab-advertisements" className={adminTab === 'advertisements' ? 'tab-active' : ''} onClick={() => setAdminTab('advertisements')} style={{ background: adminTab === 'advertisements' ? '#7c3aed' : undefined, color: adminTab === 'advertisements' ? 'white' : undefined }}>📢 Advertisements ({sponsoredAds.length})</button>
-          <button id="admin-tab-smartdesk" className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={() => setAdminTab('smartdesk')} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
+        <div ref={dashboardTabsRef} className="dashboard-tabs" style={{ marginBottom: '24px' }}>
+          <button id="admin-tab-applications" className={adminTab === 'applications' ? 'tab-active' : ''} onClick={(e) => { setAdminTab('applications'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }} style={{ background: adminTab === 'applications' ? '#0052cc' : undefined, color: adminTab === 'applications' ? 'white' : undefined }}>📋 Applications Manager ({allAppsList.length})</button>
+          <button id="admin-tab-customers" className={adminTab === 'customers' ? 'tab-active' : ''} onClick={(e) => { setAdminTab('customers'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}>👥 Customer Requests ({customers.length})</button>
+          <button id="admin-tab-tokens" className={adminTab === 'tokens' ? 'tab-active' : ''} onClick={(e) => { setAdminTab('tokens'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }}>🎫 Token Bookings ({combinedTokensList.length})</button>
+          <button id="admin-tab-photomaker" className={adminTab === 'photomaker' ? 'tab-active' : ''} onClick={(e) => { setAdminTab('photomaker'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }} style={{ background: adminTab === 'photomaker' ? '#0284c7' : undefined, color: adminTab === 'photomaker' ? 'white' : undefined }}>📸 Photo Maker Studio</button>
+          <button id="admin-tab-notifications" className={adminTab === 'notifications' ? 'tab-active' : ''} onClick={(e) => { setAdminTab('notifications'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }} style={{ background: adminTab === 'notifications' ? '#d97706' : undefined, color: adminTab === 'notifications' ? 'white' : undefined }}>📢 Notifications Manager (அறிவிப்புகள் மேலாண்மை)</button>
+          <button id="admin-tab-advertisements" className={adminTab === 'advertisements' ? 'tab-active' : ''} onClick={(e) => { setAdminTab('advertisements'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }} style={{ background: adminTab === 'advertisements' ? '#7c3aed' : undefined, color: adminTab === 'advertisements' ? 'white' : undefined }}>📢 Advertisements ({sponsoredAds.length})</button>
+          <button id="admin-tab-smartdesk" className={adminTab === 'smartdesk' ? 'tab-active' : ''} onClick={(e) => { setAdminTab('smartdesk'); e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); }} style={{ background: adminTab === 'smartdesk' ? '#16a34a' : undefined, color: adminTab === 'smartdesk' ? 'white' : undefined }}>💻 Smart Operator Console</button>
         </div>
 
         {editingCustomer && (
@@ -3130,7 +3168,7 @@ const getServiceVisual = (group, title = '') => {
                 உங்கள் AkEsevai இணையதளத்தை தினமும் யாரெல்லாம் பார்வையிடுகிறார்கள், எந்தப் பக்கத்தைப் பார்க்கிறார்கள் மற்றும் மொபைல்/கணினி விவரங்களை நேரலையாகக் காணலாம்.
               </p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginTop: '18px' }}>
+              <div className="visitor-analytics-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginTop: '18px' }}>
                 <div style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px' }}>
                   <small style={{ color: '#fbbf24', fontWeight: 800, textTransform: 'uppercase', fontSize: '11px', display: 'block' }}>இன்றைய பார்வையாளர்கள் (Today's Visitors)</small>
                   <strong style={{ fontSize: '24px', color: 'white', display: 'block', marginTop: '4px' }}>
@@ -3409,7 +3447,7 @@ const getServiceVisual = (group, title = '') => {
                     </div>
 
                     {/* Customer Profile Quick Overview Box: Aadhaar, DOB, Token & Reminder */}
-                    <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', fontSize: '12.5px' }}>
+                    <div className="customer-quick-overview-grid" style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', fontSize: '12.5px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <CreditCard size={16} color="#0052cc" />
                         <span>ஆதார் எண்: <strong style={{ color: '#0f172a' }}>{selected.aadhaarNo || selected.aadhar || selected.profile?.aadhaarNo || selected.profile?.aadhar || profileRecord.aadhaarNo || profileRecord.aadhar || 'பதிவாகவில்லை'}</strong></span>
@@ -3665,7 +3703,7 @@ const getServiceVisual = (group, title = '') => {
                     </small>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
+                  <div className="admin-pending-tokens-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px' }}>
                     {pendingTokens.map((pTok, pIdx) => (
                       <div
                         key={pTok.id ? `${pTok.id}_${pIdx}` : `pending_${pTok.utr || pIdx}_${pIdx}`}
@@ -4011,7 +4049,7 @@ const getServiceVisual = (group, title = '') => {
                 ➕ புதிய விளம்பர பேனர் சேர்க்க (Add New Advertisement Banner)
               </h3>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+              <div className="admin-ad-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '16px' }}>
                 {/* Image Upload / URL */}
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>
@@ -4177,7 +4215,7 @@ const getServiceVisual = (group, title = '') => {
                   <p style={{ fontSize: '12px', margin: '4px 0 0' }}>விளம்பரங்களை சேர்த்தவுடன் Home Page-ல் தோன்றும்; இல்லையென்றால் banner section தானாக hide ஆகும்.</p>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+                <div className="admin-active-ads-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
                   {sponsoredAds.map((ad) => (
                     <div
                       key={ad.id}
