@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Star, Clock, Users, Zap, CheckCircle2, Save } from 'lucide-react';
+import { ShieldCheck, Star, Clock, Users, Zap, CheckCircle2, Save, Radio } from 'lucide-react';
 import {
   saveLiveQueueCloud,
   subscribeLiveQueue,
@@ -24,6 +24,7 @@ export default function AdminCenterBannersControl({ notify }) {
   const [waitTime, setWaitTime] = useState('5-10');
   const [openTime, setOpenTime] = useState('திங்கள் - சனி காலை 10:00 - இரவு 8:00');
   const [upiId, setUpiId] = useState('alakesh.kumar7-1@okicici');
+  const [upiTouched, setUpiTouched] = useState(false);
 
   // Service of the Day State
   const [sodTamil, setSodTamil] = useState('சாதிச் சான்றிதழ்');
@@ -42,7 +43,7 @@ export default function AdminCenterBannersControl({ notify }) {
         if (data.queueCount !== undefined) setWaitingCount(String(data.queueCount));
         if (data.waitTime) setWaitTime(data.waitTime);
         if (data.openTime) setOpenTime(data.openTime);
-        if (data.upiId) setUpiId(data.upiId);
+        if (data.upiId && !upiTouched) setUpiId(data.upiId);
       }
     });
 
@@ -74,7 +75,6 @@ export default function AdminCenterBannersControl({ notify }) {
       return;
     }
 
-    // Basic valid UPI VPA format check: e.g. username@bank
     const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z0-9]{2,64}$/;
     if (!upiRegex.test(cleanUpi)) {
       if (notify) notify('⚠️ சரியான UPI ID வடிவத்தை உள்ளிடவும் (e.g. username@okaxis, name@okhdfcbank, mobile@upi)!');
@@ -89,6 +89,7 @@ export default function AdminCenterBannersControl({ notify }) {
       upiId: cleanUpi
     };
     await saveLiveQueueCloud(payload);
+    setUpiTouched(false);
     if (notify) notify('🟢 மைய நேரலை நிலை, காத்திருப்பு நேரம் மற்றும் UPI ID வெற்றிகரமாக புதுப்பிக்கப்பட்டது!');
   };
 
@@ -116,61 +117,71 @@ export default function AdminCenterBannersControl({ notify }) {
       bg: sodBg
     };
     await saveServiceOfDayCloud(payload);
-    if (notify) notify(`⭐ இன்றைய சிறப்பு சேவை "${sodTamil}" வெற்றிகரமாக அமைக்கப்பட்டது!`);
+    if (notify) notify('🌟 இன்றைய சிறப்பு சேவை பேனர் வெற்றிகரமாக புதுப்பிக்கப்பட்டது!');
   };
 
   return (
-    <div className="admin-center-banners-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', margin: '20px 0' }}>
-      
-      {/* 1. CENTER OPERATIONAL STATUS & WAIT TIME BANNER CONTROL */}
-      <div style={{ background: '#ffffff', border: '1.5px solid #cbd5e1', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#0284c7', color: 'white', display: 'grid', placeItems: 'center' }}>
-            <Clock size={20} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', margin: '20px 0' }}>
+      {/* 1. Live Queue & Operational Status Card */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+          border: '1.5px solid #bae6fd',
+          borderRadius: '16px',
+          padding: '24px',
+          boxShadow: '0 4px 20px -2px rgba(2, 132, 199, 0.08)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+          <div style={{ background: '#0284c7', color: 'white', padding: '10px', borderRadius: '12px', display: 'flex' }}>
+            <Radio size={22} className="animate-pulse" />
           </div>
           <div>
-            <h3 style={{ margin: 0, fontSize: '15px', color: '#0f172a', fontWeight: 900 }}>
-              🟢 மைய சேவை நிலை (Live Wait Time Banner)
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0369a1' }}>
+              மையத்தின் நேரலை வரிசை & கட்டண UPI ID (Live Queue & UPI Banner)
             </h3>
-            <small style={{ color: '#64748b', fontSize: '12px' }}>முகப்புப் பக்கத்தில் தோன்றும் நேரலை நிலை & காத்திருப்பு நேரம்</small>
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#0284c7', fontWeight: 600 }}>
+              வாடிக்கையாளர் இணையதள முகப்பு, டோக்கன் பக்கம் & கட்டண QR-ல் இந்த தகவல்கள் நேரலையாகத் தெரியும்.
+            </p>
           </div>
         </div>
 
         <form onSubmit={handleSaveLiveQueue} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div>
-            <label htmlFor="admin-center-status-select" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '6px' }}>
-              மையத்தின் தற்போதைய நிலை (Status):
-            </label>
-            <select
-              id="admin-center-status-select"
-              name="center_status"
-              value={centerStatus}
-              onChange={(e) => setCenterStatus(e.target.value)}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 800, background: centerStatus === 'open' ? '#f0fdf4' : '#fef2f2', color: centerStatus === 'open' ? '#16a34a' : '#dc2626' }}
-            >
-              <option value="open">🟢 மையம் திறந்துள்ளது (Center Open & Operational)</option>
-              <option value="closed">🔴 மையம் மூடப்பட்டுள்ளது (Center Currently Closed)</option>
-            </select>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
             <div>
-              <label htmlFor="admin-waiting-count-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
-                👥 காத்திருக்கும் நபர்கள்:
+              <label style={{ fontSize: '11px', fontWeight: 800, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+                மையத்தின் நிலை (Center Status):
+              </label>
+              <select
+                value={centerStatus}
+                onChange={(e) => setCenterStatus(e.target.value)}
+                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #7dd3fc', fontSize: '13px', fontWeight: 700, color: '#0369a1', background: 'white' }}
+              >
+                <option value="open">🟢 மையம் திறந்துள்ளது (Center OPEN)</option>
+                <option value="busy">🟡 அதிக கூட்டம் (Center BUSY)</option>
+                <option value="closing_soon">🟠 விரைவில் மூடப்படும் (CLOSING SOON)</option>
+                <option value="closed">🔴 மையம் மூடப்பட்டுள்ளது (Center CLOSED)</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="admin-waiting-count-input" style={{ fontSize: '11px', fontWeight: 800, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+                காத்திருப்போரின் எண்ணிக்கை (Waiting Count):
               </label>
               <input
                 id="admin-waiting-count-input"
                 name="waiting_count"
                 type="number"
+                min="0"
                 value={waitingCount}
                 onChange={(e) => setWaitingCount(e.target.value)}
-                placeholder="3"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 800 }}
               />
             </div>
+
             <div>
-              <label htmlFor="admin-wait-time-input" style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
-                ⏱️ எதிர்பாக்கும் நேரம்:
+              <label htmlFor="admin-wait-time-input" style={{ fontSize: '11px', fontWeight: 800, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+                காத்திருப்பு நேரம் (Wait Time in Mins):
               </label>
               <input
                 id="admin-wait-time-input"
@@ -208,7 +219,10 @@ export default function AdminCenterBannersControl({ notify }) {
               type="text"
               required
               value={upiId}
-              onChange={(e) => setUpiId(e.target.value)}
+              onChange={(e) => {
+                setUpiTouched(true);
+                setUpiId(e.target.value);
+              }}
               placeholder="e.g. alakesh.kumar7-1@okicici"
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #7dd3fc', fontSize: '13px', fontWeight: 800, color: '#022c7a', background: '#f0f9ff' }}
             />

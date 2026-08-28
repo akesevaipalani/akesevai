@@ -1857,8 +1857,17 @@ const getServiceVisual = (group, title = '') => {
       };
     }, []);
 
-    const handleSave = (e) => {
+    const handleSave = async (e) => {
       e.preventDefault();
+      const cleanUpi = String(upiId || '').trim();
+      if (cleanUpi) {
+        const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z0-9]{2,64}$/;
+        if (!upiRegex.test(cleanUpi)) {
+          setMsg('⚠️ சரியான UPI ID வடிவத்தை உள்ளிடவும் (e.g. username@okaxis, name@okhdfcbank, mobile@upi)!');
+          setTimeout(() => setMsg(''), 4000);
+          return;
+        }
+      }
       const data = {
         status: isCenterOpen,
         queueCount,
@@ -1866,9 +1875,9 @@ const getServiceVisual = (group, title = '') => {
         statusText,
         closedNotice: closedNoticeText,
         openTime: openTimeText,
-        upiId
+        upiId: cleanUpi
       };
-      saveLiveQueueCloud(data);
+      await saveLiveQueueCloud(data);
 
       // Handle Service of the Day override
       const sodCatalog = [

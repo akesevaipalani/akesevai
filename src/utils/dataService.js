@@ -35,7 +35,10 @@ import {
   resendOtpMongo,
   fetchAllAdvertisementsMongo,
   saveAdvertisementMongo,
-  deleteAdvertisementMongo
+  deleteAdvertisementMongo,
+  fetchLiveQueueMongo,
+  saveLiveQueueMongo,
+  subscribeLiveQueueMongo
 } from './mongoService';
 
 export const sendOtpCloud = async (phone, purpose) => {
@@ -890,12 +893,44 @@ export const subscribeExpiryDocuments = (callback) => {
   });
 };
 
-export const saveLiveQueueCloud = async (queueState) => {
-  if (typeof window === 'undefined') return;
+export const fetchLiveQueueCloud = async () => {
   try {
-    localStorage.setItem('akesevai-live-center-status', JSON.stringify(queueState));
-    window.dispatchEvent(new Event('akesevai-data-changed'));
-  } catch (e) {}
+    const cloud = await fetchLiveQueueMongo();
+    if (cloud && typeof cloud === 'object') {
+      try { localStorage.setItem('akesevai-live-center-status', JSON.stringify(cloud)); } catch (e) {}
+      return cloud;
+    }
+  } catch (err) {
+    logNotice('Fetch LiveQueue Cloud', err);
+  }
+  try {
+    const raw = localStorage.getItem('akesevai-live-center-status');
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const saveLiveQueueCloud = async (queueState) => {
+  if (!queueState || typeof queueState !== 'object') return null;
+
+  // 1. Primary: Save to MongoDB Atlas Cloud
+  let saved = null;
+  try {
+    saved = await saveLiveQueueMongo(queueState);
+  } catch (err) {
+    logNotice('MongoDB LiveQueue save', err);
+  }
+
+  // 2. Offline / Local fallback cache
+  if (typeof window !== 'undefined') {
+    try {
+      const finalData = (saved && typeof saved === 'object') ? saved : queueState;
+      localStorage.setItem('akesevai-live-center-status', JSON.stringify(finalData));
+      window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'live-queue', data: finalData } }));
+    } catch (e) {}
+  }
+  return saved;
 };
 
 export const readTokenBookings = () => {
@@ -913,17 +948,39 @@ export const subscribeLiveQueue = (callback) => {
     if (callback) callback(null);
     return () => {};
   }
-  const handler = () => {
-    try {
-      const raw = localStorage.getItem('akesevai-live-center-status');
-      if (callback) callback(raw ? JSON.parse(raw) : null);
-    } catch (e) {
-      if (callback) callback(null);
+
+  // 1. Immediate local cache emission for 0ms initial render
+  try {
+    const raw = localStorage.getItem('akesevai-live-center-status');
+    if (raw && callback) callback(JSON.parse(raw));
+  } catch (e) {}
+
+  // 2. Live Cloud Polling Subscription from MongoDB Atlas (Updates all devices in real-time)
+  const unsubMongo = subscribeLiveQueueMongo((cloudData) => {
+    if (cloudData && typeof cloudData === 'object') {
+      try {
+        localStorage.setItem('akesevai-live-center-status', JSON.stringify(cloudData));
+      } catch (e) {}
+      if (callback) callback(cloudData);
     }
+  }, 2000);
+
+  const localHandler = (e) => {
+    try {
+      if (e?.detail?.type === 'live-queue' && e?.detail?.data) {
+        if (callback) callback(e.detail.data);
+        return;
+      }
+      const raw = localStorage.getItem('akesevai-live-center-status');
+      if (raw && callback) callback(JSON.parse(raw));
+    } catch (e) {}
   };
-  handler();
-  window.addEventListener('akesevai-data-changed', handler);
-  return () => window.removeEventListener('akesevai-data-changed', handler);
+  window.addEventListener('akesevai-data-changed', localHandler);
+
+  return () => {
+    if (typeof unsubMongo === 'function') unsubMongo();
+    window.removeEventListener('akesevai-data-changed', localHandler);
+  };
 };
 
 export const saveServiceOfDayCloud = async (sodData) => {

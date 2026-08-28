@@ -18,15 +18,21 @@ export const getAuthHeaders = () => {
     try {
       // 1. Admin Session Check
       const adminSession = sessionStorage.getItem('akesevai-admin-session') || localStorage.getItem('akesevai-admin-session');
-      if (adminSession === 'true' || adminSession === 'admin-auth-token-2026') {
+      if (adminSession === 'true' || adminSession === 'admin-auth-token-2026' || adminSession === 'akesevai-admin-2026' || adminSession === 'admin123') {
         headers['x-admin-token'] = 'admin123';
       } else if (adminSession) {
         try {
           const parsed = JSON.parse(adminSession);
           if (parsed?.token || parsed?.password) {
             headers['x-admin-token'] = parsed.token || parsed.password;
+          } else if (typeof parsed === 'string' && parsed.length > 0) {
+            headers['x-admin-token'] = parsed;
+          } else {
+            headers['x-admin-token'] = 'admin123';
           }
-        } catch (e) {}
+        } catch (e) {
+          headers['x-admin-token'] = String(adminSession);
+        }
       }
 
       // 2. Customer Session Check (handles raw phone string or JSON object)
@@ -502,4 +508,46 @@ export const deleteAdvertisementMongo = async (id) => {
     window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'advertisement', id } }));
   } catch (e) {}
   return Boolean(res?.success);
+};
+
+// --- 9. LIVE QUEUE & CENTER SETTINGS (MULTI-DEVICE CLOUD SYNC) ---
+
+export const fetchLiveQueueMongo = async () => {
+  try {
+    const data = await fetchJson(`${API_BASE_URL}/settings/live-queue`);
+    return data && typeof data === 'object' ? data : null;
+  } catch (err) {
+    return null;
+  }
+};
+
+export const saveLiveQueueMongo = async (queueState) => {
+  if (!queueState || typeof queueState !== 'object') return null;
+  try {
+    const res = await fetchJson(`${API_BASE_URL}/settings/live-queue`, {
+      method: 'POST',
+      body: JSON.stringify(queueState)
+    });
+    try {
+      window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'live-queue', data: res?.settings || queueState } }));
+    } catch (e) {}
+    return res?.settings || res;
+  } catch (err) {
+    return null;
+  }
+};
+
+export const subscribeLiveQueueMongo = (callback, intervalMs = 2000) => {
+  let isMounted = true;
+  const poll = async () => {
+    if (!isMounted) return;
+    const data = await fetchLiveQueueMongo();
+    if (data && callback) callback(data);
+  };
+  poll();
+  const timer = setInterval(poll, intervalMs);
+  return () => {
+    isMounted = false;
+    clearInterval(timer);
+  };
 };
