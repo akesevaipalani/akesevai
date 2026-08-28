@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download, Trash2, Clock3, AlertCircle, RefreshCw, X } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
-import { requestTokenBookingCloud, checkDuplicateUtrCloud, subscribeTokens, deleteTokenBookingCloud, fetchAllTokensCloud } from '../utils/dataService';
+import { requestTokenBookingCloud, checkDuplicateUtrCloud, subscribeTokens, deleteTokenBookingCloud, fetchAllTokensCloud, subscribeLiveQueue } from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
 import { APPOINTMENT_TIME_SLOTS } from '../config/businessHours';
 
@@ -21,6 +21,18 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState('');
   const [copiedUpi, setCopiedUpi] = useState(false);
+  const [activeUpiId, setActiveUpiId] = useState('alakesh.kumar7-1@okicici');
+
+  useEffect(() => {
+    const unsubQueue = subscribeLiveQueue((cloudStatus) => {
+      if (cloudStatus && cloudStatus.upiId) {
+        setActiveUpiId(cloudStatus.upiId);
+      }
+    });
+    return () => {
+      if (typeof unsubQueue === 'function') unsubQueue();
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -39,13 +51,21 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
 
   useEffect(() => {
     if (defaultToken) {
-      setGeneratedToken((prev) => {
-        if (!prev && !defaultToken) return prev;
-        if (prev && defaultToken && (prev.id === defaultToken.id || prev.tokenNo === defaultToken.tokenNo) && prev.paymentStatus === defaultToken.paymentStatus) {
-          return prev;
-        }
-        return defaultToken;
-      });
+      const todayStr = new Date().toISOString().split('T')[0];
+      const isToday = defaultToken.date === todayStr;
+      const isVerified = (defaultToken.paymentStatus === 'VERIFIED' || String(defaultToken.status || '').includes('VERIFIED')) && Boolean(defaultToken.tokenNo);
+
+      if (isToday && isVerified) {
+        setGeneratedToken((prev) => {
+          if (!prev && !defaultToken) return prev;
+          if (prev && defaultToken && (prev.id === defaultToken.id || prev.tokenNo === defaultToken.tokenNo) && prev.paymentStatus === defaultToken.paymentStatus) {
+            return prev;
+          }
+          return defaultToken;
+        });
+      } else {
+        setGeneratedToken(null);
+      }
     }
   }, [defaultToken]);
 
@@ -216,12 +236,8 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
       setShowPaymentModal(false);
       setPaymentLoading(false);
       setUtrNumber('');
-
-      if (typeof onTokenSaved === 'function') {
-        try {
-          onTokenSaved(savedToken || tokenRequest);
-        } catch (err) {}
-      }
+      // Gating: onTokenSaved is NOT called for PENDING_VERIFICATION.
+      // onTokenSaved is only called by the real-time sync listener once the token is strictly VERIFIED with a valid backend tokenNo.
     } catch (err) {
       setPaymentError(`❌ பிழை: ${err.message || 'கட்டணத்தை சமர்ப்பிக்க முடியவில்லை'}`);
       setPaymentLoading(false);
@@ -833,7 +849,7 @@ Mill Road, Sanmugapuram, Palani - 624601
               <div style={{ textAlign: 'center', background: '#f0fdf4', border: '1.5px dashed #86efac', borderRadius: '14px', padding: '14px', marginBottom: '14px' }}>
                 <div style={{ width: '120px', height: '120px', margin: '0 auto 8px', background: '#ffffff', padding: '6px', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent('upi://pay?pa=alakesh.kumar7@okhdfcbank&pn=AkEsevai%20Palani&am=50&cu=INR&tn=AkEsevai%20Token%20Fee')}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`upi://pay?pa=${activeUpiId}&pn=AkEsevai%20Palani&am=50&cu=INR&tn=AkEsevai%20Token%20Fee`)}`}
                     alt="UPI QR Code"
                     style={{ width: '100%', height: '100%', display: 'block' }}
                   />
@@ -843,12 +859,12 @@ Mill Road, Sanmugapuram, Palani - 624601
                 </span>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#dcfce7', padding: '4px 10px', borderRadius: '6px' }}>
                   <code style={{ color: '#166534', fontSize: '12px', fontWeight: 800 }}>
-                    alakesh.kumar7@okhdfcbank
+                    {activeUpiId}
                   </code>
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText('alakesh.kumar7@okhdfcbank');
+                      navigator.clipboard.writeText(activeUpiId);
                       setCopiedUpi(true);
                       setTimeout(() => setCopiedUpi(false), 2000);
                     }}

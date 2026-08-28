@@ -1236,7 +1236,7 @@ function App() {
           {page === 'token-generator' && <TokenGeneratorPage onTokenSaved={saveToken} lang={lang} />}
           {page === 'about' && <AboutPage navigate={navigate} lang={lang} />}
           {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
-          {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} onClose={() => navigate('home')} />}
+          {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} customerRecords={customerRecords} onClose={() => navigate('home')} />}
           {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} activeTab={customerTab} setActiveTab={setCustomerTab} lang={lang} navigate={navigate} />}
           {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
         </main>
@@ -1829,7 +1829,7 @@ const getServiceVisual = (group, title = '') => {
     const [closedNoticeText, setClosedNoticeText] = useState('மையம் தற்போது மூடப்பட்டுள்ளது');
     const [openTimeText, setOpenTimeText] = useState('Mon–Sat 10:00 AM');
     const [serviceOfDay, setServiceOfDay] = useState('auto');
-    const [upiId, setUpiId] = useState('alakesh.kumar7@okhdfcbank');
+    const [upiId, setUpiId] = useState('alakesh.kumar7-1@okicici');
     const [msg, setMsg] = useState('');
 
     useEffect(() => {
@@ -2051,7 +2051,7 @@ const getServiceVisual = (group, title = '') => {
               type="text"
               value={upiId}
               onChange={(e) => setUpiId(e.target.value)}
-              placeholder="e.g. alakesh.kumar7@okhdfcbank"
+              placeholder="e.g. alakesh.kumar7-1@okicici"
               style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginTop: '4px', fontSize: '13px', fontWeight: 700 }}
             />
           </label>
@@ -4911,8 +4911,15 @@ const getServiceVisual = (group, title = '') => {
         {activeTab === 'token-slip' && (
           <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
             <TokenPass
-              defaultToken={customer.lastToken || null}
-              initialName={customer.profile.name || ''}
+              defaultToken={(() => {
+                const lt = customer.lastToken;
+                if (!lt) return null;
+                const todayStr = new Date().toISOString().split('T')[0];
+                const isToday = lt.date === todayStr;
+                const isVerified = (lt.paymentStatus === 'VERIFIED' || String(lt.status || '').includes('VERIFIED')) && Boolean(lt.tokenNo);
+                return isToday && isVerified ? lt : null;
+              })()}
+              initialName={customer.profile?.name || ''}
               initialPhone={customer.phone || ''}
               onTokenSaved={(tok) => {
                 if (typeof saveToken === 'function') saveToken(tok);

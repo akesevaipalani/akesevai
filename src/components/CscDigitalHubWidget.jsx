@@ -13,7 +13,7 @@ export default function CscDigitalHubWidget({ navigate }) {
       queueCount: '0 நபர்கள் (In Queue)',
       waitTime: '~ 0 நிமிடங்கள்',
       statusText: op.statusText,
-      upiId: 'alakesh.kumar7@okhdfcbank'
+      upiId: 'alakesh.kumar7-1@okicici'
     };
   });
 
@@ -26,7 +26,7 @@ export default function CscDigitalHubWidget({ navigate }) {
     return () => unsubscribe();
   }, []);
 
-  const upiId = queueStatus.upiId || 'alakesh.kumar7@okhdfcbank';
+  const upiId = queueStatus.upiId || 'alakesh.kumar7-1@okicici';
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(`upi://pay?pa=${upiId}&pn=AkEsevai%20Centre&am=50&cu=INR`)}`;
 
   const handleCopyUpi = () => {

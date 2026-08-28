@@ -477,10 +477,10 @@ export const rejectTokenPaymentCloud = async (id, reason = '') => {
 
 export const saveTokenBookingCloud = async (tokenData) => {
   if (!tokenData) return;
-  const isVerified = tokenData.paymentStatus === 'VERIFIED' || String(tokenData.status || '').includes('VERIFIED') || (tokenData.tokenNo && String(tokenData.tokenNo).startsWith('TOK-'));
-  const tokenNo = isVerified ? (tokenData.tokenNo || tokenData.tokenId || `TOK-${Date.now()}`) : '';
+  const isVerified = (tokenData.paymentStatus === 'VERIFIED' || String(tokenData.status || '').includes('VERIFIED')) && Boolean(tokenData.tokenNo);
+  const tokenNo = isVerified ? String(tokenData.tokenNo || tokenData.tokenId || '') : '';
   const cleanPhone = String(tokenData.phone || tokenData.customerPhone || '').replace(/\D/g, '');
-  const recordId = tokenData.id || tokenNo || `REQ-${Date.now()}`;
+  const recordId = tokenData.id || (tokenNo ? tokenNo : `REQ-${cleanPhone || 'anon'}`);
 
   const dataToSave = {
     ...tokenData,

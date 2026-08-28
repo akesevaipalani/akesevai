@@ -23,6 +23,7 @@ export default function AdminCenterBannersControl({ notify }) {
   const [waitingCount, setWaitingCount] = useState('3');
   const [waitTime, setWaitTime] = useState('5-10');
   const [openTime, setOpenTime] = useState('திங்கள் - சனி காலை 10:00 - இரவு 8:00');
+  const [upiId, setUpiId] = useState('alakesh.kumar7-1@okicici');
 
   // Service of the Day State
   const [sodTamil, setSodTamil] = useState('சாதிச் சான்றிதழ்');
@@ -41,6 +42,7 @@ export default function AdminCenterBannersControl({ notify }) {
         if (data.queueCount !== undefined) setWaitingCount(String(data.queueCount));
         if (data.waitTime) setWaitTime(data.waitTime);
         if (data.openTime) setOpenTime(data.openTime);
+        if (data.upiId) setUpiId(data.upiId);
       }
     });
 
@@ -65,14 +67,29 @@ export default function AdminCenterBannersControl({ notify }) {
 
   const handleSaveLiveQueue = async (e) => {
     e.preventDefault();
+
+    const cleanUpi = String(upiId || '').trim();
+    if (!cleanUpi) {
+      if (notify) notify('⚠️ UPI ID காலியாக இருக்கக்கூடாது (UPI ID is required)!');
+      return;
+    }
+
+    // Basic valid UPI VPA format check: e.g. username@bank
+    const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z0-9]{2,64}$/;
+    if (!upiRegex.test(cleanUpi)) {
+      if (notify) notify('⚠️ சரியான UPI ID வடிவத்தை உள்ளிடவும் (e.g. username@okaxis, name@okhdfcbank, mobile@upi)!');
+      return;
+    }
+
     const payload = {
       status: centerStatus,
       queueCount: waitingCount,
       waitTime: waitTime,
-      openTime: openTime
+      openTime: openTime,
+      upiId: cleanUpi
     };
     await saveLiveQueueCloud(payload);
-    if (notify) notify('🟢 மைய நேரலை நிலை மற்றும் காத்திருப்பு நேரம் வெற்றிகரமாக புதுப்பிக்கப்பட்டது!');
+    if (notify) notify('🟢 மைய நேரலை நிலை, காத்திருப்பு நேரம் மற்றும் UPI ID வெற்றிகரமாக புதுப்பிக்கப்பட்டது!');
   };
 
   const handlePresetSelect = (preset) => {
@@ -179,6 +196,25 @@ export default function AdminCenterBannersControl({ notify }) {
               onChange={(e) => setOpenTime(e.target.value)}
               style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }}
             />
+          </div>
+
+          <div>
+            <label htmlFor="admin-upi-id-input" style={{ fontSize: '11px', fontWeight: 800, color: '#0369a1', display: 'block', marginBottom: '4px' }}>
+              💳 கட்டணம் செலுத்தும் UPI ID (GPay / PhonePe / Paytm / QR):
+            </label>
+            <input
+              id="admin-upi-id-input"
+              name="upi_id_text"
+              type="text"
+              required
+              value={upiId}
+              onChange={(e) => setUpiId(e.target.value)}
+              placeholder="e.g. alakesh.kumar7-1@okicici"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #7dd3fc', fontSize: '13px', fontWeight: 800, color: '#022c7a', background: '#f0f9ff' }}
+            />
+            <small style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '3px' }}>
+              வாடிக்கையாளர் முன்னுரிமை டோக்கன் QR மற்றும் நேரலை கட்டணங்களுக்கு இந்த UPI ID பயன்படுத்தப்படும்.
+            </small>
           </div>
 
           <button

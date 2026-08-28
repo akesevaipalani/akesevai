@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowRight, LockKeyhole, Phone, ShieldCheck, UserCheck, Eye, EyeOff, KeyRound, Fingerprint, ArrowLeft, UserPlus, MessageSquareCode, CheckCircle2, X, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
-import { sendOtpCloud, verifyOtpCloud, resendOtpCloud } from '../utils/dataService';
+import { sendOtpCloud, verifyOtpCloud, resendOtpCloud, fetchSingleCustomerProfileCloud } from '../utils/dataService';
 
 export default function OtpGate({ onVerified, notify, customerRecords, onClose }) {
   const [step, setStep] = useState(1); // 1: Mobile Number, 2: Password / Setup
@@ -92,13 +92,15 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
     if (sendingOtp || isSendingOtpRef.current || loading) return;
 
     const cleanedPhone = phone.replace(/\D/g, '');
-    if (cleanedPhone.length !== 10) {
+    const cleanDigits = cleanedPhone.length >= 10 ? cleanedPhone.slice(-10) : cleanedPhone;
+    if (cleanDigits.length !== 10) {
       if (typeof notify === 'function') notify('⚠️ தயவுசெய்து 10-இலக்க மொபைல் எண்ணை உள்ளிடவும் (Enter valid 10-digit mobile number)');
       setIsError(true);
       setTimeout(() => setIsError(false), 1200);
       return;
     }
 
+    // Fast path: In-memory customerRecords / LocalStorage cache
     let records = customerRecords;
     if (!records || typeof records !== 'object' || Object.keys(records).length === 0) {
       try {
@@ -110,18 +112,73 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
       }
     }
 
-    const cleanDigits = cleanedPhone.replace(/\D/g, '');
-    const exists = Boolean(records && (records[cleanedPhone] || records[cleanDigits] || records[`+91 ${cleanDigits}`] || records[`+91${cleanDigits}`]));
+    let exists = Boolean(records && (records[cleanDigits] || records[`+91 ${cleanDigits}`] || records[`+91${cleanDigits}`] || records[`91${cleanDigits}`]));
+
+    // Real-time Cloud Verification: If not in local cache, query MongoDB Cloud directly
+    if (!exists) {
+      setLoading(true);
+      let cloudLookupFailed = false;
+      try {
+        const apiBase = (typeof window !== 'undefined' && import.meta.env?.VITE_API_URL && !import.meta.env.VITE_API_URL.includes('localhost') && import.meta.env.VITE_API_URL.startsWith('http'))
+          ? import.meta.env.VITE_API_URL
+          : '/api';
+
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
+
+        const res = await fetch(`${apiBase}/customers/${cleanDigits}`, {
+          signal: controller?.signal,
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (timeoutId) clearTimeout(timeoutId);
+
+        if (res.status === 200) {
+          const cloudCustomer = await res.json();
+          if (cloudCustomer && (cloudCustomer.phone || cloudCustomer.name || cloudCustomer.profile)) {
+            exists = true;
+            // Cache to localStorage for fast subsequent lookup
+            try {
+              const localRecs = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+              localRecs[cleanDigits] = cloudCustomer;
+              localStorage.setItem('akesevai-customer-records', JSON.stringify(localRecs));
+              localStorage.setItem('akesevai-customers', JSON.stringify(localRecs));
+            } catch (e) {}
+          }
+        } else if (res.status === 404) {
+          // Confirmed by backend that customer does not exist
+          exists = false;
+        } else {
+          // Server returned 500, 502, 503, 504 or other non-404 error
+          cloudLookupFailed = true;
+        }
+      } catch (cloudErr) {
+        cloudLookupFailed = true;
+        console.warn('Direct Cloud Customer Lookup failed:', cloudErr);
+      } finally {
+        setLoading(false);
+      }
+
+      if (cloudLookupFailed) {
+        if (typeof notify === 'function') {
+          notify('⚠️ சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+        }
+        setErrorMessage('சர்வர் இணைப்பு பிழை. தயவுசெய்து சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.');
+        setIsError(true);
+        setTimeout(() => setIsError(false), 2500);
+        return;
+      }
+    }
+
     setIsExistingUser(exists);
     setStep(2);
     setOtpInput('');
 
     if (exists) {
-      if (typeof notify === 'function') notify(`👋 நல்வரவு! +91 ${cleanedPhone} கணக்கின் கடவுச்சொல்லை உள்ளிடவும்.`);
+      if (typeof notify === 'function') notify(`👋 நல்வரவு! +91 ${cleanDigits} கணக்கின் கடவுச்சொல்லை உள்ளிடவும்.`);
     } else {
       if (typeof notify === 'function') notify(`✨ புதிய வாடிக்கையாளர்! விவரங்களை பூர்த்தி செய்து SMS OTP மூலம் கணக்கைத் தொடங்கவும்.`);
       // Trigger real SMS OTP generation for new user registration (single execution)
-      await triggerSendOtp(cleanedPhone, 'register');
+      await triggerSendOtp(cleanDigits, 'register');
     }
   };
 
