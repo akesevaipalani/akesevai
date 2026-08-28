@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download, Trash2, Clock3, AlertCircle, RefreshCw, X } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
-import { requestTokenBookingCloud, checkDuplicateUtrCloud, subscribeTokens, deleteTokenBookingCloud, fetchAllTokensCloud, subscribeLiveQueue } from '../utils/dataService';
+import { requestTokenBookingCloud, checkDuplicateUtrCloud, subscribeTokens, deleteTokenBookingCloud, fetchTokensByPhoneCloud, subscribeLiveQueue } from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
 import { APPOINTMENT_TIME_SLOTS } from '../config/businessHours';
 
@@ -70,6 +70,47 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
   }, [defaultToken]);
 
   const syncedKeyRef = useRef('');
+  const dismissedTokenIdRef = useRef('');
+
+  // Auto-restore today's token status (Pending / Verified / Rejected) on page refresh or phone entry
+  useEffect(() => {
+    const rawPhone = formData.phone || initialPhone || '';
+    const cleanPhone = String(rawPhone).replace(/\D/g, '').slice(-10);
+    if (cleanPhone.length !== 10) return;
+    if (generatedToken) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const restoreActiveToken = async () => {
+      try {
+        const matchingTokens = await fetchTokensByPhoneCloud(cleanPhone, todayStr);
+        if (Array.isArray(matchingTokens) && matchingTokens.length > 0) {
+          // Sort by latest action timestamp (updatedAt or createdAt) descending
+          matchingTokens.sort(
+            (a, b) =>
+              new Date(b.updatedAt || b.createdAt || 0) -
+              new Date(a.updatedAt || a.createdAt || 0)
+          );
+
+          const found = matchingTokens[0];
+          const foundKey = String(found.id || found.utr || found.tokenNo || '');
+
+          if (dismissedTokenIdRef.current && dismissedTokenIdRef.current === foundKey) {
+            return;
+          }
+
+          setGeneratedToken(found);
+          if (found.tokenNo && found.paymentStatus === 'VERIFIED' && typeof onTokenSaved === 'function') {
+            onTokenSaved(found);
+          }
+        }
+      } catch (err) {
+        console.warn('Token auto-restore lookup notice:', err);
+      }
+    };
+
+    restoreActiveToken();
+  }, [formData.phone, initialPhone, generatedToken]);
 
   // Real-time synchronization: if current token is pending, listen for Admin Verification
   useEffect(() => {
@@ -77,6 +118,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
 
     const targetId = generatedToken.id || generatedToken.tokenNo;
     const targetUtr = generatedToken.utr;
+    const targetPhone = String(generatedToken.phone || formData.phone || initialPhone || '').replace(/\D/g, '').slice(-10);
 
     const syncFoundToken = (found) => {
       if (!found) return;
@@ -101,13 +143,6 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
       }
     };
 
-    const unsub = subscribeTokens((allTokens) => {
-      if (Array.isArray(allTokens)) {
-        const found = allTokens.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
-        if (found) syncFoundToken(found);
-      }
-    });
-
     const handleDataChanged = async () => {
       try {
         const raw = localStorage.getItem('akesevai-token-bookings');
@@ -119,10 +154,12 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
             return;
           }
         }
-        const cloudTokens = await fetchAllTokensCloud();
-        if (Array.isArray(cloudTokens)) {
-          const found = cloudTokens.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
-          if (found) syncFoundToken(found);
+        if (targetPhone) {
+          const cloudTokens = await fetchTokensByPhoneCloud(targetPhone);
+          if (Array.isArray(cloudTokens)) {
+            const found = cloudTokens.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
+            if (found) syncFoundToken(found);
+          }
         }
       } catch (e) {}
     };
@@ -133,7 +170,6 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
 
     return () => {
       clearInterval(intervalTimer);
-      if (typeof unsub === 'function') unsub();
       window.removeEventListener('akesevai-data-changed', handleDataChanged);
       window.removeEventListener('storage', handleDataChanged);
     };
@@ -157,6 +193,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
       } catch (err) {}
     }
 
+    dismissedTokenIdRef.current = String(targetTokenNo || '');
     setGeneratedToken(null);
     alert(`🗑️ டோக்கன் பதிவு வெற்றிகரமாக ரத்து செய்யப்பட்டது. (Token cancelled & deleted)`);
   };
@@ -661,11 +698,12 @@ Mill Road, Sanmugapuram, Palani - 624601
                   type="button"
                   onClick={async () => {
                     try {
-                      const all = await fetchAllTokensCloud();
+                      const targetPhone = String(generatedToken?.phone || formData.phone || initialPhone || '').replace(/\D/g, '').slice(-10);
+                      const phoneTokens = targetPhone ? await fetchTokensByPhoneCloud(targetPhone) : [];
                       const targetId = generatedToken?.id || generatedToken?.tokenNo;
                       const targetUtr = generatedToken?.utr;
-                      if (Array.isArray(all)) {
-                        const found = all.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
+                      if (Array.isArray(phoneTokens)) {
+                        const found = phoneTokens.find(t => (t.id && t.id === targetId) || (t.utr && targetUtr && t.utr === targetUtr));
                         if (found) {
                           setGeneratedToken(found);
                           if (found.tokenNo && found.paymentStatus === 'VERIFIED' && typeof onTokenSaved === 'function') {
@@ -737,6 +775,7 @@ Mill Road, Sanmugapuram, Palani - 624601
               <button
                 type="button"
                 onClick={() => {
+                  dismissedTokenIdRef.current = String(currentToken?.id || currentToken?.utr || 'dismissed');
                   setGeneratedToken(null);
                   setShowPaymentModal(true);
                 }}

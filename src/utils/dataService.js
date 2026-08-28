@@ -18,6 +18,7 @@ import {
   rejectTokenPaymentMongo,
   checkDuplicateUtrMongo,
   fetchAllTokensMongo,
+  fetchTokensByPhoneMongo,
   deleteTokenBookingMongo,
   subscribeTokensMongo,
   fetchDeletedCustomersMongo,
@@ -51,6 +52,10 @@ export const resendOtpCloud = async (phone, purpose) => {
 
 export const fetchAllTokensCloud = async () => {
   return await fetchAllTokensMongo();
+};
+
+export const fetchTokensByPhoneCloud = async (phone, date = '') => {
+  return await fetchTokensByPhoneMongo(phone, date);
 };
 
 export const fetchNotificationsCloud = async (category, status) => {

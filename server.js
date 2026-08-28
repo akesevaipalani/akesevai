@@ -2207,9 +2207,60 @@ async function generateNextDailyTokenNumber(dateStr) {
   }
 }
 
+// 1. Phone-Specific Token Lookup for Customers (Privacy Hardened)
+app.get('/api/tokens/by-phone/:phone', async (req, res) => {
+  try {
+    const rawPhone = req.params.phone;
+    const cleanPhone = String(rawPhone || '').replace(/\D/g, '').slice(-10);
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      return res.json([]);
+    }
+
+    const query = {
+      $or: [
+        { phone: cleanPhone },
+        { phone: `91${cleanPhone}` },
+        { phone: `+91${cleanPhone}` },
+        { phone: `+91 ${cleanPhone}` },
+        { phone: { $regex: `${cleanPhone}$` } }
+      ]
+    };
+
+    if (req.query.date) {
+      query.date = String(req.query.date).trim();
+    }
+
+    const tokens = await Token.find(query).sort({ updatedAt: -1, createdAt: -1 }).lean();
+    res.json(tokens);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Admin & General Tokens API (With optional phone & date query filters)
 app.get('/api/tokens', async (req, res) => {
   try {
-    const tokens = await Token.find().sort({ createdAt: -1 }).lean();
+    const query = {};
+    if (req.query.phone) {
+      const cleanPhone = String(req.query.phone).replace(/\D/g, '').slice(-10);
+      if (cleanPhone.length === 10) {
+        query.$or = [
+          { phone: cleanPhone },
+          { phone: `91${cleanPhone}` },
+          { phone: `+91${cleanPhone}` },
+          { phone: `+91 ${cleanPhone}` },
+          { phone: { $regex: `${cleanPhone}$` } }
+        ];
+      } else {
+        return res.json([]);
+      }
+    }
+
+    if (req.query.date) {
+      query.date = String(req.query.date).trim();
+    }
+
+    const tokens = await Token.find(query).sort({ updatedAt: -1, createdAt: -1 }).lean();
     res.json(tokens);
   } catch (err) {
     res.status(500).json({ error: err.message });

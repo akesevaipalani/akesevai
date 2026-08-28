@@ -242,6 +242,18 @@ export const fetchAllTokensMongo = async () => {
   return (await fetchJson(`${API_BASE_URL}/tokens`)) || [];
 };
 
+export const fetchTokensByPhoneMongo = async (phone, date = '') => {
+  const cleanPhone = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (!cleanPhone || cleanPhone.length !== 10) return [];
+  try {
+    const url = `${API_BASE_URL}/tokens/by-phone/${encodeURIComponent(cleanPhone)}${date ? `?date=${encodeURIComponent(date)}` : ''}`;
+    const res = await fetchJson(url);
+    return Array.isArray(res) ? res : [];
+  } catch (err) {
+    return [];
+  }
+};
+
 export const deleteTokenBookingMongo = async (id) => {
   if (!id) return false;
   const res = await fetchJson(`${API_BASE_URL}/tokens/${id}`, {
