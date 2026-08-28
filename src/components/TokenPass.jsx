@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download, Trash2, Clock3, AlertCircle, RefreshCw, X } from 'lucide-react';
+import { Ticket, Printer, MessageCircle, Sparkles, CheckCircle2, ShieldCheck, QrCode, ArrowRight, Smartphone, Copy, ExternalLink, Award, FileText, Check, Download, Trash2, Clock3, AlertCircle, RefreshCw, X, Zap } from 'lucide-react';
 import { saveApplicationRecord } from '../utils/statusStore';
 import { requestTokenBookingCloud, checkDuplicateUtrCloud, subscribeTokens, deleteTokenBookingCloud, fetchTokensByPhoneCloud, subscribeLiveQueue } from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
@@ -217,6 +217,41 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
 
     setPaymentError('');
     setShowPaymentModal(true);
+  };
+
+  // Direct Mobile Payment: Google Pay Intent / Deep Link
+  const handleOpenGPay = () => {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const isAndroid = /Android/i.test(navigator.userAgent || '');
+
+    const params = `pa=${encodeURIComponent(activeUpiId)}&pn=${encodeURIComponent('AkEsevai Palani')}&am=50&cu=INR&tn=${encodeURIComponent('AkEsevai Token Fee')}`;
+
+    if (isAndroid) {
+      // Android: Target Google Pay app intent or tez scheme
+      const gpayIntent = `intent://pay?${params}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
+      try {
+        window.location.href = gpayIntent;
+      } catch (e) {
+        window.location.href = `tez://upi/pay?${params}`;
+      }
+    } else if (isMobile) {
+      // iOS / other mobile devices
+      window.location.href = `upi://pay?${params}`;
+    } else {
+      alert('💻 நீங்கள் டெஸ்க்டாப்பில் உள்ளீர்கள்.\n\nதயவுசெய்து கீழே உள்ள QR Code-ஐ உங்கள் மொபைல் Google Pay அல்லது PhonePe மூலம் Scan செய்து கட்டணம் செலுத்துங்கள்.');
+    }
+  };
+
+  // Direct Mobile Payment: Generic UPI Chooser (PhonePe / Paytm / BHIM)
+  const handleOpenOtherUpi = () => {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const params = `pa=${encodeURIComponent(activeUpiId)}&pn=${encodeURIComponent('AkEsevai Palani')}&am=50&cu=INR&tn=${encodeURIComponent('AkEsevai Token Fee')}`;
+
+    if (isMobile) {
+      window.location.href = `upi://pay?${params}`;
+    } else {
+      alert('💻 நீங்கள் டெஸ்க்டாப்பில் உள்ளீர்கள்.\n\nதயவுசெய்து கீழே உள்ள QR Code-ஐ உங்கள் மொபைல் UPI App மூலம் Scan செய்து கட்டணம் செலுத்துங்கள்.');
+    }
   };
 
   // Step 2: Customer Submits UTR for Verification (Status: PENDING_VERIFICATION)
@@ -884,18 +919,68 @@ Mill Road, Sanmugapuram, Palani - 624601
                 </div>
               </div>
 
+              {/* DIRECT MOBILE PAYMENT ACTION BUTTONS */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+                <button
+                  id="token-modal-gpay-btn"
+                  type="button"
+                  onClick={handleOpenGPay}
+                  style={{
+                    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '12px 16px',
+                    fontSize: '13px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 3px 10px rgba(22,163,74,0.3)',
+                    transition: 'transform 0.15s ease'
+                  }}
+                >
+                  <Smartphone size={16} /> 🟢 Google Pay மூலம் செலுத்தவும் (Pay ₹50)
+                </button>
+
+                <button
+                  id="token-modal-other-upi-btn"
+                  type="button"
+                  onClick={handleOpenOtherUpi}
+                  style={{
+                    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '10px',
+                    padding: '11px 16px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 3px 10px rgba(2,132,199,0.25)'
+                  }}
+                >
+                  <Zap size={15} /> 🔵 மற்ற UPI App (PhonePe / Paytm) மூலம் செலுத்தவும்
+                </button>
+              </div>
+
               {/* QR Code and UPI ID */}
-              <div style={{ textAlign: 'center', background: '#f0fdf4', border: '1.5px dashed #86efac', borderRadius: '14px', padding: '14px', marginBottom: '14px' }}>
-                <div style={{ width: '120px', height: '120px', margin: '0 auto 8px', background: '#ffffff', padding: '6px', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+              <div style={{ textAlign: 'center', background: '#f0fdf4', border: '1.5px dashed #86efac', borderRadius: '14px', padding: '12px', marginBottom: '14px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+                  📱 அல்லது QR Code-ஐ ஸ்கேன் செய்து ₹50 செலுத்தவும்
+                </span>
+                <div style={{ width: '110px', height: '110px', margin: '0 auto 6px', background: '#ffffff', padding: '6px', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
                   <img
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`upi://pay?pa=${activeUpiId}&pn=AkEsevai%20Palani&am=50&cu=INR&tn=AkEsevai%20Token%20Fee`)}`}
                     alt="UPI QR Code"
                     style={{ width: '100%', height: '100%', display: 'block' }}
                   />
                 </div>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                  📱 GPay / PhonePe / Paytm மூலம் ₹50 ஸ்கேன் செய்யவும்
-                </span>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#dcfce7', padding: '4px 10px', borderRadius: '6px' }}>
                   <code style={{ color: '#166534', fontSize: '12px', fontWeight: 800 }}>
                     {activeUpiId}
