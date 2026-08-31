@@ -7482,6 +7482,44 @@ html, body, #root, .app-shell {
 }
 
 /* ==========================================================================
+   PHOTO TOOLS RESPONSIVE STUDIO & HUB GRID
+   ========================================================================== */
+.photo-tools-studio-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.photo-tools-studio-grid.has-preview {
+  grid-template-columns: 1fr 1fr;
+}
+
+@media (max-width: 900px) {
+  .photo-tools-studio-grid,
+  .photo-tools-studio-grid.has-preview {
+    grid-template-columns: 1fr !important;
+    gap: 20px;
+  }
+  .photo-tools-touch-btn {
+    min-height: 44px !important;
+  }
+  .photo-tools-download-btn {
+    min-height: 52px !important;
+    font-size: 15px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .photo-tools-studio-grid {
+    gap: 16px;
+  }
+  .tool-engine-wrapper {
+    padding: 10px 12px !important;
+  }
+}
+
+/* ==========================================================================
    RESPONSIVE ADVERTISEMENT BANNER CAROUSEL SYSTEM
    ========================================================================== */
 .ad-banner-section {

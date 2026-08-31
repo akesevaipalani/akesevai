@@ -81,6 +81,12 @@ const fetchJson = async (url, options = {}, timeoutMs = 6000) => {
       if (res.status === 401 || res.status === 403) {
         return null;
       }
+      if (data && (data.message || data.error)) {
+        const error = new Error(data.message || data.error);
+        error.status = res.status;
+        error.data = data;
+        throw error;
+      }
       return null;
     }
     return data;
@@ -204,6 +210,9 @@ export const requestTokenBookingMongo = async (tokenRequest) => {
     method: 'POST',
     body: JSON.stringify(tokenRequest)
   });
+  if (res && res.error && !res.token) {
+    throw new Error(res.message || res.error);
+  }
   try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'token', id: res?.token?.id || tokenRequest.id } })); } catch (e) {}
   return res?.token || res;
 };

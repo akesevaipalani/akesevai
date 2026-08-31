@@ -51,6 +51,12 @@ const PAGE_SEO_MAP = {
     description: 'Location, phone number, WhatsApp contact and Google Maps address of AkEsevai Digital Service Centre opposite Palani Bus Stand. Call 93423 18844.',
     keywords: 'akesevai palani phone number, esevai maiyam near palani bus stand, akesevai contact palani, palani esevai address',
     canonical: 'https://www.akesevai.com/contact'
+  },
+  weblink: {
+    title: 'முக்கியமான அரசு & கல்வி இணையதளங்கள் | 100% Official Govt Links Directory – AkEsevai',
+    description: '100% Verified Official Government & Institutional Websites for College Admission (TNEA, NEET, JEE), Govt Jobs (NCS, TN Velaivaaippu), Scholarships (NSP), Documents (Aadhaar, PAN, Voter) & Services.',
+    keywords: 'official govt websites tamil nadu, tnea admission portal, nsp scholarship 2026, tn velaivaaippu ncs, uidai aadhaar, official government links, முக்கிய அரசு இணையதளங்கள்',
+    canonical: 'https://www.akesevai.com/weblink'
   }
 };
 

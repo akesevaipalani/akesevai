@@ -118,6 +118,28 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
         const canvas = canvasRef.current || document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
+        // Helper: Smart Aspect-Ratio Cover Crop (Protects face/image from stretching or squashing)
+        const drawImageAspectCover = (context, image, dx, dy, dWidth, dHeight) => {
+          const imgW = image.naturalWidth || image.width || 1;
+          const imgH = image.naturalHeight || image.height || 1;
+          const imgAspect = imgW / imgH;
+          const targetAspect = dWidth / dHeight;
+
+          let sx = 0, sy = 0, sw = imgW, sh = imgH;
+
+          if (imgAspect > targetAspect) {
+            // Source is wider than target -> crop sides evenly
+            sw = imgH * targetAspect;
+            sx = (imgW - sw) / 2;
+          } else {
+            // Source is taller than target -> crop top & bottom (with slight upward bias for portrait/face)
+            sh = imgW / targetAspect;
+            sy = Math.max(0, (imgH - sh) * 0.22);
+          }
+
+          context.drawImage(image, sx, sy, sw, sh, dx, dy, dWidth, dHeight);
+        };
+
         let targetW = img.naturalWidth || img.width;
         let targetH = img.naturalHeight || img.height;
 
@@ -135,8 +157,8 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
             // Apply filters
             ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
             
-            // Draw image scaled
-            ctx.drawImage(img, 0, 0, targetW, targetH);
+            // Draw image with smart aspect-ratio cover crop (prevents face distortion)
+            drawImageAspectCover(ctx, img, 0, 0, targetW, targetH);
             ctx.filter = 'none';
 
             // Draw border
@@ -180,7 +202,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
               for (let c = 0; c < 2; c++) {
                 const x = startX + c * (pw + gapX);
                 const y = startY + r * (ph + gapY);
-                ctx.drawImage(img, x, y, pw, ph);
+                drawImageAspectCover(ctx, img, x, y, pw, ph);
                 ctx.strokeStyle = '#94a3b8';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(x, y, pw, ph);
@@ -204,7 +226,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
               for (let c = 0; c < 4; c++) {
                 const x = startX + c * stepX;
                 const y = startY + r * stepY;
-                ctx.drawImage(img, x, y, pw, ph);
+                drawImageAspectCover(ctx, img, x, y, pw, ph);
                 ctx.strokeStyle = '#cbd5e1';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(x, y, pw, ph);
@@ -219,7 +241,11 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
           ctx.fillStyle = bgColor || '#ffffff';
           ctx.fillRect(0, 0, targetW, targetH);
-          ctx.drawImage(img, 0, 0, targetW, targetH);
+          if (lockAspect || tool.mode === 'passport-resize') {
+            drawImageAspectCover(ctx, img, 0, 0, targetW, targetH);
+          } else {
+            ctx.drawImage(img, 0, 0, targetW, targetH);
+          }
         } else if (tool.mode === 'crop') {
           // Crop with aspect ratio
           const currentAspect = aspectRatioVal || (3.5 / 4.5);
@@ -531,10 +557,10 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
       </div>
 
       {/* Main Interactive Studio Area */}
-      <div style={{ display: 'grid', gridTemplateColumns: previewUrl ? '1fr 1fr' : '1fr', gap: '24px', marginBottom: '32px' }}>
+      <div className={`photo-tools-studio-grid ${previewUrl ? 'has-preview' : 'no-preview'}`}>
         
         {/* Left Column: Upload & Controls */}
-        <div style={{ background: 'white', border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+        <div style={{ background: 'white', border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)', minWidth: 0, boxSizing: 'border-box' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Upload size={20} color="#0052cc" /> {isTa ? '1. கோப்பை பதிவேற்றவும்' : '1. Upload Photo / Document'}
           </h2>
@@ -545,12 +571,13 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
             style={{
               border: '2px dashed #93c5fd',
               borderRadius: '12px',
-              padding: '32px 20px',
+              padding: '28px 16px',
               textAlign: 'center',
               cursor: 'pointer',
               background: '#f8fafc',
               transition: 'all 0.2s ease',
-              marginBottom: '20px'
+              marginBottom: '20px',
+              boxSizing: 'border-box'
             }}
             onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#0052cc')}
             onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#93c5fd')}
@@ -585,27 +612,30 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
               {/* Passport Mode Controls */}
               {tool.mode === 'passport' && (
-                <div style={{ background: '#f1f5f9', padding: '14px', borderRadius: '10px', display: 'grid', gap: '12px' }}>
+                <div style={{ background: '#f1f5f9', padding: '14px', borderRadius: '10px', display: 'grid', gap: '12px', boxSizing: 'border-box' }}>
                   <div>
                     <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155', display: 'block', marginBottom: '6px' }}>
                       {isTa ? 'தாள் வகை (Paper Layout):' : 'Paper Layout:'}
                     </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '6px' }}>
                       <button
+                        className="photo-tools-touch-btn"
                         onClick={() => { setSheetType('single'); setTimeout(processImage, 50); }}
-                        style={{ padding: '8px', fontSize: '12px', fontWeight: 700, borderRadius: '6px', border: '1.5px solid', borderColor: sheetType === 'single' ? '#0052cc' : '#cbd5e1', background: sheetType === 'single' ? '#eff6ff' : 'white', color: sheetType === 'single' ? '#0052cc' : '#475569', cursor: 'pointer' }}
+                        style={{ padding: '10px 8px', fontSize: '12px', fontWeight: 700, borderRadius: '6px', border: '1.5px solid', borderColor: sheetType === 'single' ? '#0052cc' : '#cbd5e1', background: sheetType === 'single' ? '#eff6ff' : 'white', color: sheetType === 'single' ? '#0052cc' : '#475569', cursor: 'pointer', minHeight: '44px' }}
                       >
                         Single (1 Photo)
                       </button>
                       <button
+                        className="photo-tools-touch-btn"
                         onClick={() => { setSheetType('4x6'); setTimeout(processImage, 50); }}
-                        style={{ padding: '8px', fontSize: '12px', fontWeight: 700, borderRadius: '6px', border: '1.5px solid', borderColor: sheetType === '4x6' ? '#0052cc' : '#cbd5e1', background: sheetType === '4x6' ? '#eff6ff' : 'white', color: sheetType === '4x6' ? '#0052cc' : '#475569', cursor: 'pointer' }}
+                        style={{ padding: '10px 8px', fontSize: '12px', fontWeight: 700, borderRadius: '6px', border: '1.5px solid', borderColor: sheetType === '4x6' ? '#0052cc' : '#cbd5e1', background: sheetType === '4x6' ? '#eff6ff' : 'white', color: sheetType === '4x6' ? '#0052cc' : '#475569', cursor: 'pointer', minHeight: '44px' }}
                       >
                         4x6 (8 Photos)
                       </button>
                       <button
+                        className="photo-tools-touch-btn"
                         onClick={() => { setSheetType('a4'); setTimeout(processImage, 50); }}
-                        style={{ padding: '8px', fontSize: '12px', fontWeight: 700, borderRadius: '6px', border: '1.5px solid', borderColor: sheetType === 'a4' ? '#0052cc' : '#cbd5e1', background: sheetType === 'a4' ? '#eff6ff' : 'white', color: sheetType === 'a4' ? '#0052cc' : '#475569', cursor: 'pointer' }}
+                        style={{ padding: '10px 8px', fontSize: '12px', fontWeight: 700, borderRadius: '6px', border: '1.5px solid', borderColor: sheetType === 'a4' ? '#0052cc' : '#cbd5e1', background: sheetType === 'a4' ? '#eff6ff' : 'white', color: sheetType === 'a4' ? '#0052cc' : '#475569', cursor: 'pointer', minHeight: '44px' }}
                       >
                         A4 (32 Photos)
                       </button>
@@ -614,19 +644,20 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
                   {sheetType === 'single' && (
                     <div style={{ display: 'grid', gap: '10px' }}>
-                      <label htmlFor="photo-tools-stamp-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}>
+                      <label htmlFor="photo-tools-stamp-checkbox" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', minHeight: '36px' }}>
                         <input
                           id="photo-tools-stamp-checkbox"
                           name="include_stamp"
                           type="checkbox"
                           checked={includeStamp}
                           onChange={(e) => { setIncludeStamp(e.target.checked); setTimeout(processImage, 50); }}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#0052cc' }}
                         />
                         {isTa ? 'TNPSC பெயர் & தேதி முத்திரை சேர்க்க (Name & Date Stamp)' : 'Add Name & Date Stamp (TNPSC format)'}
                       </label>
 
                       {includeStamp && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
                           <input
                             id="photo-tools-stamp-name"
                             name="stamp_name"
@@ -636,7 +667,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
                             value={stampName}
                             onChange={(e) => setStampName(e.target.value)}
                             onBlur={() => processImage()}
-                            style={{ padding: '8px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                            style={{ padding: '10px', fontSize: '12.5px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box', minHeight: '42px' }}
                           />
                           <input
                             id="photo-tools-stamp-date"
@@ -645,7 +676,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
                             value={stampDate}
                             onChange={(e) => setStampDate(e.target.value)}
                             onBlur={() => processImage()}
-                            style={{ padding: '8px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                            style={{ padding: '10px', fontSize: '12.5px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box', minHeight: '42px' }}
                           />
                         </div>
                       )}
@@ -855,7 +886,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
         {/* Right Column: Live Before & After Preview / Download */}
         {previewUrl && (
-          <div style={{ background: 'white', border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div style={{ background: 'white', border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, boxSizing: 'border-box' }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -864,7 +895,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
               </div>
 
               {/* Size Comparison Badge */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '16px', border: '1px solid #cbd5e1' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '16px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}>
                 <div>
                   <small style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, display: 'block' }}>ORIGINAL SIZE:</small>
                   <strong style={{ fontSize: '16px', color: '#334155' }}>{originalSizeKb} KB</strong>
@@ -878,7 +909,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
               </div>
 
               {/* Visual Canvas Display */}
-              <div style={{ background: '#f1f5f9', borderRadius: '12px', padding: '16px', textAlign: 'center', minHeight: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0' }}>
+              <div style={{ background: '#f1f5f9', borderRadius: '12px', padding: '16px', textAlign: 'center', minHeight: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #e2e8f0', boxSizing: 'border-box', overflow: 'hidden' }}>
                 {tool.mode.includes('pdf') && pdfGeneratedUrl ? (
                   <div style={{ textAlign: 'center', padding: '20px' }}>
                     <FileText size={64} color="#dc2626" style={{ margin: '0 auto 12px' }} />
@@ -898,6 +929,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
             {/* Big Download Button */}
             <div style={{ marginTop: '20px' }}>
               <button
+                className="photo-tools-download-btn"
                 onClick={handleDownload}
                 disabled={!processedUrl}
                 style={{
@@ -915,7 +947,9 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
                   justifyContent: 'center',
                   gap: '8px',
                   boxShadow: '0 6px 20px rgba(22,163,74,0.3)',
-                  transition: 'transform 0.15s ease'
+                  transition: 'transform 0.15s ease',
+                  minHeight: '52px',
+                  boxSizing: 'border-box'
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-2px)')}
                 onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}

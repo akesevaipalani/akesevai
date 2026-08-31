@@ -4,6 +4,7 @@ import { saveApplicationRecord } from '../utils/statusStore';
 import { requestTokenBookingCloud, checkDuplicateUtrCloud, subscribeTokens, deleteTokenBookingCloud, fetchTokensByPhoneCloud, subscribeLiveQueue } from '../utils/dataService';
 import { printElement } from '../utils/printHelper';
 import { APPOINTMENT_TIME_SLOTS } from '../config/businessHours';
+import { siteConfig } from '../config/siteConfig';
 
 export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDeleted, initialName = '', initialPhone = '' }) {
   const [time, setTime] = useState(new Date());
@@ -21,6 +22,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState('');
   const [copiedUpi, setCopiedUpi] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState(false);
   const [activeUpiId, setActiveUpiId] = useState('alakesh.kumar7-1@okicici');
 
   useEffect(() => {
@@ -79,11 +81,9 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
     if (cleanPhone.length !== 10) return;
     if (generatedToken) return;
 
-    const todayStr = new Date().toISOString().split('T')[0];
-
     const restoreActiveToken = async () => {
       try {
-        const matchingTokens = await fetchTokensByPhoneCloud(cleanPhone, todayStr);
+        const matchingTokens = await fetchTokensByPhoneCloud(cleanPhone);
         if (Array.isArray(matchingTokens) && matchingTokens.length > 0) {
           // Sort by latest action timestamp (updatedAt or createdAt) descending
           matchingTokens.sort(
@@ -219,24 +219,91 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
     setShowPaymentModal(true);
   };
 
-  // Direct Mobile Payment: Google Pay Intent / Deep Link
-  const handleOpenGPay = () => {
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
-    const isAndroid = /Android/i.test(navigator.userAgent || '');
+  // Helper: Mobile Device Detection with full diagnostics
+  const getDeviceMobileContext = () => {
+    const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+    const platform = typeof navigator !== 'undefined' ? (navigator.platform || navigator.userAgentData?.platform || '') : '';
+    const width = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const height = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const hasTouch = typeof window !== 'undefined' && typeof navigator !== 'undefined' && Boolean(('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
+    const uaMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(ua);
+    const uaAndroid = /Android/i.test(ua) || (typeof navigator !== 'undefined' && navigator.userAgentData?.platform === 'Android');
+    const isClientHintMobile = typeof navigator !== 'undefined' && Boolean(navigator.userAgentData?.mobile);
 
-    const params = `pa=${encodeURIComponent(activeUpiId)}&pn=${encodeURIComponent('AkEsevai Palani')}&am=50&cu=INR&tn=${encodeURIComponent('AkEsevai Token Fee')}`;
+    const isMobile = uaMobile || isClientHintMobile || (hasTouch && (width <= 1024 || (typeof window !== 'undefined' && window.screen && window.screen.width <= 1024)));
+    const isAndroid = uaAndroid || (isMobile && !/iPhone|iPad|iPod/i.test(ua));
 
-    if (isAndroid) {
-      // Android: Target Google Pay app intent or tez scheme
-      const gpayIntent = `intent://pay?${params}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end`;
-      try {
-        window.location.href = gpayIntent;
-      } catch (e) {
-        window.location.href = `tez://upi/pay?${params}`;
+    console.log('📱 [AkEsevai Payment Mobile Detection Diagnostics]', {
+      userAgent: ua,
+      platform: platform,
+      innerWidth: width,
+      innerHeight: height,
+      hasTouch: hasTouch,
+      uaMobile: uaMobile,
+      uaAndroid: uaAndroid,
+      isClientHintMobile: isClientHintMobile,
+      isMobile: isMobile,
+      isAndroid: isAndroid
+    });
+
+    return { isMobile, isAndroid, ua, platform, width, height };
+  };
+
+  // Robust Clipboard Copy with Fallback for Local HTTP Network testing (e.g. http://192.168.1.3:5174)
+  const safeCopyToClipboard = (text) => {
+    return new Promise((resolve, reject) => {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+          .then(resolve)
+          .catch(() => fallbackCopy(text).then(resolve).catch(reject));
+      } else {
+        fallbackCopy(text).then(resolve).catch(reject);
       }
-    } else if (isMobile) {
-      // iOS / other mobile devices
-      window.location.href = `upi://pay?${params}`;
+    });
+  };
+
+  const fallbackCopy = (text) => {
+    return new Promise((resolve, reject) => {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        textArea.setAttribute('readonly', '');
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
+          resolve();
+        } else {
+          reject(new Error('execCommand returned false'));
+        }
+      } catch (err) {
+        reject(err);
+      }
+    });
+  };
+
+  // Temporary Diagnostic Mobile Payment: Google Pay / Standard UPI Launch WITHOUT 'am' parameter
+  const handleOpenGPay = () => {
+    const { isMobile } = getDeviceMobileContext();
+
+    // Diagnostic UPI URI: Omitted 'am' parameter to allow manual amount entry (e.g. ₹1 test)
+    const params = `pa=${activeUpiId}&pn=${encodeURIComponent('AkEsevai Palani')}&cu=INR&tn=${encodeURIComponent('AkEsevai Token Fee')}`;
+    const standardUpiUri = `upi://pay?${params}`;
+
+    console.log('🧪 [AkEsevai Diagnostic GPay Launch - Omitted am parameter]', {
+      activeUpiId,
+      standardUpiUri,
+      isMobile
+    });
+
+    if (isMobile) {
+      // Direct standard UPI launch - allows Android / iOS to trigger UPI app chooser or default GPay with editable amount
+      window.location.href = standardUpiUri;
     } else {
       alert('💻 நீங்கள் டெஸ்க்டாப்பில் உள்ளீர்கள்.\n\nதயவுசெய்து கீழே உள்ள QR Code-ஐ உங்கள் மொபைல் Google Pay அல்லது PhonePe மூலம் Scan செய்து கட்டணம் செலுத்துங்கள்.');
     }
@@ -244,7 +311,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
 
   // Direct Mobile Payment: Generic UPI Chooser (PhonePe / Paytm / BHIM)
   const handleOpenOtherUpi = () => {
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const { isMobile } = getDeviceMobileContext();
     const params = `pa=${encodeURIComponent(activeUpiId)}&pn=${encodeURIComponent('AkEsevai Palani')}&am=50&cu=INR&tn=${encodeURIComponent('AkEsevai Token Fee')}`;
 
     if (isMobile) {
@@ -254,18 +321,30 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
     }
   };
 
+  const showAndScrollPaymentError = (msg) => {
+    setPaymentError(msg);
+    setTimeout(() => {
+      try {
+        const errEl = document.getElementById('token-modal-error');
+        if (errEl) {
+          errEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      } catch (e) {}
+    }, 50);
+  };
+
   // Step 2: Customer Submits UTR for Verification (Status: PENDING_VERIFICATION)
   const handleConfirmPaymentAndGenerate = async () => {
     setPaymentError('');
     const cleanUtr = String(utrNumber || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
     if (!cleanUtr) {
-      setPaymentError('⚠️ தயவுசெய்து உங்கள் UPI UTR / பரிவர்த்தனை எண்ணை உள்ளிடவும்.');
+      showAndScrollPaymentError('⚠️ தயவுசெய்து உங்கள் UPI UTR / பரிவர்த்தனை எண்ணை உள்ளிடவும்.');
       return;
     }
 
     if (cleanUtr.length < 6) {
-      setPaymentError('⚠️ சரியான 12-இலக்க UPI UTR எண்ணை உள்ளிடவும்.');
+      showAndScrollPaymentError('⚠️ சரியான 12-இலக்க UPI UTR எண்ணை உள்ளிடவும்.');
       return;
     }
 
@@ -275,7 +354,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
     try {
       const isDuplicate = await checkDuplicateUtrCloud(cleanUtr);
       if (isDuplicate) {
-        setPaymentError(`⚠️ இந்த UTR எண் (${cleanUtr}) ஏற்கனவே பயன்படுத்தப்பட்டுள்ளது! ஒருமுறை பயன்படுத்திய UTR-ஐ மீண்டும் பயன்படுத்த முடியாது. (Duplicate UTR).`);
+        showAndScrollPaymentError(`⚠️ இந்த UTR எண் (${cleanUtr}) ஏற்கனவே பயன்படுத்தப்பட்டுள்ளது! ஒருமுறை பயன்படுத்திய UTR-ஐ மீண்டும் பயன்படுத்த முடியாது. (Duplicate UTR).`);
         setPaymentLoading(false);
         return;
       }
@@ -311,7 +390,7 @@ export default function TokenPass({ defaultToken = null, onTokenSaved, onTokenDe
       // Gating: onTokenSaved is NOT called for PENDING_VERIFICATION.
       // onTokenSaved is only called by the real-time sync listener once the token is strictly VERIFIED with a valid backend tokenNo.
     } catch (err) {
-      setPaymentError(`❌ பிழை: ${err.message || 'கட்டணத்தை சமர்ப்பிக்க முடியவில்லை'}`);
+      showAndScrollPaymentError(`❌ பிழை: ${err.message || 'கட்டணத்தை சமர்ப்பிக்க முடியவில்லை'}`);
       setPaymentLoading(false);
     }
   };
@@ -864,7 +943,8 @@ Mill Road, Sanmugapuram, Palani - 624601
           display: 'grid',
           placeItems: 'center',
           zIndex: 99999,
-          padding: '16px'
+          padding: '16px',
+          overflowY: 'auto'
         }}>
           <div className="token-modal-card" style={{
             background: '#ffffff',
@@ -873,7 +953,8 @@ Mill Road, Sanmugapuram, Palani - 624601
             width: '100%',
             overflow: 'hidden',
             boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
-            animation: 'modalSlideUp 0.25s ease'
+            animation: 'modalSlideUp 0.25s ease',
+            margin: 'auto'
           }}>
             {/* Modal Header */}
             <div style={{
@@ -884,7 +965,7 @@ Mill Road, Sanmugapuram, Palani - 624601
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '11px', fontWeight: 800, color: '#fbbf24', letterSpacing: '0.5px' }}>
-                  🔒 SECURE PRIORITY PAYMENT GATEWAY
+                  🔒 SECURE PRIORITY PAYMENT (₹50)
                 </span>
                 <button
                   onClick={() => setShowPaymentModal(false)}
@@ -894,17 +975,17 @@ Mill Road, Sanmugapuram, Palani - 624601
                 </button>
               </div>
               <h3 style={{ margin: '6px 0 0', fontSize: '18px', fontWeight: 900, color: 'white' }}>
-                முன்னுரிமை டோக்கன் கட்டணம் (Token Fee)
+                முன்னுரிமை டோக்கன் கட்டணம் (₹50)
               </h3>
               <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#bfdbfe' }}>
-                ₹50 செலுத்திய பின் UTR எண்ணைப் பதிவிடவும்.
+                Scan QR → Pay ₹50 → Enter UTR → Admin Verify & Token
               </p>
             </div>
 
             {/* Modal Body */}
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '18px 20px', maxHeight: '85vh', overflowY: 'auto' }}>
               {/* Summary Box */}
-              <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '12px 16px', marginBottom: '14px' }}>
+              <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '10px 14px', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                   <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>விண்ணப்பதாரர்:</span>
                   <strong style={{ fontSize: '13px', color: '#0f172a' }}>{formData.name} (+91 {formData.phone})</strong>
@@ -913,89 +994,220 @@ Mill Road, Sanmugapuram, Palani - 624601
                   <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 700 }}>சேவை & நேரம்:</span>
                   <span style={{ fontSize: '12px', color: '#0f172a', fontWeight: 700 }}>{formData.date} ({formData.slot})</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #cbd5e1' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '6px', borderTop: '1px solid #cbd5e1' }}>
                   <strong style={{ fontSize: '13px', color: '#022c7a' }}>செலுத்த வேண்டிய தொகை:</strong>
                   <strong style={{ fontSize: '20px', color: '#16a34a', fontWeight: 900 }}>₹50.00</strong>
                 </div>
               </div>
 
-              {/* DIRECT MOBILE PAYMENT ACTION BUTTONS */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
-                <button
-                  id="token-modal-gpay-btn"
-                  type="button"
-                  onClick={handleOpenGPay}
-                  style={{
-                    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '10px',
-                    padding: '12px 16px',
-                    fontSize: '13px',
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    boxShadow: '0 3px 10px rgba(22,163,74,0.3)',
-                    transition: 'transform 0.15s ease'
-                  }}
-                >
-                  <Smartphone size={16} /> 🟢 Google Pay மூலம் செலுத்தவும் (Pay ₹50)
-                </button>
+              {/* ① SCAN & PAY ₹50 — PRIMARY */}
+              <div style={{
+                textAlign: 'center',
+                background: 'linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%)',
+                border: '2px solid #86efac',
+                borderRadius: '16px',
+                padding: '16px 14px',
+                marginBottom: '14px',
+                boxShadow: '0 4px 12px rgba(22,163,74,0.08)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '4px' }}>
+                  <QrCode size={18} color="#15803d" />
+                  <span style={{ fontSize: '13px', fontWeight: 900, color: '#15803d', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
+                    ① SCAN & PAY ₹50 — PRIMARY
+                  </span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#166534', fontWeight: 700, marginBottom: '10px' }}>
+                  GPay • PhonePe • Paytm • BHIM • Any UPI App
+                </div>
 
-                <button
-                  id="token-modal-other-upi-btn"
-                  type="button"
-                  onClick={handleOpenOtherUpi}
-                  style={{
-                    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '10px',
-                    padding: '11px 16px',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    boxShadow: '0 3px 10px rgba(2,132,199,0.25)'
-                  }}
-                >
-                  <Zap size={15} /> 🔵 மற்ற UPI App (PhonePe / Paytm) மூலம் செலுத்தவும்
-                </button>
-              </div>
-
-              {/* QR Code and UPI ID */}
-              <div style={{ textAlign: 'center', background: '#f0fdf4', border: '1.5px dashed #86efac', borderRadius: '14px', padding: '12px', marginBottom: '14px' }}>
-                <span style={{ fontSize: '11px', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                  📱 அல்லது QR Code-ஐ ஸ்கேன் செய்து ₹50 செலுத்தவும்
-                </span>
-                <div style={{ width: '110px', height: '110px', margin: '0 auto 6px', background: '#ffffff', padding: '6px', borderRadius: '10px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+                {/* Large Dynamic QR Container */}
+                <div style={{
+                  width: '180px',
+                  height: '180px',
+                  margin: '0 auto 10px',
+                  background: '#ffffff',
+                  padding: '10px',
+                  borderRadius: '14px',
+                  border: '2px solid #22c55e',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.1)'
+                }}>
                   <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(`upi://pay?pa=${activeUpiId}&pn=AkEsevai%20Palani&am=50&cu=INR&tn=AkEsevai%20Token%20Fee`)}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(`upi://pay?pa=${activeUpiId}&pn=AkEsevai%20Palani&am=50&cu=INR&tn=AkEsevai%20Token%20Fee`)}`}
                     alt="UPI QR Code"
-                    style={{ width: '100%', height: '100%', display: 'block' }}
+                    style={{ width: '100%', height: '100%', display: 'block', borderRadius: '6px' }}
                   />
                 </div>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#dcfce7', padding: '4px 10px', borderRadius: '6px' }}>
-                  <code style={{ color: '#166534', fontSize: '12px', fontWeight: 800 }}>
-                    {activeUpiId}
-                  </code>
+
+                {/* UPI Details Pill */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#dcfce7', padding: '5px 14px', borderRadius: '20px', border: '1px solid #86efac', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '11.5px', color: '#166534', fontWeight: 800 }}>
+                    UPI: <code>{activeUpiId}</code> • Amount: <strong>₹50</strong>
+                  </span>
+                </div>
+
+                <p style={{ margin: '0', fontSize: '11px', color: '#166534', fontWeight: 600 }}>
+                  📱 மொபைல் கேமரா அல்லது UPI ஆப் மூலம் Scan செய்து ₹50 செலுத்தவும்.
+                </p>
+              </div>
+
+              {/* FALLBACK PAYMENT OPTIONS */}
+              <div style={{
+                background: '#f8fafc',
+                border: '1.5px solid #e2e8f0',
+                borderRadius: '14px',
+                padding: '12px',
+                marginBottom: '14px'
+              }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '8px' }}>
+                  🔄 அல்லது கீழ்கண்ட விவரங்களைப் பயன்படுத்தி செலுத்தவும் (Fallback Options):
+                </span>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
+                  {/* ② GPay / UPI Mobile Number */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    flexWrap: 'wrap',
+                    gap: '8px'
+                  }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, display: 'block' }}>② GPay / UPI Mobile Number</span>
+                      <code style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a', letterSpacing: '0.5px' }}>9600871898</code>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <button
+                        id="token-modal-copy-phone-btn"
+                        type="button"
+                        onClick={() => {
+                          safeCopyToClipboard('9600871898')
+                            .then(() => {
+                              setCopiedPhone(true);
+                              setTimeout(() => setCopiedPhone(false), 2000);
+                            })
+                            .catch(() => {
+                              alert('தயவுசெய்து 9600871898 என்ற எண்ணை நேரடியாக குறித்துக்கொள்ளவும்.');
+                            });
+                        }}
+                        style={{
+                          background: copiedPhone ? '#dcfce7' : '#eff6ff',
+                          color: copiedPhone ? '#166534' : '#1d4ed8',
+                          border: copiedPhone ? '1px solid #86efac' : '1px solid #bfdbfe',
+                          borderRadius: '6px',
+                          padding: '6px 10px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.2s ease',
+                          minHeight: '34px'
+                        }}
+                      >
+                        {copiedPhone ? <><Check size={13} color="#16a34a" /> ✅ நகலெடுக்கப்பட்டது</> : <><Copy size={13} /> Copy Number</>}
+                      </button>
+
+                      <button
+                        id="token-modal-gpay-intent-btn"
+                        type="button"
+                        onClick={handleOpenGPay}
+                        style={{
+                          background: '#f0fdf4',
+                          color: '#15803d',
+                          border: '1px solid #86efac',
+                          borderRadius: '6px',
+                          padding: '6px 10px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.2s ease',
+                          minHeight: '34px'
+                        }}
+                        title="Android-ல் Google Pay ஆப் திறக்க முயற்சிக்கவும் (Optional)"
+                      >
+                        🟢 Pay with GPay (Optional)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ③ UPI ID */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '10px',
+                    padding: '8px 12px',
+                    flexWrap: 'wrap',
+                    gap: '8px'
+                  }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 700, display: 'block' }}>③ UPI ID</span>
+                      <code style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>{activeUpiId}</code>
+                    </div>
+                    <button
+                      id="token-modal-copy-upi-btn"
+                      type="button"
+                      onClick={() => {
+                        safeCopyToClipboard(activeUpiId)
+                          .then(() => {
+                            setCopiedUpi(true);
+                            setTimeout(() => setCopiedUpi(false), 2000);
+                          })
+                          .catch(() => {
+                            alert(`தயவுசெய்து ${activeUpiId} என்ற UPI ID-ஐ நேரடியாக குறித்துக்கொள்ளவும்.`);
+                          });
+                      }}
+                      style={{
+                        background: copiedUpi ? '#dcfce7' : '#eff6ff',
+                        color: copiedUpi ? '#166534' : '#1d4ed8',
+                        border: copiedUpi ? '1px solid #86efac' : '1px solid #bfdbfe',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'all 0.2s ease',
+                        minHeight: '34px'
+                      }}
+                    >
+                      {copiedUpi ? <><Check size={13} color="#16a34a" /> ✅ நகலெடுக்கப்பட்டது</> : <><Copy size={13} /> Copy UPI ID</>}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subtle Mobile UPI Chooser Fallback */}
+                <div style={{ textAlign: 'center', marginTop: '8px' }}>
                   <button
+                    id="token-modal-other-upi-btn"
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(activeUpiId);
-                      setCopiedUpi(true);
-                      setTimeout(() => setCopiedUpi(false), 2000);
+                    onClick={handleOpenOtherUpi}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#0284c7',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
                     }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#15803d', display: 'flex', alignItems: 'center' }}
-                    title="Copy UPI ID"
                   >
-                    {copiedUpi ? <Check size={14} color="#16a34a" /> : <Copy size={14} />}
+                    <Smartphone size={13} /> மொபைல் UPI App Chooser மூலம் செலுத்த வேண்டுமா?
                   </button>
                 </div>
               </div>

@@ -452,7 +452,7 @@ function toDownloadLink(link) {
 
 const validPages = [
   'home', 'services', 'status-track', 'token-generator', 'notifications',
-  'about', 'contact', 'customer', 'admin', 'weblink', 'forms', 'software',
+  'about', 'contact', 'customer', 'admin', 'weblink', 'useful-links', 'important-links', 'forms', 'software',
   'photo-maker', 'whatsapp-poster', 'photo-tools'
 ];
 
@@ -466,15 +466,18 @@ const getInitialPage = () => {
   if (queryTool) return `tools/${queryTool}`;
   if (queryPage) {
     if (queryPage === 'tools' && queryTool) return `tools/${queryTool}`;
+    if (queryPage === 'useful-links' || queryPage === 'important-links') return 'weblink';
     return queryPage;
   }
 
   if (pathname === 'photo-tools') return 'photo-tools';
   if (pathname.startsWith('tools/')) return pathname;
+  if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') return 'weblink';
   if (pathname && validPages.includes(pathname)) return pathname;
 
   const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim();
   if (hash === 'photo-tools' || hash.startsWith('tools/')) return hash;
+  if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') return 'weblink';
   if (hash && validPages.includes(hash)) return hash;
 
   return 'home';
@@ -525,11 +528,15 @@ function App() {
         targetPage = event.state.page;
       } else {
         const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').trim();
-        if (pathname === 'photo-tools' || pathname.startsWith('tools/') || validPages.includes(pathname)) {
+        if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') {
+          targetPage = 'weblink';
+        } else if (pathname === 'photo-tools' || pathname.startsWith('tools/') || validPages.includes(pathname)) {
           targetPage = pathname;
         } else {
           const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim();
-          if (hash === 'photo-tools' || hash.startsWith('tools/') || validPages.includes(hash)) {
+          if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') {
+            targetPage = 'weblink';
+          } else if (hash === 'photo-tools' || hash.startsWith('tools/') || validPages.includes(hash)) {
             targetPage = hash;
           }
         }
@@ -565,7 +572,8 @@ function App() {
       'token-generator': 'Live Token Booking | AkEsevai Palani Digital Centre | www.akesevai.com',
       notifications: 'Government Job & Exam Notifications | AkEsevai Palani | www.akesevai.com',
       about: 'About AkEsevai Palani | Trusted Digital Service Centre | www.akesevai.com',
-      contact: 'Contact Us | AkEsevai Palani Office Location & Phone | www.akesevai.com'
+      contact: 'Contact Us | AkEsevai Palani Office Location & Phone | www.akesevai.com',
+      weblink: 'முக்கியமான இணைப்புகள் | Important Official Govt Links | AkEsevai Palani'
     };
 
     document.title = pageTitles[page] || 'AkEsevai Palani | Digital Service Centre | www.akesevai.com';
@@ -761,7 +769,7 @@ function App() {
         ['services', lang === 'ta' ? 'சேவைகள்' : 'Services'],
         ['notifications', lang === 'ta' ? 'அறிவிப்புகள்' : 'Notifications'],
         ['photo-tools', lang === 'ta' ? 'போட்டோ & PDF கருவிகள்' : 'Photo & PDF Tools'],
-        ['weblink', lang === 'ta' ? '🌐 அரசு இணையதளங்கள்' : '🌐 Weblinks'],
+        ['weblink', lang === 'ta' ? '🌐 முக்கிய இணைப்புகள்' : '🌐 Important Links'],
         ['status-track', lang === 'ta' ? 'நிலை அறிதல்' : 'Track Status'],
         ['about', lang === 'ta' ? 'எங்களைப் பற்றி' : 'About Us'],
         ['contact', lang === 'ta' ? 'தொடர்பு' : 'Contact Us']
@@ -1360,7 +1368,7 @@ function HomePage({ navigate, notify, lang, visitorCount = 18472 }) {
           </p>
 
           {/* 5 PRIMARY ACTION BUTTONS */}
-          <div className="hero-cta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+          <div className="hero-cta-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))', gap: '10px' }}>
             <button className="hero-cta-btn hero-cta-primary" onClick={() => navigate('services')}>
               <Grid size={17} /> {isTa ? '🟢 சேவைகள்' : '🟢 View Services'}
             </button>

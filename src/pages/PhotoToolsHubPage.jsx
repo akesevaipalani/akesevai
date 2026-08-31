@@ -88,7 +88,7 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
       </div>
 
       {/* Category Filter Pills */}
-      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '28px' }}>
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '28px', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         <button
           onClick={() => setSelectedCategory('all')}
           style={{
@@ -100,7 +100,8 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
             cursor: 'pointer',
             background: selectedCategory === 'all' ? '#0052cc' : '#e2e8f0',
             color: selectedCategory === 'all' ? 'white' : '#334155',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
+            minHeight: '38px'
           }}
         >
           {isTa ? 'அனைத்தும் (All 19 Tools)' : 'All 19 Tools'}
@@ -118,7 +119,8 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
               cursor: 'pointer',
               background: selectedCategory === cat.id ? '#0052cc' : '#e2e8f0',
               color: selectedCategory === cat.id ? 'white' : '#334155',
-              whiteSpace: 'nowrap'
+              whiteSpace: 'nowrap',
+              minHeight: '38px'
             }}
           >
             {isTa ? cat.titleTa : cat.title}
@@ -127,7 +129,7 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
       </div>
 
       {/* Tools Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '18px', marginBottom: '40px' }}>
         {filteredTools.map((tool) => {
           const IconComp = ICON_MAP[tool.icon] || Camera;
           return (
@@ -141,13 +143,14 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
                 background: 'white',
                 border: '1.5px solid #e2e8f0',
                 borderRadius: '16px',
-                padding: '20px',
+                padding: '18px',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+                boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                boxSizing: 'border-box'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = '#0052cc';
