@@ -40,6 +40,7 @@ import {
   saveSponsoredAdCloud,
   deleteSponsoredAdCloud
 } from './utils/dataService';
+import { saveDocBinary, getDocBinary, deleteDocBinary, getAllDocBinaries } from './utils/idbDocStore';
 import AdvertisementBannerSection from './components/AdvertisementBannerSection';
 import ServiceCard from './components/ServiceCard';
 import NotificationCard from './components/NotificationCard';
@@ -609,7 +610,33 @@ function App() {
         setCustomerRecords(cloudProfiles);
         const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
         if (activePhone && (cloudProfiles[activePhone] || cloudProfiles[normalizePhone(activePhone)])) {
-          setCustomer(cloudProfiles[activePhone] || cloudProfiles[normalizePhone(activePhone)]);
+          const freshProfile = cloudProfiles[activePhone] || cloudProfiles[normalizePhone(activePhone)];
+          setCustomer((prev) => {
+            if (!prev) return freshProfile;
+            const docMap = new Map();
+            (prev.documents || []).forEach((d) => {
+              if (d) {
+                const k = d.id || d.requirement || d.name;
+                if (k) docMap.set(k, d);
+              }
+            });
+            const mergedDocs = (freshProfile.documents || []).map((d) => {
+              const k = d.id || d.requirement || d.name;
+              const existing = docMap.get(k);
+              const dataUrl = d.data || d.url || existing?.data || existing?.url || '';
+              return {
+                ...existing,
+                ...d,
+                data: dataUrl,
+                url: dataUrl
+              };
+            });
+            return {
+              ...prev,
+              ...freshProfile,
+              documents: mergedDocs
+            };
+          });
         }
       }
     });
@@ -624,6 +651,42 @@ function App() {
     const unsubscribeDocs = subscribeExpiryDocuments((docs) => {
       if (docs && Array.isArray(docs)) {
         setCloudExpiryDocs(docs);
+        // Cache retrieved cloud documents into IndexedDB
+        docs.forEach((d) => {
+          const docId = d.id || d.url;
+          const dataUrl = d.url || d.data;
+          if (docId && dataUrl && dataUrl.length > 20) {
+            saveDocBinary(docId, dataUrl, d).catch(() => {});
+          }
+        });
+
+        // Hydrate customer documents if any data is missing
+        setCustomer((prev) => {
+          if (!prev || !Array.isArray(prev.documents) || prev.documents.length === 0) return prev;
+          const docMap = new Map();
+          docs.forEach((d) => {
+            if (d.id) docMap.set(String(d.id), d);
+            if (d.requirement) docMap.set(String(d.requirement).toLowerCase(), d);
+            if (d.name) docMap.set(String(d.name).toLowerCase(), d);
+          });
+          let changed = false;
+          const hydratedDocs = prev.documents.map((d) => {
+            if (d.data && d.data.length > 20) return d;
+            const match = docMap.get(String(d.id)) ||
+                          docMap.get(String(d.requirement || '').toLowerCase()) ||
+                          docMap.get(String(d.name || '').toLowerCase());
+            if (match && (match.data || match.url)) {
+              changed = true;
+              return {
+                ...d,
+                data: match.data || match.url,
+                url: match.url || match.data
+              };
+            }
+            return d;
+          });
+          return changed ? { ...prev, documents: hydratedDocs } : prev;
+        });
       }
     });
 
@@ -633,6 +696,39 @@ function App() {
         setVisitorCount(count);
       }
     });
+
+    // Hydrate customer documents from IndexedDB binary store on startup
+    getAllDocBinaries().then((idbDocs) => {
+      if (idbDocs && idbDocs.length > 0) {
+        const idbMap = new Map();
+        idbDocs.forEach((d) => {
+          if (d.id) idbMap.set(String(d.id), d);
+          if (d.requirement) idbMap.set(String(d.requirement).toLowerCase(), d);
+          if (d.name) idbMap.set(String(d.name).toLowerCase(), d);
+        });
+
+        setCustomer((prev) => {
+          if (!prev || !Array.isArray(prev.documents) || prev.documents.length === 0) return prev;
+          let changed = false;
+          const hydratedDocs = prev.documents.map((d) => {
+            if (d.data && d.data.length > 20) return d;
+            const match = idbMap.get(String(d.id)) ||
+                          idbMap.get(String(d.requirement || '').toLowerCase()) ||
+                          idbMap.get(String(d.name || '').toLowerCase());
+            if (match && (match.data || match.url)) {
+              changed = true;
+              return {
+                ...d,
+                data: match.data || match.url,
+                url: match.url || match.data
+              };
+            }
+            return d;
+          });
+          return changed ? { ...prev, documents: hydratedDocs } : prev;
+        });
+      }
+    }).catch(() => {});
 
     const autoLogoutIfDeleted = () => {
       const activePhone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
@@ -3598,62 +3694,87 @@ const getServiceVisual = (group, title = '') => {
                       );
                     }) : <p className="empty-customer-state">No service selected.</p>}
                     <h3 className="admin-section-title">Uploaded documents (வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள்) — {selectedDocs.length} Files</h3>
-                    {selectedDocs.length ? selectedDocs.map((document, idx) => (
-                      <div className="admin-service-row" key={document.id ? `${document.id}_${idx}` : `doc_${document.name}_${idx}`} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span className="doc-symbol" style={{ background: '#dcfce7', color: '#16a34a', padding: '8px', borderRadius: '8px' }}>
-                            <FileCheck2 size={20} />
-                          </span>
-                          <div>
-                            <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{document.requirement || document.name}</strong>
-                            <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>📄 {document.name} · Uploaded {document.uploadedAt}</small>
+                    {selectedDocs.length ? selectedDocs.map((document, idx) => {
+                      const isPdf = (document.name && document.name.toLowerCase().endsWith('.pdf')) || document.type === 'application/pdf';
+                      const docUrl = document.url || document.data || '';
+                      const isImg = !isPdf && (docUrl || (document.name && /\.(jpg|jpeg|png|webp|svg)$/i.test(document.name)));
+
+                      return (
+                        <div className="admin-service-row" key={document.id ? `${document.id}_${idx}` : `doc_${document.name}_${idx}`} style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px', padding: '12px 16px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            {isImg && docUrl ? (
+                              <div
+                                onClick={() => handleViewDocument(document)}
+                                style={{ width: '42px', height: '42px', borderRadius: '8px', border: '1.5px solid #86efac', overflow: 'hidden', cursor: 'pointer', flexShrink: 0, background: '#ffffff', display: 'grid', placeItems: 'center' }}
+                                title="Click to view full image"
+                              >
+                                <img src={docUrl} alt={document.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </div>
+                            ) : isPdf ? (
+                              <div
+                                onClick={() => handleViewDocument(document)}
+                                style={{ width: '42px', height: '42px', borderRadius: '8px', border: '1.5px solid #fca5a5', background: '#fee2e2', color: '#dc2626', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: '9px', fontWeight: 900 }}
+                                title="Click to view PDF"
+                              >
+                                <FileText size={16} />
+                                <span>PDF</span>
+                              </div>
+                            ) : (
+                              <span className="doc-symbol" style={{ background: '#dcfce7', color: '#16a34a', padding: '8px', borderRadius: '8px' }}>
+                                <FileCheck2 size={20} />
+                              </span>
+                            )}
+                            <div>
+                              <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{document.requirement || document.name}</strong>
+                              <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>📄 {document.name} · Uploaded {document.uploadedAt}</small>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+                            <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                              <Eye size={15} /> View (காண்க)
+                            </button>
+                            <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                              <Download size={14} /> Download (பதிவிறக்கு)
+                            </button>
+                            <button
+                              className="document-open"
+                              onClick={async () => {
+                                const reqName = document.requirement || document.name;
+                                if (window.confirm(`Are you sure you want to PERMANENTLY delete document "${reqName}"? / இந்த ஆவணத்தை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`)) {
+                                  const docId = document.id || document.url;
+                                  const phone = selected.phone;
+
+                                  if (setCustomerRecords) {
+                                    setCustomerRecords((prev) => {
+                                      const cleanPhone = String(phone).replace(/\D/g, '');
+                                      const custObj = prev[cleanPhone] || prev[phone];
+                                      if (!custObj) return prev;
+                                      const updatedDocs = (custObj.documents || []).filter(
+                                        (d) => String(d.id) !== String(docId) && d.requirement !== reqName && String(d.url || d.data) !== String(docId) && String(d.name) !== String(document.name)
+                                      );
+                                      const updatedCust = { ...custObj, documents: updatedDocs, updatedAt: new Date().toISOString() };
+                                      saveCustomerProfileCloud(cleanPhone, updatedCust);
+                                      return {
+                                        ...prev,
+                                        [cleanPhone]: updatedCust,
+                                        [phone]: updatedCust
+                                      };
+                                    });
+                                  }
+
+                                  await deleteExpiryDocumentCloud(docId, phone);
+                                  notify(`🗑️ Document "${reqName}" deleted successfully!`);
+                                }
+                              }}
+                              title="Delete Document"
+                              style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                            >
+                              <Trash2 size={14} /> Delete (நீக்கு)
+                            </button>
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
-                          <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                            <Eye size={15} /> View (காண்க)
-                          </button>
-                          <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                            <Download size={14} /> Download (பதிவிறக்கு)
-                          </button>
-                          <button
-                            className="document-open"
-                            onClick={async () => {
-                              const reqName = document.requirement || document.name;
-                              if (window.confirm(`Are you sure you want to PERMANENTLY delete document "${reqName}"? / இந்த ஆவணத்தை நிச்சயமாக நீக்க விரும்புகிறீர்களா?`)) {
-                                const docId = document.id || document.url;
-                                const phone = selected.phone;
-
-                                if (setCustomerRecords) {
-                                  setCustomerRecords((prev) => {
-                                    const cleanPhone = String(phone).replace(/\D/g, '');
-                                    const custObj = prev[cleanPhone] || prev[phone];
-                                    if (!custObj) return prev;
-                                    const updatedDocs = (custObj.documents || []).filter(
-                                      (d) => String(d.id) !== String(docId) && d.requirement !== reqName && String(d.url || d.data) !== String(docId) && String(d.name) !== String(document.name)
-                                    );
-                                    const updatedCust = { ...custObj, documents: updatedDocs, updatedAt: new Date().toISOString() };
-                                    saveCustomerProfileCloud(cleanPhone, updatedCust);
-                                    return {
-                                      ...prev,
-                                      [cleanPhone]: updatedCust,
-                                      [phone]: updatedCust
-                                    };
-                                  });
-                                }
-
-                                await deleteExpiryDocumentCloud(docId, phone);
-                                notify(`🗑️ Document "${reqName}" deleted successfully!`);
-                              }
-                            }}
-                            title="Delete Document"
-                            style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '7px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
-                          >
-                            <Trash2 size={14} /> Delete (நீக்கு)
-                          </button>
-                        </div>
-                      </div>
-                    )) : <p className="empty-customer-state">This customer has not uploaded documents yet.</p>}
+                      );
+                    }) : <p className="empty-customer-state">This customer has not uploaded documents yet.</p>}
                   </>
                 );
               })() : <div className="empty-customer-state">Customer uploads will appear here after customers select a service and upload documents.</div>}
@@ -5233,13 +5354,16 @@ const getServiceVisual = (group, title = '') => {
         applicationId: application.id,
         requirement,
         name: file.name,
-        type: file.type || 'File',
+        type: file.type || (isImage ? 'image/jpeg' : 'application/pdf'),
         uploadedAt: new Date().toLocaleDateString('en-IN'),
         data: localDataUrl,
         url: localDataUrl,
         customerPhone: customer.phone,
         storagePath: ''
       };
+
+      // Save to IndexedDB binary store immediately for full persistence across reloads
+      saveDocBinary(docId, localDataUrl, documentObj).catch(() => {});
 
       const existingDocs = customer?.documents || [];
       const filteredDocs = existingDocs.filter(
@@ -5286,6 +5410,7 @@ const getServiceVisual = (group, title = '') => {
       if (!confirmDelete) return;
 
       const targetId = documentObj.id || `${application.id}-${requirement}`;
+      deleteDocBinary(targetId).catch(() => {});
 
       // 1. Delete from local state instantly without deleting unrelated requirement docs
       updateCustomer((current) => {
@@ -5363,12 +5488,66 @@ const getServiceVisual = (group, title = '') => {
                 (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase())
             );
 
+            const isPdf = document && (((document.name || '').toLowerCase().endsWith('.pdf')) || document.type === 'application/pdf');
+            const docUrl = document?.url || document?.data || '';
+            const isImage = document && !isPdf && (docUrl || /\.(jpg|jpeg|png|webp|svg)$/i.test(document.name || ''));
+
             return (
               <div key={requirement} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '16px', background: document ? '#f0fdf4' : 'white', border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc' }}>
-                    {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
-                  </span>
+                  {document && isImage && docUrl ? (
+                    <div
+                      onClick={() => handleViewDocument(document, notify)}
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #86efac',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        background: '#ffffff',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                        display: 'grid',
+                        placeItems: 'center'
+                      }}
+                      title="Click to view full image (பெரிதாக்க சொடுக்கவும்)"
+                    >
+                      <img
+                        src={docUrl}
+                        alt={document.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                    </div>
+                  ) : document && isPdf ? (
+                    <div
+                      onClick={() => handleViewDocument(document, notify)}
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #fca5a5',
+                        background: '#fee2e2',
+                        color: '#dc2626',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        fontSize: '9px',
+                        fontWeight: 900
+                      }}
+                      title="Click to view PDF document (PDF ஆவணத்தைக் காண்க)"
+                    >
+                      <FileText size={18} />
+                      <span>PDF</span>
+                    </div>
+                  ) : (
+                    <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc' }}>
+                      {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
+                    </span>
+                  )}
                   <div>
                     <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{requirement}</strong>
                     {document ? (
@@ -5387,11 +5566,11 @@ const getServiceVisual = (group, title = '') => {
                       <Check size={13} /> UPLOAD SUCCESS (வெற்றி)
                     </span>
 
-                    <button className="document-open" onClick={() => handleViewDocument(document)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                    <button className="document-open" onClick={() => handleViewDocument(document, notify)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                       <Eye size={14} /> View (காண்க)
                     </button>
 
-                    <button className="document-open" onClick={() => handleDownloadDocument(document)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                    <button className="document-open" onClick={() => handleDownloadDocument(document, notify)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
                       <Download size={14} /> Download (பதிவிறக்கு)
                     </button>
 
@@ -5401,13 +5580,13 @@ const getServiceVisual = (group, title = '') => {
 
                     <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
                       Change
-                      <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                      <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
                     </label>
                   </div>
                 ) : (
                   <label className="document-upload" style={{ marginLeft: 'auto', background: '#0052cc', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
                     📤 Upload PDF / JPG
-                    <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                    <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
                   </label>
                 )}
               </div>

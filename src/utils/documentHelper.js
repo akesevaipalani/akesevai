@@ -1,4 +1,6 @@
 // Robust Document Helper for View & Download — Supports PNG, JPG, PDF, SVG, WEBP, Blob URLs & Remote URLs
+import { getDocBinary, saveDocBinary } from './idbDocStore.js';
+import { fetchSingleExpiryDocumentMongo } from './mongoService.js';
 
 export const validatePhotoUpload = (file, customMaxMb = 1) => {
   if (!file) return { valid: false, error: 'கோப்பு எதுவும் தேர்ந்தெடுக்கப்படவில்லை (No file selected).' };
@@ -25,7 +27,7 @@ export const validatePhotoUpload = (file, customMaxMb = 1) => {
   return { valid: true };
 };
 
-const getMimeType = (docObj, rawUrl = '') => {
+export const getMimeType = (docObj, rawUrl = '') => {
   if (docObj?.type && docObj.type !== 'File') return docObj.type;
 
   const fileName = docObj?.name || docObj?.requirement || '';
@@ -37,15 +39,15 @@ const getMimeType = (docObj, rawUrl = '') => {
   if (lowerName.endsWith('.webp')) return 'image/webp';
   if (lowerName.endsWith('.svg')) return 'image/svg+xml';
 
-  if (rawUrl.startsWith('data:')) {
+  if (rawUrl && typeof rawUrl === 'string' && rawUrl.startsWith('data:')) {
     const match = rawUrl.split(',')[0].match(/:(.*?);/);
     if (match && match[1]) return match[1];
   }
 
-  return 'image/png';
+  return 'image/jpeg';
 };
 
-export const createBlobFromDataUrl = (dataUrl, defaultMime = 'image/png') => {
+export const createBlobFromDataUrl = (dataUrl, defaultMime = 'image/jpeg') => {
   if (!dataUrl || typeof dataUrl !== 'string') return null;
 
   // If already a blob URL, return null (caller should use dataUrl directly)
@@ -110,32 +112,113 @@ export const createBlobFromDataUrl = (dataUrl, defaultMime = 'image/png') => {
   }
 };
 
-export const handleViewDocument = (docObj, notify) => {
-  let rawUrl = typeof docObj === 'string' ? docObj : (docObj?.data || docObj?.url || docObj?.fileUrl || docObj?.dataUrl || '');
-  const docName = docObj?.name || docObj?.requirement || 'Document';
+/**
+ * Resolves document data/URL using exact 4-tier priority:
+ * A. doc.url / doc.data if valid
+ * B. IndexedDB idbDocStore cache
+ * C. Cloud fallback: GET /api/documents/:id using authenticated mongoService
+ * D. Auto-cache retrieved cloud binary into IndexedDB
+ * E. Fail gracefully with clean Preview Unavailable (NEVER restore fake SVG)
+ */
+export const resolveDocumentUrl = async (docObj) => {
+  if (!docObj) return '';
+  if (typeof docObj === 'string') {
+    if (docObj.length > 20 && !docObj.startsWith('LOCAL_DATA_URL')) return docObj;
+  }
 
-  // 1. Fallback for missing or placeholder documents
-  if (!rawUrl || rawUrl.startsWith('LOCAL_DATA_URL') || rawUrl.length < 10) {
-    const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
-      <rect width="100%" height="100%" fill="#f8fafc"/>
-      <rect x="40" y="40" width="720" height="920" rx="16" fill="white" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="40" y="40" width="720" height="90" fill="#0052cc" rx="16"/>
-      <text x="80" y="95" fill="white" font-family="sans-serif" font-size="22" font-weight="bold">AkEsevai Digital Document Vault</text>
-      <text x="80" y="180" fill="#0f172a" font-family="sans-serif" font-size="20" font-weight="bold">📄 Document: ${docName}</text>
-      <text x="80" y="215" fill="#64748b" font-family="sans-serif" font-size="14">Uploaded Date: ${docObj?.uploadedAt || 'Recently'}</text>
-      <line x1="80" y1="245" x2="720" y2="245" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="80" y="275" width="640" height="600" fill="#f0fdf4" rx="14" stroke="#86efac" stroke-width="2"/>
-      <circle cx="400" cy="500" r="50" fill="#dcfce7"/>
-      <path d="M385 500 l10 10 l20 -20" stroke="#16a34a" stroke-width="6" fill="none" stroke-linecap="round"/>
-      <text x="400" y="590" fill="#16a34a" font-family="sans-serif" font-size="26" font-weight="bold" text-anchor="middle">✅ Verified Official Document Copy</text>
-    </svg>`;
-    rawUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`;
+  // Priority A: doc.url / doc.data if valid string
+  let directUrl = docObj.data || docObj.url || docObj.fileUrl || docObj.dataUrl || '';
+  if (directUrl && directUrl.length > 20 && !directUrl.startsWith('LOCAL_DATA_URL')) {
+    return directUrl;
+  }
+
+  const docId = docObj.id || docObj.docId || docObj.url || docObj.name;
+
+  // Priority B: IndexedDB idbDocStore cache
+  if (docId) {
+    try {
+      const idbUrl = await getDocBinary(docId);
+      if (idbUrl && idbUrl.length > 20 && !idbUrl.startsWith('LOCAL_DATA_URL')) {
+        return idbUrl;
+      }
+    } catch (e) {}
+  }
+
+  // Priority C: Cloud fallback (GET /api/documents/:id with authenticated context)
+  if (docId && typeof fetchSingleExpiryDocumentMongo === 'function') {
+    try {
+      const cloudDoc = await fetchSingleExpiryDocumentMongo(docId);
+      const cloudUrl = cloudDoc?.url || cloudDoc?.data || '';
+      if (cloudUrl && cloudUrl.length > 20 && !cloudUrl.startsWith('LOCAL_DATA_URL')) {
+        // Priority D: Auto-cache retrieved binary into IndexedDB for instant offline access
+        try {
+          await saveDocBinary(docId, cloudUrl, { ...docObj, ...cloudDoc });
+        } catch (e) {}
+        return cloudUrl;
+      }
+    } catch (e) {}
+  }
+
+  // Priority E: If all sources fail, return empty
+  return '';
+};
+
+export const handleViewDocument = async (docObj, notify) => {
+  const docName = docObj?.name || docObj?.requirement || 'Document';
+  const docReq = docObj?.requirement || '';
+  const uploadedAt = docObj?.uploadedAt || 'Recently';
+
+  let rawUrl = await resolveDocumentUrl(docObj);
+
+  // If no URL available, show clean Preview Unavailable view (NOT fake SVG)
+  if (!rawUrl || rawUrl.length < 15 || rawUrl.startsWith('LOCAL_DATA_URL')) {
+    const unavailableHtml = `<!DOCTYPE html>
+<html lang="ta">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${docName} — AK e-Sevai Vault</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: #1e293b; border: 2px solid #334155; border-radius: 16px; padding: 32px; max-width: 500px; width: 100%; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+    .icon { font-size: 48px; margin-bottom: 16px; }
+    .badge { background: #d97706; color: white; font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 6px; display: inline-block; margin-bottom: 12px; }
+    h2 { font-size: 20px; color: #f8fafc; margin-bottom: 8px; }
+    p { font-size: 13.5px; color: #94a3b8; line-height: 1.6; margin-bottom: 20px; }
+    .meta { background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 24px; font-size: 12px; text-align: left; color: #cbd5e1; display: grid; gap: 6px; border: 1px solid #334155; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; border: none; cursor: pointer; transition: 0.2s; }
+    .btn-close { background: #334155; color: white; width: 100%; }
+    .btn-close:hover { background: #475569; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">⚠️</div>
+    <span class="badge">முன்னோட்டம் கிடைக்கவில்லை • PREVIEW UNAVAILABLE</span>
+    <h2>${docName}</h2>
+    <p>இந்த ஆவணத்தின் நேரடி முன்னோட்டம் கிடைக்கவில்லை. தயவுசெய்து ஆவணத்தை மீண்டும் பதிவேற்றவும்.<br><small>(Direct file preview unavailable. Please re-upload this document in your vault.)</small></p>
+    <div class="meta">
+      <div>📄 <strong>கோப்பு பெயர் (File):</strong> ${docName}</div>
+      ${docReq ? `<div>📋 <strong>தேவை (Requirement):</strong> ${docReq}</div>` : ''}
+      <div>📅 <strong>பதிவேற்றப்பட்ட தேதி (Date):</strong> ${uploadedAt}</div>
+    </div>
+    <button onclick="window.close()" class="btn btn-close">✕ மூடு (Close Window)</button>
+  </div>
+</body>
+</html>`;
+    const htmlBlob = new Blob([unavailableHtml], { type: 'text/html;charset=utf-8' });
+    const viewerUrl = URL.createObjectURL(htmlBlob);
+    const win = window.open(viewerUrl, '_blank');
+    if (!win) window.location.href = viewerUrl;
+    if (typeof notify === 'function') notify('⚠️ ஆவண முன்னோட்டம் கிடைக்கவில்லை. தயவுசெய்து மீண்டும் பதிவேற்றவும்.');
+    return;
   }
 
   const mime = getMimeType(docObj, rawUrl);
   const isPdf = mime === 'application/pdf' || (docName && docName.toLowerCase().endsWith('.pdf'));
 
-  // 2. Handle PDF Documents
+  // 1. Handle PDF Documents
   if (isPdf) {
     let pdfBlobUrl = rawUrl;
     if (rawUrl.startsWith('data:')) {
@@ -188,7 +271,7 @@ export const handleViewDocument = (docObj, notify) => {
     return;
   }
 
-  // 3. Handle Image Documents (JPG, PNG, WEBP, SVG)
+  // 2. Handle Real Image Documents (JPG, PNG, WEBP, SVG)
   let imageDisplayUrl = rawUrl;
   if (rawUrl.startsWith('data:') && rawUrl.includes(';base64')) {
     const blob = createBlobFromDataUrl(rawUrl, mime);
@@ -216,8 +299,8 @@ export const handleViewDocument = (docObj, notify) => {
     .btn-download:hover { background: #15803d; }
     .btn-close { background: #334155; color: white; }
     .btn-close:hover { background: #475569; }
-    .image-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
-    img { max-width: 95vw; max-height: calc(100vh - 100px); object-fit: contain; border-radius: 8px; box-shadow: 0 12px 36px rgba(0,0,0,0.7); background: white; border: 1px solid #334155; }
+    .image-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; min-height: calc(100vh - 70px); }
+    img { max-width: 95vw; max-height: calc(100vh - 100px); object-fit: contain; border-radius: 8px; box-shadow: 0 12px 36px rgba(0,0,0,0.7); background: #ffffff; border: 1px solid #334155; }
   </style>
 </head>
 <body>
@@ -244,21 +327,14 @@ export const handleViewDocument = (docObj, notify) => {
 };
 
 export const handleDownloadDocument = async (docObj, notify) => {
-  let rawUrl = typeof docObj === 'string' ? docObj : (docObj?.data || docObj?.url || docObj?.fileUrl || docObj?.dataUrl || '');
-  let fileName = docObj?.name || docObj?.requirement || 'document.png';
+  let rawUrl = await resolveDocumentUrl(docObj);
+  let fileName = docObj?.name || docObj?.requirement || 'document.jpg';
 
-  if (!rawUrl || rawUrl.startsWith('LOCAL_DATA_URL') || rawUrl.length < 10) {
-    const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
-      <rect width="100%" height="100%" fill="#f8fafc"/>
-      <rect x="40" y="40" width="720" height="920" rx="16" fill="white" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="40" y="40" width="720" height="90" fill="#0052cc" rx="16"/>
-      <text x="80" y="95" fill="white" font-family="sans-serif" font-size="22" font-weight="bold">AkEsevai Digital Document Vault</text>
-      <text x="80" y="180" fill="#0f172a" font-family="sans-serif" font-size="20" font-weight="bold">📄 Document: ${fileName}</text>
-      <line x1="80" y1="245" x2="720" y2="245" stroke="#e2e8f0" stroke-width="2"/>
-      <rect x="80" y="275" width="640" height="600" fill="#f0fdf4" rx="14" stroke="#86efac" stroke-width="2"/>
-      <text x="400" y="570" fill="#16a34a" font-family="sans-serif" font-size="26" font-weight="bold" text-anchor="middle">✅ Verified Official Document Copy</text>
-    </svg>`;
-    rawUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgData)}`;
+  if (!rawUrl || rawUrl.length < 15 || rawUrl.startsWith('LOCAL_DATA_URL')) {
+    if (typeof notify === 'function') {
+      notify('⚠️ ஆவணக் கோப்பு கிடைக்கவில்லை. தயவுசெய்து மீண்டும் பதிவேற்றவும். (Document file not found, please re-upload)');
+    }
+    return;
   }
 
   const mime = getMimeType(docObj, rawUrl);
@@ -269,10 +345,10 @@ export const handleDownloadDocument = async (docObj, notify) => {
     else if (mime === 'image/jpeg') fileName += '.jpg';
     else if (mime === 'image/webp') fileName += '.webp';
     else if (mime === 'image/svg+xml') fileName += '.svg';
-    else fileName += '.png';
+    else fileName += '.jpg';
   }
 
-  // Handle Blob URL
+  // 1. Handle Blob URL
   if (rawUrl.startsWith('blob:')) {
     const link = document.createElement('a');
     link.href = rawUrl;
@@ -284,7 +360,7 @@ export const handleDownloadDocument = async (docObj, notify) => {
     return;
   }
 
-  // Handle Data URL
+  // 2. Handle Data URL
   if (rawUrl.startsWith('data:')) {
     const blob = createBlobFromDataUrl(rawUrl, mime);
     if (blob) {
@@ -301,7 +377,7 @@ export const handleDownloadDocument = async (docObj, notify) => {
     }
   }
 
-  // Handle HTTP / HTTPS / Remote URLs via fetch + blob download
+  // 3. Handle HTTP / HTTPS / Remote URLs via fetch + blob download
   if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
     try {
       if (typeof notify === 'function') notify(`⏳ ${fileName} பதிவிறக்கப்படுகிறது... (Downloading...)`);

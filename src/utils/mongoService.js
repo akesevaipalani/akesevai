@@ -1,13 +1,13 @@
 export const getApiBaseUrl = () => {
-  if (typeof window !== 'undefined' && window.location) {
-    const envUrl = import.meta.env.VITE_API_URL;
-    if (envUrl && !envUrl.includes('localhost') && envUrl.startsWith('http')) {
-      return envUrl;
-    }
-    // In browser, relative /api works seamlessly with Vite proxy on any network/device IP
+  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_API_URL : '';
+  if (envUrl && !envUrl.includes('localhost') && envUrl.startsWith('http')) {
+    return envUrl;
+  }
+  // In real browser runtime, use relative /api
+  if (typeof window !== 'undefined' && typeof document !== 'undefined' && window.location && window.location.port !== '5001') {
     return '/api';
   }
-  return '/api';
+  return 'http://localhost:5001/api';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
@@ -191,6 +191,12 @@ export const fetchAllExpiryDocumentsMongo = async () => {
   }
   const query = auth['x-customer-phone'] ? `?customerPhone=${auth['x-customer-phone']}` : '';
   return (await fetchJson(`${API_BASE_URL}/documents${query}`)) || [];
+};
+
+export const fetchSingleExpiryDocumentMongo = async (id) => {
+  const cleanId = String(id || '').trim();
+  if (!cleanId) return null;
+  return await fetchJson(`${API_BASE_URL}/documents/${encodeURIComponent(cleanId)}`);
 };
 
 export const deleteExpiryDocumentMongo = async (id) => {

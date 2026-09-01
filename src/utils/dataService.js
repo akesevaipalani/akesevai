@@ -10,6 +10,7 @@ import {
   subscribeApplicationsMongo,
   saveExpiryDocumentMongo,
   fetchAllExpiryDocumentsMongo,
+  fetchSingleExpiryDocumentMongo,
   deleteExpiryDocumentMongo,
   subscribeExpiryDocumentsMongo,
   saveTokenBookingMongo,
@@ -40,6 +41,12 @@ import {
   saveLiveQueueMongo,
   subscribeLiveQueueMongo
 } from './mongoService';
+import {
+  saveDocBinary,
+  getDocBinary,
+  deleteDocBinary,
+  getAllDocBinaries
+} from './idbDocStore.js';
 
 export const sendOtpCloud = async (phone, purpose) => {
   return await sendOtpMongo(phone, purpose);
@@ -128,29 +135,35 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
   const cleanPhone = normalizePhone(phone);
   if (!cleanPhone) return;
 
+  // 1. Save all document binaries to IndexedDB store
+  if (Array.isArray(profileData?.documents)) {
+    profileData.documents.forEach((docItem) => {
+      const docId = docItem?.id || `${cleanPhone}_${docItem?.requirement || docItem?.name}`;
+      const dataUrl = docItem?.data || docItem?.url;
+      if (docId && dataUrl && dataUrl.length > 20) {
+        saveDocBinary(docId, dataUrl, { ...docItem, customerPhone: cleanPhone }).catch(() => {});
+      }
+    });
+  }
+
   try {
     const rawRecords = localStorage.getItem('akesevai-customer-records') || '{}';
     const records = JSON.parse(rawRecords);
-    
-    // Never store sensitive base64 scan data or large payloads in localStorage
-    const storageSafeDocs = (profileData.documents || []).map((docItem) => {
-      const { data, ...safeDoc } = docItem || {};
-      const dUrl = safeDoc.url || '';
+    const existingRecord = records[cleanPhone] || {};
+    const existingDocs = existingRecord.documents || [];
+
+    // Merge documents: retain existing data/url if not present in new payload
+    const mergedDocs = (profileData.documents || []).map((docItem) => {
+      const existing = existingDocs.find(d => d.id === docItem.id || d.requirement === docItem.requirement);
+      const url = docItem.url || docItem.data || existing?.url || existing?.data || '';
       return {
-        ...safeDoc,
-        data: '',
-        url: (typeof dUrl === 'string' && dUrl.startsWith('data:')) ? '' : dUrl
+        ...docItem,
+        url,
+        data: url
       };
     });
 
-    const storageSafeProfile = {
-      ...profileData,
-      documents: storageSafeDocs,
-      phone: cleanPhone
-    };
-
-    const existingRecord = records[cleanPhone] || {};
-    const updatedRecord = { ...existingRecord, ...storageSafeProfile };
+    const updatedRecord = { ...existingRecord, ...profileData, documents: mergedDocs, phone: cleanPhone };
     if (!profileData.lastToken) {
       delete updatedRecord.lastToken;
     }
@@ -669,22 +682,20 @@ export const compressImageForUpload = (file) => {
 export const saveExpiryDocumentCloud = async (docData) => {
   if (!docData || (!docData.id && !docData.url)) return;
   const docId = docData.id || `DOC-${Date.now()}`;
-  const fullDocData = { ...docData, id: docId, updatedAt: new Date().toISOString() };
+  const dUrl = docData.url || docData.data || '';
+  const fullDocData = { ...docData, id: docId, url: dUrl, data: dUrl, updatedAt: new Date().toISOString() };
+
+  // 1. Save document binary to IndexedDB
+  if (dUrl && dUrl.length > 20) {
+    saveDocBinary(docId, dUrl, fullDocData).catch(() => {});
+  }
 
   if (typeof window !== 'undefined') {
     try {
-      const { data, ...safeDocData } = fullDocData;
-      const dUrl = safeDocData.url || '';
-      const storageSafeDoc = {
-        ...safeDocData,
-        data: '',
-        url: (typeof dUrl === 'string' && dUrl.startsWith('data:')) ? '' : dUrl
-      };
-
       const rawExpDocs = localStorage.getItem('akesevai_expiry_docs') || '[]';
       const expDocs = JSON.parse(rawExpDocs);
       const filtered = expDocs.filter(d => d.id !== docId && d.requirement !== docData.requirement);
-      filtered.unshift(storageSafeDoc);
+      filtered.unshift(fullDocData);
       localStorage.setItem('akesevai_expiry_docs', JSON.stringify(filtered));
 
       const phone = String(docData.customerPhone || docData.phone || '').replace(/\D/g, '');
@@ -696,7 +707,7 @@ export const saveExpiryDocumentCloud = async (docData) => {
             if (custs[phone]) {
               const currentDocs = custs[phone].documents || [];
               const fDocs = currentDocs.filter(d => d.id !== docId && d.requirement !== docData.requirement);
-              custs[phone].documents = [storageSafeDoc, ...fDocs];
+              custs[phone].documents = [fullDocData, ...fDocs];
               localStorage.setItem(storageKey, JSON.stringify(custs));
             }
           }
@@ -760,6 +771,7 @@ export const filterDeletedDocs = (docsList = []) => {
 export const deleteExpiryDocumentCloud = async (docId, customerPhone = '', docMeta = null) => {
   if (!docId && !docMeta) return;
   const strId = String(docId || '');
+  deleteDocBinary(strId).catch(() => {});
   
   try {
     if (strId && !strId.startsWith('data:')) {
@@ -862,6 +874,10 @@ export const uploadFileToFirebaseStorage = async (fileInput, pathFolder = 'custo
   };
   await saveExpiryDocumentCloud(docRecord);
   return docRecord;
+};
+
+export const fetchSingleExpiryDocumentCloud = async (id) => {
+  return await fetchSingleExpiryDocumentMongo(id);
 };
 
 export const uploadDataUrlToFirebaseStorage = async (dataUrl, filename = 'document.jpg', pathFolder = 'customer_photos') => {
@@ -1027,11 +1043,60 @@ export const fetchAllCloudRecords = async () => {
     mongoApps = (await fetchAllApplicationsMongo()) || {};
 
     if (typeof window !== 'undefined' && window.localStorage) {
-      localStorage.setItem('akesevai-customer-records', JSON.stringify(mongoCustomers));
-      localStorage.setItem('akesevai-customers', JSON.stringify(mongoCustomers));
+      // Merge with existing local customer records to preserve document binary URLs
+      const localCustRaw = localStorage.getItem('akesevai-customer-records');
+      const localCusts = localCustRaw ? JSON.parse(localCustRaw) : {};
+      const mergedCustomers = { ...mongoCustomers };
+
+      Object.keys(localCusts).forEach(p => {
+        if (mergedCustomers[p]) {
+          const mDocs = mergedCustomers[p].documents || [];
+          const lDocs = localCusts[p].documents || [];
+          const docMap = new Map();
+          mDocs.forEach(d => docMap.set(d.id || d.requirement || d.name, d));
+          lDocs.forEach(d => {
+            const k = d.id || d.requirement || d.name;
+            if (docMap.has(k)) {
+              const existing = docMap.get(k);
+              docMap.set(k, { ...existing, ...d, url: d.url || d.data || existing.url || existing.data, data: d.url || d.data || existing.url || existing.data });
+            } else {
+              docMap.set(k, d);
+            }
+          });
+          mergedCustomers[p].documents = Array.from(docMap.values());
+        } else {
+          mergedCustomers[p] = localCusts[p];
+        }
+      });
+
+      // Merge expiry docs preserving data/url
+      const localExpRaw = localStorage.getItem('akesevai_expiry_docs');
+      const localExpDocs = localExpRaw ? JSON.parse(localExpRaw) : [];
+      const expDocMap = new Map();
+      mongoDocs.forEach(d => expDocMap.set(d.id || d.url || d.name, d));
+      localExpDocs.forEach(d => {
+        const k = d.id || d.url || d.name;
+        if (expDocMap.has(k)) {
+          const existing = expDocMap.get(k);
+          expDocMap.set(k, { ...existing, ...d, url: d.url || d.data || existing.url || existing.data, data: d.url || d.data || existing.url || existing.data });
+        } else {
+          expDocMap.set(k, d);
+        }
+      });
+      const mergedExpDocs = Array.from(expDocMap.values());
+
+      localStorage.setItem('akesevai-customer-records', JSON.stringify(mergedCustomers));
+      localStorage.setItem('akesevai-customers', JSON.stringify(mergedCustomers));
       localStorage.setItem('akesevai-token-bookings', JSON.stringify(mongoTokens));
-      localStorage.setItem('akesevai_expiry_docs', JSON.stringify(mongoDocs));
+      localStorage.setItem('akesevai_expiry_docs', JSON.stringify(mergedExpDocs));
       localStorage.setItem('akesevai-application-records', JSON.stringify(mongoApps));
+
+      return {
+        customers: mergedCustomers,
+        tokens: mongoTokens,
+        documents: mergedExpDocs,
+        applications: mongoApps
+      };
     }
   } catch (e) {
     if (typeof window !== 'undefined' && window.localStorage) {
