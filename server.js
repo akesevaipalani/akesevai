@@ -7,6 +7,12 @@ import fs from 'fs';
 import crypto from 'crypto';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
+import {
+  getKolkataToday,
+  calculateApplicationStatus,
+  calculateExamStatus,
+  enrichNotificationWithDateStatus
+} from './src/utils/notificationDateHelper.js';
 
 if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
@@ -2566,35 +2572,6 @@ app.post('/api/deleted-customers', async (req, res) => {
 
 // --- NOTIFICATIONS & ALL-INDIA EXAM RECRUITMENT API ---
 
-// Helper to calculate date expiry safely
-const parseDateSafely = (dateStr) => {
-  if (!dateStr) return null;
-  const str = String(dateStr).trim();
-  if (str.includes('/')) {
-    const parts = str.split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-        return new Date(year, month, day);
-      }
-    }
-  }
-  if (str.includes('-')) {
-    const parts = str.split('-');
-    if (parts.length === 3) {
-      const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const day = parseInt(parts[2], 10);
-      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-        return new Date(year, month, day);
-      }
-    }
-  }
-  return null;
-};
-
 const normalizeCategoryStr = (cat) => {
   if (!cat) return 'all';
   const c = String(cat).toLowerCase().replace(/[^a-z]/g, '');
@@ -2614,11 +2591,7 @@ const normalizeCategoryStr = (cat) => {
 // GET all notifications with auto-expiry calculation, search & auto-seed
 app.get('/api/notifications', async (req, res) => {
   const { category, status, search } = req.query;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(today.getDate() - 30);
+  const today = getKolkataToday();
 
   let rawList = [];
   try {
@@ -2642,38 +2615,34 @@ app.get('/api/notifications', async (req, res) => {
     });
   }
 
-  let processedList = rawList.map((item) => {
-    const closingDate = parseDateSafely(item.closingDate);
-    const notifDate = parseDateSafely(item.notificationDate);
-    const isExpired = closingDate ? (today > closingDate) : false;
-    const isNew = notifDate ? (notifDate >= thirtyDaysAgo) : (item.isNew !== false);
-    const computedStatus = isExpired ? 'expired' : (item.status || 'active');
-    return {
-      ...item,
-      isExpired,
-      isNew,
-      status: computedStatus
-    };
-  });
+  let processedList = rawList.map((item) => enrichNotificationWithDateStatus(item, today));
 
   if (search && search.trim()) {
     const q = search.trim().toLowerCase();
     processedList = processedList.filter((item) => {
-      const text = `${item.service} ${item.organization || ''} ${item.postName || ''} ${item.qualification || ''} ${item.importantDetails || ''} ${item.category || ''}`.toLowerCase();
+      const text = `${item.service} ${item.organization || ''} ${item.postName || ''} ${item.qualification || ''} ${item.importantDetails || ''} ${item.category || ''} ${item.formattedExamDate} ${item.formattedClosingDate}`.toLowerCase();
       return text.includes(q);
     });
   }
 
-  if (status === 'active') {
-    return res.json(processedList.filter(n => !n.isExpired));
-  } else if (status === 'expired') {
-    return res.json(processedList.filter(n => n.isExpired));
+  // Filter by status code if requested
+  if (status === 'active' || status === 'active_app' || status === 'open') {
+    processedList = processedList.filter(n => n.appStatus.isOpen);
+  } else if (status === 'upcoming_exams' || status === 'upcoming') {
+    processedList = processedList.filter(n => n.examStatus.isUpcoming || n.examStatus.isToday);
+  } else if (status === 'expired' || status === 'app_closed') {
+    processedList = processedList.filter(n => n.appStatus.isExpired);
+  } else if (status === 'exam_completed') {
+    processedList = processedList.filter(n => n.examStatus.isCompleted);
   }
 
-  // Sort: Active first, then newest
+  // Sort: Open applications first, upcoming exams next, then newest
   processedList.sort((a, b) => {
-    if (a.isExpired !== b.isExpired) {
-      return a.isExpired ? 1 : -1;
+    if (a.appStatus.isOpen !== b.appStatus.isOpen) {
+      return a.appStatus.isOpen ? -1 : 1;
+    }
+    if (a.examStatus.isUpcoming !== b.examStatus.isUpcoming) {
+      return a.examStatus.isUpcoming ? -1 : 1;
     }
     return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
   });

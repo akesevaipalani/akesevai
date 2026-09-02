@@ -25,7 +25,12 @@ import {
   Cpu,
   Flame,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Calendar,
+  Hourglass,
+  CheckCircle,
+  XCircle,
+  Info
 } from 'lucide-react';
 import {
   fetchNotificationsCloud,
@@ -35,6 +40,15 @@ import {
   subscribeNotificationsCloud
 } from '../utils/dataService';
 import { INITIAL_NOTIFICATIONS } from '../data/initialNotifications';
+import {
+  getKolkataToday,
+  calculateApplicationStatus,
+  calculateExamStatus,
+  formatDisplayDate,
+  validateNotificationDateForm,
+  enrichNotificationWithDateStatus,
+  parseDateToComponents
+} from '../utils/notificationDateHelper';
 
 export function normalizeCategory(cat) {
   if (!cat) return 'all';
@@ -50,60 +64,6 @@ export function normalizeCategory(cat) {
   if (c.includes('enter') || c.includes('entrance') || c.includes('jee') || c.includes('neet') || c.includes('cuet') || c.includes('gate') || c.includes('tancet')) return 'entrance';
   if (c.includes('psu') || c.includes('iocl') || c.includes('ongc') || c.includes('bhel') || c.includes('tneb') || c.includes('tech')) return 'psu';
   return cat;
-}
-
-export function parseDateString(dateStr) {
-  if (!dateStr) return null;
-  const str = String(dateStr).trim();
-  // Handle DD/MM/YYYY
-  if (str.includes('/')) {
-    const parts = str.split('/');
-    if (parts.length === 3) {
-      const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const year = parseInt(parts[2], 10);
-      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-        return new Date(year, month, day);
-      }
-    }
-  }
-  // Handle YYYY-MM-DD
-  if (str.includes('-')) {
-    const parts = str.split('-');
-    if (parts.length === 3) {
-      const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const day = parseInt(parts[2], 10);
-      if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-        return new Date(year, month, day);
-      }
-    }
-  }
-  return null;
-}
-
-export function getDateStatus(openingDateStr, closingDateStr) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const closingDate = parseDateString(closingDateStr);
-  const openingDate = parseDateString(openingDateStr);
-
-  if (closingDate) {
-    closingDate.setHours(23, 59, 59, 999);
-    if (today > closingDate) {
-      return { code: 'closed', label: 'முடிந்தது (Closed)', tagClass: 'status-badge-closed', isClosed: true };
-    }
-  }
-
-  if (openingDate) {
-    openingDate.setHours(0, 0, 0, 0);
-    if (today < openingDate) {
-      return { code: 'upcoming', label: 'விரைவில் (Upcoming)', tagClass: 'status-badge-upcoming', isClosed: false };
-    }
-  }
-
-  return { code: 'open', label: 'விண்ணப்பிக்கலாம் (Open)', tagClass: 'status-badge-open', isClosed: false };
 }
 
 // Category Configuration with Icons & Colors
@@ -124,7 +84,7 @@ const CATEGORY_CONFIG = {
 export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active_app' | 'upcoming_exams' | 'app_closed' | 'exam_completed' | 'updates'
   const [autoHideExpired, setAutoHideExpired] = useState(false);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -150,6 +110,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
   });
 
   const isAdmin = forceAdmin === true;
+  const today = useMemo(() => getKolkataToday(), []);
 
   // Real-time MongoDB notifications subscription & Auto-Sync on mount
   useEffect(() => {
@@ -190,7 +151,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
     setIsSyncing(true);
     setSyncMessage('');
     try {
-      const res = await syncBankingNotificationsCloud(); // Calls POST /api/notifications/sync-all
+      const res = await syncBankingNotificationsCloud();
       if (res?.success) {
         setSyncMessage(`✅ ${res.count || 'அனைத்து'} அரசு & போட்டித் தேர்வு அறிவிப்புகள் MongoDB Atlas-ல் வெற்றிகரமாக புதுப்பிக்கப்பட்டன!`);
         const fresh = await fetchNotificationsCloud();
@@ -209,13 +170,23 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
   const handleDeleteNotification = async (id) => {
     if (window.confirm('இந்த அறிவிப்பை நீக்க வேண்டுமா? (Delete this notification?)')) {
       await deleteNotificationCloud(id);
-      setNotifications(prev => prev.filter(n => n.id !== id));
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
     }
   };
+
+  // Form Validation Preview for Admin
+  const adminValidation = useMemo(() => {
+    return validateNotificationDateForm(formData.openingDate, formData.closingDate, formData.examDate);
+  }, [formData.openingDate, formData.closingDate, formData.examDate]);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     if (!formData.service.trim()) return;
+
+    if (!adminValidation.isValid) {
+      alert(adminValidation.errors.join('\n'));
+      return;
+    }
 
     const notifPayload = {
       id: `notif-${Date.now()}`,
@@ -226,22 +197,21 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       qualification: formData.qualification || 'Any Graduation / Relevant Qualification',
       ageLimit: formData.ageLimit || 'As per official rules',
       posts: formData.posts || 'Multiple Vacancies',
-      openingDate: formData.openingDate || new Date().toLocaleDateString('en-IN'),
-      closingDate: formData.closingDate || '31/12/2026',
-      examDate: formData.examDate || 'Announced Soon',
+      openingDate: formData.openingDate || today.displayDate,
+      closingDate: formData.closingDate || '31-12-2026',
+      examDate: formData.examDate || '',
       applicationFee: formData.applicationFee || 'Official Fee',
-      notificationDate: formData.openingDate || new Date().toLocaleDateString('en-IN'),
+      notificationDate: formData.openingDate || today.displayDate,
       importantDetails: formData.importantDetails || 'Official Verified Government Exam Notification',
       detailsLink: formData.detailsLink || 'https://www.india.gov.in/',
       applyLink: formData.applyLink || 'https://www.india.gov.in/',
       isVerified: true,
       source: 'Verified Admin Entry',
-      isNew: true,
-      status: 'active'
+      isNew: true
     };
 
     await saveNotificationCloud(notifPayload);
-    setNotifications(prev => [notifPayload, ...prev]);
+    setNotifications((prev) => [notifPayload, ...prev]);
     setShowAddModal(false);
     setFormData({
       category: 'banking',
@@ -264,44 +234,57 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
   // Category counts with normalization
   const counts = useMemo(() => {
     const res = { all: notifications.length };
-    Object.keys(CATEGORY_CONFIG).forEach(k => {
+    Object.keys(CATEGORY_CONFIG).forEach((k) => {
       if (k !== 'all') {
-        res[k] = notifications.filter(n => normalizeCategory(n.category) === k).length;
+        res[k] = notifications.filter((n) => normalizeCategory(n.category) === k).length;
       }
     });
     return res;
   }, [notifications]);
 
-  // Filtered & Smart Sorted Notifications (Active/Upcoming First)
+  // Enriched & Filtered Notifications
   const filteredNotifications = useMemo(() => {
-    let list = (notifications && notifications.length > 0 ? notifications : INITIAL_NOTIFICATIONS).filter(item => {
-      // 1. Normalized Category Filter
+    const rawList = notifications && notifications.length > 0 ? notifications : INITIAL_NOTIFICATIONS;
+
+    // 1. Enrich every notification with live computed statuses
+    const enrichedList = rawList.map((item) => enrichNotificationWithDateStatus(item, today));
+
+    // 2. Filter list
+    let list = enrichedList.filter((item) => {
+      // Category filter
       if (activeCategory !== 'all') {
         const itemNorm = normalizeCategory(item.category);
         if (itemNorm !== activeCategory) return false;
       }
 
-      // 2. Status Calculation
-      const statusObj = getDateStatus(item.openingDate, item.closingDate);
-      if (autoHideExpired && statusObj.isClosed) return false;
-      if (statusFilter !== 'all') {
-        if (statusFilter === 'open' && statusObj.code !== 'open') return false;
-        if (statusFilter === 'upcoming' && statusObj.code !== 'upcoming') return false;
-        if (statusFilter === 'closed' && !statusObj.isClosed) return false;
+      // Auto-hide expired applications ONLY if exam is also completed or not scheduled
+      if (autoHideExpired && item.appStatus.isExpired && (item.examStatus.isCompleted || !item.examStatus.isUpcoming)) {
+        return false;
       }
 
-      // 3. Search Query Filter
+      // Status filter
+      if (statusFilter === 'active_app' && !item.appStatus.isOpen) return false;
+      if (statusFilter === 'upcoming_exams' && !item.examStatus.isUpcoming && !item.examStatus.isToday) return false;
+      if (statusFilter === 'app_closed' && !item.appStatus.isExpired) return false;
+      if (statusFilter === 'exam_completed' && !item.examStatus.isCompleted) return false;
+      if (statusFilter === 'updates') {
+        const hasUpdateKeywords = `${item.service} ${item.importantDetails || ''}`.toLowerCase();
+        const isUpdate = hasUpdateKeywords.includes('result') || hasUpdateKeywords.includes('admit') || hasUpdateKeywords.includes('hall ticket') || hasUpdateKeywords.includes('answer key') || item.examStatus.isCompleted;
+        if (!isUpdate) return false;
+      }
+
+      // Search Query filter
       if (query.trim()) {
-        const matchText = `${item.service} ${item.organization || ''} ${item.postName || ''} ${item.qualification || ''} ${item.importantDetails || ''} ${item.category || ''}`.toLowerCase();
+        const matchText = `${item.service} ${item.organization || ''} ${item.postName || ''} ${item.qualification || ''} ${item.importantDetails || ''} ${item.category || ''} ${item.formattedExamDate} ${item.formattedClosingDate}`.toLowerCase();
         if (!matchText.includes(query.toLowerCase())) return false;
       }
 
       return true;
     });
 
-    // Intelligent Fallback: If autoHideExpired caused 0 results in an active category, relax it to show all available
+    // Intelligent Fallback if autoHideExpired yielded 0
     if (list.length === 0 && !query.trim() && autoHideExpired) {
-      list = (notifications && notifications.length > 0 ? notifications : INITIAL_NOTIFICATIONS).filter(item => {
+      list = enrichedList.filter((item) => {
         if (activeCategory !== 'all') {
           return normalizeCategory(item.category) === activeCategory;
         }
@@ -309,34 +292,70 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       });
     }
 
-    // Sort: Active & Upcoming First, Expired Last
+    // 3. Smart Sorting:
+    // Priority 1: Open applications (closing soonest first)
+    // Priority 2: Upcoming exams
+    // Priority 3: Future applications
+    // Priority 4: Closed / Completed
     return list.sort((a, b) => {
-      const statusA = getDateStatus(a.openingDate, a.closingDate);
-      const statusB = getDateStatus(b.openingDate, b.closingDate);
-      if (statusA.isClosed !== statusB.isClosed) {
-        return statusA.isClosed ? 1 : -1;
+      // Both open: sort by nearest closing deadline
+      if (a.appStatus.isOpen && b.appStatus.isOpen) {
+        return (a.appStatus.daysRemaining || 999) - (b.appStatus.daysRemaining || 999);
       }
-      return 0;
+      if (a.appStatus.isOpen !== b.appStatus.isOpen) {
+        return a.appStatus.isOpen ? -1 : 1;
+      }
+      // Both have upcoming exams: sort by nearest exam
+      if (a.examStatus.isUpcoming && b.examStatus.isUpcoming) {
+        return (a.examStatus.daysRemaining || 999) - (b.examStatus.daysRemaining || 999);
+      }
+      if (a.examStatus.isUpcoming !== b.examStatus.isUpcoming) {
+        return a.examStatus.isUpcoming ? -1 : 1;
+      }
+      // Both closed: sort by newest notification first
+      return (b.updatedAt ? new Date(b.updatedAt) : 0) - (a.updatedAt ? new Date(a.updatedAt) : 0);
     });
-  }, [notifications, activeCategory, statusFilter, autoHideExpired, query]);
+  }, [notifications, activeCategory, statusFilter, autoHideExpired, query, today]);
 
   return (
     <div className="notification-tables-wrapper" style={{ marginTop: '16px', maxWidth: '1440px', marginInline: 'auto' }}>
       
-      {/* 1. TOP HEADER & SEARCH CONTROLS */}
-      <div style={{ background: '#ffffff', borderRadius: '18px', padding: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 18px rgba(0,0,0,0.03)', display: 'grid', gap: '16px' }}>
-        
-        {/* Title & Live Status Indicator */}
+      {/* 1. TOP HEADER & CONTROLS */}
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '20px',
+          padding: '22px',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+          display: 'grid',
+          gap: '16px'
+        }}
+      >
+        {/* Title & Live Feed Badge */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h2 style={{ font: '800 20px/1.3 Manrope, sans-serif', color: '#0f172a', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span>📢 அனைத்து அரசு & போட்டித் தேர்வு நேரலை அறிவிப்புகள்</span>
-              <span style={{ fontSize: '11px', fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', padding: '3px 10px', borderRadius: '20px' }}>
-                🟢 நேரடி அதிகாரப்பூர்வ Feed
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  background: '#dcfce7',
+                  color: '#15803d',
+                  border: '1px solid #86efac',
+                  padding: '3px 10px',
+                  borderRadius: '20px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <span>🟢</span> <span>நேரடி நேரலை Feed (Live)</span>
               </span>
             </h2>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-              UPSC, SSC, வங்கி, ரயில்வே, TNPSC, காவல்துறை, ஆசிரியர் பணி, மருத்துவம் மற்றும் நுழைவுத் தேர்வுகள் உடனுக்குடன் தானாகப் புதுப்பிக்கப்படுகிறது.
+              UPSC, SSC, வங்கி, ரயில்வே, TNPSC, காவல்துறை, ஆசிரியர் பணி, மருத்துவம் மற்றும் நுழைவுத் தேர்வுகள் — தேதி & தேர்வு நிலை தானாகப் புதுப்பிக்கப்படுகிறது.
             </p>
           </div>
 
@@ -361,7 +380,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               }}
             >
               <RefreshCw size={16} className={isSyncing ? 'animate-spin' : ''} />
-              <span>{isSyncing ? 'புதுப்பிக்கிறது...' : '🔄 அறிவிப்புகளைப் புதுப்பி (Sync All Exams)'}</span>
+              <span>{isSyncing ? 'புதுப்பிக்கிறது...' : '🔄 அறிவிப்புகளைப் புதுப்பி (Sync Feed)'}</span>
             </button>
 
             {isAdmin && (
@@ -389,13 +408,26 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
         </div>
 
         {syncMessage && (
-          <div style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              background: '#f0fdf4',
+              color: '#166534',
+              border: '1px solid #bbf7d0',
+              padding: '10px 16px',
+              borderRadius: '10px',
+              fontSize: '13px',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
             <CheckCircle2 size={18} color="#16a34a" />
             <span>{syncMessage}</span>
           </div>
         )}
 
-        {/* Search Bar & Auto-Hide Filter */}
+        {/* Search Bar & Auto-Hide Option */}
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="service-search search-in-tables" style={{ flex: 1, margin: 0, minWidth: '280px' }}>
             <Search size={18} />
@@ -406,12 +438,27 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               autoComplete="off"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="🔍 தேர்வுப் பெயர், அமைப்பு (UPSC, TNPSC, SSC, RRB, SBI...), கல்வித் தகுதி தேடவும்..."
+              placeholder="🔍 தேர்வுப் பெயர், அமைப்பு (UPSC, TNPSC, SSC, SBI, RRB...), பதவி, தகுதி தேடவும்..."
             />
             {query && <span className="search-count-pill">{filteredNotifications.length} Results</span>}
           </div>
 
-          <label htmlFor="notifications-autohide-expired" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: '#fffbeb', border: '1px solid #fde68a', padding: '9px 16px', borderRadius: '12px', fontSize: '12px', fontWeight: 800, color: '#b45309', cursor: 'pointer' }}>
+          <label
+            htmlFor="notifications-autohide-expired"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              padding: '9px 16px',
+              borderRadius: '12px',
+              fontSize: '12px',
+              fontWeight: 800,
+              color: '#b45309',
+              cursor: 'pointer'
+            }}
+          >
             <input
               id="notifications-autohide-expired"
               name="autohide_expired"
@@ -420,7 +467,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               onChange={(e) => setAutoHideExpired(e.target.checked)}
               style={{ accentColor: '#d97706', width: '16px', height: '16px', cursor: 'pointer' }}
             />
-            <span>🚫 கடைசி தேதி முடிந்தவற்றை மறை (Hide Expired)</span>
+            <span>🚫 தேர்வு முடிந்தவற்றை மட்டும் மறை (Hide Finished)</span>
           </label>
         </div>
 
@@ -473,49 +520,110 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
           })}
         </div>
 
-        {/* 3. STATUS FILTER PILLS */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid #f1f5f9' }}>
-          <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>தேர்வு நிலை (Status):</span>
-          <button className={`status-pill-btn ${statusFilter === 'all' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('all')}>
-            📋 அனைத்து நிலைகள் (All)
+        {/* 3. DUAL-STATUS SMART FILTER PILLS */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '8px',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            paddingTop: '6px',
+            borderTop: '1px solid #f1f5f9'
+          }}
+        >
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>வடிகட்டிகள் (Filter):</span>
+
+          <button
+            className={`status-pill-btn ${statusFilter === 'all' ? 'pill-active' : ''}`}
+            onClick={() => setStatusFilter('all')}
+          >
+            📋 அனைத்து அறிவிப்புகள் (All)
           </button>
-          <button className={`status-pill-btn ${statusFilter === 'open' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('open')}>
-            🟢 தற்போது விண்ணப்பிக்கலாம் (Active Open)
+
+          <button
+            className={`status-pill-btn ${statusFilter === 'active_app' ? 'pill-active' : ''}`}
+            onClick={() => setStatusFilter('active_app')}
+            style={statusFilter === 'active_app' ? { background: '#15803d', color: '#ffffff', borderColor: '#15803d' } : {}}
+          >
+            🔥 விண்ணப்பம் நடைபெறுகிறது (Active Applications)
           </button>
-          <button className={`status-pill-btn ${statusFilter === 'upcoming' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('upcoming')}>
-            ⏳ விரைவில் தொடங்கும் (Upcoming)
+
+          <button
+            className={`status-pill-btn ${statusFilter === 'upcoming_exams' ? 'pill-active' : ''}`}
+            onClick={() => setStatusFilter('upcoming_exams')}
+            style={statusFilter === 'upcoming_exams' ? { background: '#0284c7', color: '#ffffff', borderColor: '#0284c7' } : {}}
+          >
+            📚 தேர்வு நடைபெற உள்ளது (Upcoming Exams)
           </button>
-          <button className={`status-pill-btn ${statusFilter === 'closed' ? 'pill-active' : ''}`} onClick={() => setStatusFilter('closed')}>
-            🔴 முடிவடைந்தது (Closed / Expired)
+
+          <button
+            className={`status-pill-btn ${statusFilter === 'app_closed' ? 'pill-active' : ''}`}
+            onClick={() => setStatusFilter('app_closed')}
+            style={statusFilter === 'app_closed' ? { background: '#dc2626', color: '#ffffff', borderColor: '#dc2626' } : {}}
+          >
+            🔴 விண்ணப்ப காலம் முடிந்தது (Application Closed)
+          </button>
+
+          <button
+            className={`status-pill-btn ${statusFilter === 'exam_completed' ? 'pill-active' : ''}`}
+            onClick={() => setStatusFilter('exam_completed')}
+          >
+            🔴 தேர்வு முடிந்தது (Exam Completed)
+          </button>
+
+          <button
+            className={`status-pill-btn ${statusFilter === 'updates' ? 'pill-active' : ''}`}
+            onClick={() => setStatusFilter('updates')}
+          >
+            📢 முடிவுகள் / நுழைவுச் சீட்டு (Results & Updates)
           </button>
         </div>
       </div>
 
-      {/* 4. NOTIFICATION CARDS DISPLAY */}
+      {/* 4. NOTIFICATION CARDS GRID */}
       <div style={{ marginTop: '20px' }}>
         {filteredNotifications.length === 0 ? (
-          <div style={{ textAlign: 'center', background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: '18px', padding: '50px 20px', color: '#64748b' }}>
+          <div
+            style={{
+              textAlign: 'center',
+              background: '#ffffff',
+              border: '1.5px dashed #cbd5e1',
+              borderRadius: '20px',
+              padding: '50px 20px',
+              color: '#64748b'
+            }}
+          >
             <Building2 size={48} color="#94a3b8" style={{ marginBottom: '14px' }} />
             <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#334155', margin: '0 0 8px' }}>
               அறிவிப்புகள் எதுவும் கிடைக்கவில்லை / No Notifications Found
             </h3>
             <p style={{ fontSize: '13px', margin: '0 0 20px', maxWidth: '500px', marginInline: 'auto' }}>
-              தேர்ந்தெடுக்கப்பட்ட பிரிவில் அறிவிப்புகள் இல்லை அல்லது கடைசி தேதி முடிந்துவிட்டது. புதிய அறிவிப்புகளைப் பெற கீழே உள்ள பொத்தானை அழுத்தவும்.
+              தேர்ந்தெடுக்கப்பட்ட வடிகட்டியில் அறிவிப்புகள் இல்லை. புதிய அறிவிப்புகளைப் பெற கீழே உள்ள பொத்தானை அழுத்தவும்.
             </p>
             <button
               onClick={handleManualSync}
-              style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '11px 22px', borderRadius: '12px', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}
+              style={{
+                background: '#0284c7',
+                color: '#ffffff',
+                border: 'none',
+                padding: '11px 22px',
+                borderRadius: '12px',
+                fontWeight: 800,
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
             >
               🔄 அனைத்துத் தேர்வுகளையும் உடனே புதுப்பிக்க (Sync Master Feed)
             </button>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '18px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '20px' }}>
             {filteredNotifications.map((notif) => {
-              const statusObj = getDateStatus(notif.openingDate, notif.closingDate);
               const catCfg = CATEGORY_CONFIG[notif.category] || CATEGORY_CONFIG.all;
               const Icon = catCfg.icon || Building2;
               const isNew = notif.isNew === true;
+              const appSt = notif.appStatus;
+              const examSt = notif.examStatus;
 
               return (
                 <div
@@ -525,20 +633,19 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   data-id={notif.id}
                   style={{
                     background: '#ffffff',
-                    border: `1.5px solid ${statusObj.isClosed ? '#f1f5f9' : (isNew ? '#93c5fd' : '#e2e8f0')}`,
-                    borderRadius: '18px',
+                    border: appSt.isOpen ? '1.5px solid #86efac' : (examSt.isUpcoming ? '1.5px solid #bae6fd' : '1.5px solid #e2e8f0'),
+                    borderRadius: '20px',
                     padding: '22px',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
-                    boxShadow: isNew ? '0 8px 24px rgba(59, 130, 246, 0.08)' : '0 4px 14px rgba(0, 0, 0, 0.03)',
+                    boxShadow: appSt.isOpen ? '0 8px 24px rgba(22, 163, 74, 0.08)' : '0 4px 16px rgba(0, 0, 0, 0.03)',
                     position: 'relative',
-                    opacity: statusObj.isClosed ? 0.75 : 1,
                     transition: 'transform 0.15s ease, box-shadow 0.15s ease'
                   }}
                 >
                   <div>
-                    {/* Top Badges: Category & Status */}
+                    {/* Top Organization Badge & Tags */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '12px' }}>
                       <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                         <span
@@ -559,7 +666,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                           <span>{notif.organization || 'Official Agency'}</span>
                         </span>
 
-                        {isNew && !statusObj.isClosed && (
+                        {isNew && (
                           <span
                             style={{
                               display: 'inline-flex',
@@ -579,37 +686,55 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                         )}
                       </div>
 
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          padding: '4px 10px',
-                          borderRadius: '20px',
-                          background: statusObj.isClosed ? '#fee2e2' : (statusObj.code === 'upcoming' ? '#fef3c7' : '#dcfce7'),
-                          color: statusObj.isClosed ? '#dc2626' : (statusObj.code === 'upcoming' ? '#d97706' : '#15803d'),
-                          border: `1px solid ${statusObj.isClosed ? '#fca5a5' : (statusObj.code === 'upcoming' ? '#fde68a' : '#86efac')}`,
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {statusObj.label}
-                      </span>
+                      {notif.notificationDate && (
+                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                          அறிவிப்பு: {notif.formattedNotificationDate}
+                        </span>
+                      )}
                     </div>
 
-                    {/* Exam Name Title */}
+                    {/* Notification Title */}
                     <h3 style={{ font: '800 16px/1.35 Manrope, sans-serif', color: '#0f172a', margin: '0 0 8px' }}>
                       {notif.service}
                     </h3>
 
                     {/* Post Name & Posts Count */}
                     {notif.postName && (
-                      <div style={{ fontSize: '12px', color: '#0284c7', fontWeight: 800, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: '#0284c7',
+                          fontWeight: 800,
+                          marginBottom: '10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          flexWrap: 'wrap'
+                        }}
+                      >
                         <span>🎯 {notif.postName}</span>
-                        {notif.posts && <span style={{ color: '#047857', background: '#d1fae5', padding: '2px 8px', borderRadius: '8px', fontSize: '11px' }}>{notif.posts}</span>}
+                        {notif.posts && (
+                          <span style={{ color: '#047857', background: '#d1fae5', padding: '2px 8px', borderRadius: '8px', fontSize: '11px' }}>
+                            {notif.posts}
+                          </span>
+                        )}
                       </div>
                     )}
 
-                    {/* Qualification & Age Limit Box */}
-                    <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', margin: '10px 0', fontSize: '12px', color: '#334155', display: 'grid', gap: '5px' }}>
+                    {/* Key Details Box */}
+                    <div
+                      style={{
+                        background: '#f8fafc',
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        margin: '10px 0',
+                        fontSize: '12px',
+                        color: '#334155',
+                        display: 'grid',
+                        gap: '5px'
+                      }}
+                    >
                       <div>
                         <strong>🎓 கல்வித் தகுதி:</strong> {notif.qualification || 'Any Graduation'}
                       </div>
@@ -630,26 +755,178 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                       )}
                     </div>
 
-                    {/* Key Dates Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '11.5px', color: '#475569', margin: '12px 0' }}>
-                      <div style={{ background: '#ffffff', border: '1px solid #f1f5f9', padding: '8px 10px', borderRadius: '8px' }}>
-                        <span style={{ color: '#94a3b8', fontSize: '10.5px' }}>தொடங்கும் தேதி:</span><br />
-                        <strong style={{ color: '#334155' }}>{notif.openingDate || '-'}</strong>
+                    {/* 3-TILE CLEAR DATE GRID */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '8px',
+                        fontSize: '11.5px',
+                        margin: '14px 0 10px'
+                      }}
+                    >
+                      {/* Tile 1: Application Start Date */}
+                      <div
+                        style={{
+                          background: '#ffffff',
+                          border: '1px solid #e2e8f0',
+                          padding: '8px 10px',
+                          borderRadius: '10px'
+                        }}
+                      >
+                        <span style={{ color: '#64748b', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Calendar size={11} color="#0284c7" /> விண்ணப்ப தொடக்கம்:
+                        </span>
+                        <strong style={{ color: '#0f172a', fontSize: '12.5px', marginTop: '2px', display: 'block' }}>
+                          {notif.formattedOpeningDate}
+                        </strong>
                       </div>
-                      <div style={{ background: statusObj.isClosed ? '#fef2f2' : '#f0fdf4', border: `1px solid ${statusObj.isClosed ? '#fecaca' : '#bbf7d0'}`, padding: '8px 10px', borderRadius: '8px' }}>
-                        <span style={{ color: statusObj.isClosed ? '#dc2626' : '#15803d', fontSize: '10.5px', fontWeight: 800 }}>கடைசி தேதி (Last Date):</span><br />
-                        <strong style={{ color: statusObj.isClosed ? '#dc2626' : '#15803d' }}>{notif.closingDate || '-'}</strong>
+
+                      {/* Tile 2: Application Closing Date */}
+                      <div
+                        style={{
+                          background: appSt.isExpired ? '#fef2f2' : (appSt.isLastDay ? '#fffbeb' : '#f0fdf4'),
+                          border: `1px solid ${appSt.isExpired ? '#fecaca' : (appSt.isLastDay ? '#fde68a' : '#bbf7d0')}`,
+                          padding: '8px 10px',
+                          borderRadius: '10px'
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: appSt.isExpired ? '#dc2626' : (appSt.isLastDay ? '#b45309' : '#15803d'),
+                            fontSize: '10.5px',
+                            fontWeight: 800,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Clock size={11} /> கடைசி தேதி (Last Date):
+                        </span>
+                        <strong
+                          style={{
+                            color: appSt.isExpired ? '#dc2626' : (appSt.isLastDay ? '#b45309' : '#15803d'),
+                            fontSize: '12.5px',
+                            marginTop: '2px',
+                            display: 'block'
+                          }}
+                        >
+                          {notif.formattedClosingDate}
+                        </strong>
                       </div>
-                      {notif.examDate && (
-                        <div style={{ gridColumn: '1 / -1', background: '#fefce8', padding: '8px 10px', borderRadius: '8px', border: '1px solid #fef08a', color: '#854d0e', fontWeight: 700, fontSize: '11.5px' }}>
-                          📅 தேர்வு தேதி: {notif.examDate}
+
+                      {/* Tile 3: Exam Date (Spans Full Width) */}
+                      <div
+                        style={{
+                          gridColumn: '1 / -1',
+                          background: examSt.isToday ? '#fff7ed' : (examSt.isUpcoming ? '#f0f9ff' : (examSt.isCompleted ? '#fef2f2' : '#f8fafc')),
+                          border: `1px solid ${examSt.isToday ? '#ffedd5' : (examSt.isUpcoming ? '#bae6fd' : (examSt.isCompleted ? '#fecaca' : '#e2e8f0'))}`,
+                          padding: '9px 12px',
+                          borderRadius: '10px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '6px'
+                        }}
+                      >
+                        <div>
+                          <span
+                            style={{
+                              color: examSt.isToday ? '#ea580c' : (examSt.isUpcoming ? '#0369a1' : '#64748b'),
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <CalendarDays size={13} /> தேர்வு தேதி (Exam Date):
+                          </span>
+                          <strong
+                            style={{
+                              color: examSt.isToday ? '#c2410c' : (examSt.isUpcoming ? '#0c4a6e' : '#334155'),
+                              fontSize: '13px',
+                              marginTop: '2px',
+                              display: 'block'
+                            }}
+                          >
+                            {notif.formattedExamDate}
+                          </strong>
                         </div>
-                      )}
+                      </div>
+                    </div>
+
+                    {/* DUAL-STATUS LIVE BADGES & COUNTDOWN CONTAINER */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gap: '6px',
+                        background: '#fafafa',
+                        padding: '10px 12px',
+                        borderRadius: '12px',
+                        border: '1px solid #f1f5f9',
+                        margin: '10px 0'
+                      }}
+                    >
+                      {/* 1. Application Status Pill & Countdown */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: '12px',
+                            background: appSt.tagBg,
+                            color: appSt.tagColor,
+                            border: `1px solid ${appSt.tagBorder}`,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {appSt.label}
+                        </span>
+
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: appSt.tagColor }}>
+                          {appSt.countdown}
+                        </span>
+                      </div>
+
+                      {/* 2. Exam Status Pill & Countdown */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', borderTop: '1px dashed #e2e8f0', paddingTop: '6px' }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            padding: '3px 8px',
+                            borderRadius: '12px',
+                            background: examSt.tagBg,
+                            color: examSt.tagColor,
+                            border: `1px solid ${examSt.tagBorder}`,
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {examSt.label}
+                        </span>
+
+                        <span style={{ fontSize: '11px', fontWeight: 800, color: examSt.tagColor }}>
+                          {examSt.countdown}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Actions & Official Links */}
-                  <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {/* ACTION BUTTONS & OFFICIAL LINKS */}
+                  <div
+                    style={{
+                      marginTop: '14px',
+                      paddingTop: '12px',
+                      borderTop: '1px solid #f1f5f9',
+                      display: 'flex',
+                      gap: '8px',
+                      alignItems: 'center'
+                    }}
+                  >
+                    {/* Official PDF / Details Button */}
                     {notif.detailsLink && (
                       <a
                         href={notif.detailsLink}
@@ -675,13 +952,14 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                       </a>
                     )}
 
-                    {notif.applyLink && !statusObj.isClosed && (
+                    {/* Official Apply Button */}
+                    {notif.applyLink && appSt.isOpen ? (
                       <a
                         href={notif.applyLink}
                         target="_blank"
                         rel="noreferrer"
                         style={{
-                          flex: 1.2,
+                          flex: 1.3,
                           display: 'inline-flex',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -699,13 +977,41 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                       >
                         <span>விண்ணப்பிக்க</span> <ExternalLink size={14} />
                       </a>
+                    ) : (
+                      <button
+                        disabled
+                        style={{
+                          flex: 1.3,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: '#f1f5f9',
+                          color: '#94a3b8',
+                          border: '1px solid #e2e8f0',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: 'not-allowed'
+                        }}
+                      >
+                        <span>{appSt.isExpired ? 'விண்ணப்பம் முடிந்தது' : 'விண்ணப்பம் தொடங்கவில்லை'}</span>
+                      </button>
                     )}
 
                     {isAdmin && (
                       <button
                         onClick={() => handleDeleteNotification(notif.id)}
                         title="Delete notification"
-                        style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', padding: '9px', borderRadius: '10px', cursor: 'pointer' }}
+                        style={{
+                          background: '#fee2e2',
+                          color: '#dc2626',
+                          border: '1px solid #fca5a5',
+                          padding: '9px',
+                          borderRadius: '10px',
+                          cursor: 'pointer'
+                        }}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -718,17 +1024,123 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
         )}
       </div>
 
-      {/* 5. ADMIN ADD NOTIFICATION MODAL */}
+      {/* 5. ADMIN ADD NOTIFICATION MODAL (WITH LIVE DATE VALIDATION & PREVIEW) */}
       {showAddModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(6px)', zIndex: 99999, display: 'grid', placeItems: 'center', padding: '20px' }}>
-          <div style={{ background: 'white', borderRadius: '18px', padding: '24px 28px', width: 'min(580px, 94vw)', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 60px rgba(0,0,0,0.4)', position: 'relative' }}>
-            <button onClick={() => setShowAddModal(false)} style={{ position: 'absolute', right: '16px', top: '16px', background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.7)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 99999,
+            display: 'grid',
+            placeItems: 'center',
+            padding: '20px'
+          }}
+        >
+          <div
+            style={{
+              background: 'white',
+              borderRadius: '20px',
+              padding: '24px 28px',
+              width: 'min(620px, 94vw)',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+              position: 'relative'
+            }}
+          >
+            <button
+              onClick={() => setShowAddModal(false)}
+              style={{
+                position: 'absolute',
+                right: '16px',
+                top: '16px',
+                background: '#f1f5f9',
+                border: 'none',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center'
+              }}
+            >
               <X size={18} />
             </button>
 
             <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 16px' }}>
-              ➕ புதிய தேர்வு / வேலைவாய்ப்பு அறிவிப்பு சேர்க்க
+              ➕ புதிய தேர்வு / வேலைவாய்ப்பு அறிவிப்பு சேர்க்க (Add Notification)
             </h2>
+
+            {/* Live Admin Date Validation Warnings / Errors */}
+            {adminValidation.errors.length > 0 && (
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fca5a5',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  marginBottom: '12px',
+                  color: '#991b1b',
+                  fontSize: '12.5px',
+                  fontWeight: 700
+                }}
+              >
+                {adminValidation.errors.map((err, i) => (
+                  <div key={i}>{err}</div>
+                ))}
+              </div>
+            )}
+
+            {adminValidation.warnings.length > 0 && (
+              <div
+                style={{
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  marginBottom: '12px',
+                  color: '#92400e',
+                  fontSize: '12.5px',
+                  fontWeight: 700
+                }}
+              >
+                {adminValidation.warnings.map((warn, i) => (
+                  <div key={i}>{warn}</div>
+                ))}
+              </div>
+            )}
+
+            {/* Live Status Calculation Preview */}
+            <div
+              style={{
+                background: '#f0f9ff',
+                border: '1px solid #bae6fd',
+                padding: '10px 14px',
+                borderRadius: '10px',
+                marginBottom: '14px',
+                fontSize: '12px',
+                display: 'grid',
+                gap: '4px'
+              }}
+            >
+              <div style={{ fontWeight: 800, color: '#0369a1' }}>
+                🔍 நேரலை நிலை முன்னோட்டம் (Live Status Preview):
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, color: '#334155' }}>விண்ணப்பம்:</span>
+                <span style={{ fontWeight: 800, color: adminValidation.appStatus.tagColor }}>
+                  {adminValidation.appStatus.label} ({adminValidation.appStatus.countdown})
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, color: '#334155' }}>தேர்வு:</span>
+                <span style={{ fontWeight: 800, color: adminValidation.examStatus.tagColor }}>
+                  {adminValidation.examStatus.label} ({adminValidation.examStatus.countdown})
+                </span>
+              </div>
+            </div>
 
             <form onSubmit={handleAddSubmit} style={{ display: 'grid', gap: '12px' }}>
               <label htmlFor="modal-notif-category" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
@@ -835,28 +1247,29 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                 </label>
               </div>
 
+              {/* DATES SECTION (DD-MM-YYYY OR YYYY-MM-DD) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <label htmlFor="modal-notif-opening-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  தொடங்கும் தேதி (DD/MM/YYYY):
+                  தொடங்கும் தேதி (DD-MM-YYYY):
                   <input
                     id="modal-notif-opening-date"
                     name="notification_opening_date"
                     type="text"
                     value={formData.openingDate}
                     onChange={(e) => setFormData({ ...formData, openingDate: e.target.value })}
-                    placeholder="01/08/2026"
+                    placeholder="01-08-2026"
                     style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
                   />
                 </label>
                 <label htmlFor="modal-notif-closing-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  கடைசி தேதி (DD/MM/YYYY):
+                  கடைசி தேதி (DD-MM-YYYY):
                   <input
                     id="modal-notif-closing-date"
                     name="notification_closing_date"
                     type="text"
                     value={formData.closingDate}
                     onChange={(e) => setFormData({ ...formData, closingDate: e.target.value })}
-                    placeholder="30/08/2026"
+                    placeholder="30-09-2026"
                     style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
                   />
                 </label>
@@ -864,14 +1277,14 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <label htmlFor="modal-notif-exam-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  தேர்வு தேதி (Exam Date):
+                  தேர்வு தேதி (Exam Date / DD-MM-YYYY):
                   <input
                     id="modal-notif-exam-date"
                     name="notification_exam_date"
                     type="text"
                     value={formData.examDate}
                     onChange={(e) => setFormData({ ...formData, examDate: e.target.value })}
-                    placeholder="e.g. October 2026"
+                    placeholder="15-11-2026 அல்லது November 2026"
                     style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
                   />
                 </label>
@@ -931,15 +1344,18 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
               <button
                 type="submit"
+                disabled={!adminValidation.isValid}
                 style={{
-                  background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                  background: adminValidation.isValid
+                    ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)'
+                    : '#94a3b8',
                   color: 'white',
                   border: 'none',
                   padding: '12px',
                   borderRadius: '10px',
                   fontWeight: 800,
                   fontSize: '13px',
-                  cursor: 'pointer',
+                  cursor: adminValidation.isValid ? 'pointer' : 'not-allowed',
                   marginTop: '8px'
                 }}
               >

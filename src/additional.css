@@ -198,38 +198,114 @@
   font-size: 11.5px;
 }
 
-.status-badge-open {
+.status-badge-open,
+.status-badge-app-open {
   background: #dcfce7;
   color: #166534;
   border: 1px solid #86efac;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
 }
 
-.status-badge-upcoming {
+.status-badge-app-lastday {
   background: #fef3c7;
-  color: #92400e;
+  color: #b45309;
   border: 1px solid #fde68a;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.status-badge-upcoming,
+.status-badge-app-upcoming {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
 }
 
-.status-badge-closed {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
+.status-badge-closed,
+.status-badge-app-expired {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.status-badge-exam-upcoming {
+  background: #f0f9ff;
+  color: #0284c7;
+  border: 1px solid #bae6fd;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.status-badge-exam-today {
+  background: #fff7ed;
+  color: #ea580c;
+  border: 1px solid #ffedd5;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.status-badge-exam-completed {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.status-badge-app-unannounced,
+.status-badge-exam-unannounced {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 11px;
@@ -5217,25 +5293,64 @@ button, input, select, textarea, a {
   font-weight: 800 !important;
 }
 
-[data-theme="dark"] .status-badge-open {
+[data-theme="dark"] .status-badge-open,
+[data-theme="dark"] .status-badge-app-open {
   background: #064e3b !important;
   color: #a7f3d0 !important;
   border: 1px solid #10b981 !important;
   font-weight: 800 !important;
 }
 
-[data-theme="dark"] .status-badge-upcoming {
+[data-theme="dark"] .status-badge-app-lastday {
+  background: #78350f !important;
+  color: #fef08a !important;
+  border: 1px solid #facc15 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-upcoming,
+[data-theme="dark"] .status-badge-app-upcoming {
   background: #451a03 !important;
   color: #fde68a !important;
   border: 1px solid #f59e0b !important;
   font-weight: 800 !important;
 }
 
-[data-theme="dark"] .status-badge-closed {
+[data-theme="dark"] .status-badge-closed,
+[data-theme="dark"] .status-badge-app-expired {
   background: #450a0a !important;
   color: #fca5a5 !important;
   border: 1px solid #ef4444 !important;
   font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-exam-upcoming {
+  background: #082f49 !important;
+  color: #7dd3fc !important;
+  border: 1px solid #38bdf8 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-exam-today {
+  background: #7c2d12 !important;
+  color: #fed7aa !important;
+  border: 1px solid #fb923c !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-exam-completed {
+  background: #450a0a !important;
+  color: #fca5a5 !important;
+  border: 1px solid #ef4444 !important;
+  font-weight: 800 !important;
+}
+
+[data-theme="dark"] .status-badge-app-unannounced,
+[data-theme="dark"] .status-badge-exam-unannounced {
+  background: #1e293b !important;
+  color: #94a3b8 !important;
+  border: 1px solid #334155 !important;
+  font-weight: 700 !important;
 }
 
 [data-theme="dark"] .btn-details-green {
