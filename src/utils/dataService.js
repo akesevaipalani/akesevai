@@ -287,21 +287,37 @@ export const deleteCustomerProfileCloud = async (phone) => {
 export const subscribeCustomerProfiles = (callback) => {
   return subscribeCustomerProfilesMongo((mongoCusts) => {
     try {
-      const delTokensSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
-      const localCust1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
-      const localCust2 = JSON.parse(localStorage.getItem('akesevai-customers') || '{}');
-      const merged = { ...localCust2, ...localCust1, ...(mongoCusts || {}) };
-      if (delTokensSet.size > 0) {
+      if (mongoCusts && typeof mongoCusts === 'object' && Object.keys(mongoCusts).length > 0) {
+        const localCust1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+        const merged = { ...mongoCusts };
+        // Preserve local document binary data/url for offline viewing without resurrecting deleted applications
         Object.keys(merged).forEach((phone) => {
-          if (merged[phone] && merged[phone].lastToken) {
-            const tNo = String(merged[phone].lastToken.tokenNo || merged[phone].lastToken.tokenId || merged[phone].lastToken.id || '').trim();
-            if (delTokensSet.has(tNo)) {
-              delete merged[phone].lastToken;
-            }
+          const lCust = localCust1[phone];
+          if (lCust && Array.isArray(lCust.documents)) {
+            const mDocs = merged[phone].documents || [];
+            const docMap = new Map();
+            mDocs.forEach(d => docMap.set(d.id || d.requirement || d.name, d));
+            lCust.documents.forEach(d => {
+              const k = d.id || d.requirement || d.name;
+              if (docMap.has(k)) {
+                const existing = docMap.get(k);
+                docMap.set(k, { ...existing, ...d, url: d.url || d.data || existing.url || existing.data, data: d.url || d.data || existing.url || existing.data });
+              }
+            });
+            merged[phone].documents = Array.from(docMap.values());
           }
         });
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('akesevai-customer-records', JSON.stringify(merged));
+            localStorage.setItem('akesevai-customers', JSON.stringify(merged));
+          } catch (e) {}
+        }
+        if (callback) callback(merged);
+        return;
       }
-      if (callback) callback(merged);
+      const localCust1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
+      if (callback) callback(localCust1);
     } catch (e) {
       if (callback) callback(mongoCusts || {});
     }
@@ -342,17 +358,17 @@ export const deleteApplicationCloud = async (appId) => {
 export const subscribeApplications = (callback) => {
   return subscribeApplicationsMongo((mongoApps) => {
     try {
-      const delAppsSet = getDeletedAppsSet();
-      const localApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
-      const merged = { ...localApps, ...(mongoApps || {}) };
-      if (delAppsSet.size > 0) {
-        Object.keys(merged).forEach((k) => {
-          if (delAppsSet.has(k) || delAppsSet.has(merged[k]?.id) || delAppsSet.has(merged[k]?.ackNo)) {
-            delete merged[k];
-          }
-        });
+      if (mongoApps && typeof mongoApps === 'object') {
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('akesevai-application-records', JSON.stringify(mongoApps));
+          } catch (e) {}
+        }
+        if (callback) callback(mongoApps);
+        return;
       }
-      if (callback) callback(merged);
+      const localApps = JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+      if (callback) callback(localApps);
     } catch (e) {
       if (callback) callback(mongoApps || {});
     }
@@ -1043,13 +1059,13 @@ export const fetchAllCloudRecords = async () => {
     mongoApps = (await fetchAllApplicationsMongo()) || {};
 
     if (typeof window !== 'undefined' && window.localStorage) {
-      // Merge with existing local customer records to preserve document binary URLs
+      // Merge with existing local customer records to preserve document binary URLs without reviving deleted records
       const localCustRaw = localStorage.getItem('akesevai-customer-records');
       const localCusts = localCustRaw ? JSON.parse(localCustRaw) : {};
       const mergedCustomers = { ...mongoCustomers };
 
-      Object.keys(localCusts).forEach(p => {
-        if (mergedCustomers[p]) {
+      Object.keys(mergedCustomers).forEach(p => {
+        if (localCusts[p]) {
           const mDocs = mergedCustomers[p].documents || [];
           const lDocs = localCusts[p].documents || [];
           const docMap = new Map();
@@ -1059,13 +1075,9 @@ export const fetchAllCloudRecords = async () => {
             if (docMap.has(k)) {
               const existing = docMap.get(k);
               docMap.set(k, { ...existing, ...d, url: d.url || d.data || existing.url || existing.data, data: d.url || d.data || existing.url || existing.data });
-            } else {
-              docMap.set(k, d);
             }
           });
           mergedCustomers[p].documents = Array.from(docMap.values());
-        } else {
-          mergedCustomers[p] = localCusts[p];
         }
       });
 

@@ -2756,43 +2756,55 @@ const getServiceVisual = (group, title = '') => {
       const confirmDelete = window.confirm(`Are you sure you want to PERMANENTLY delete application "${strId}"? / இந்த விண்ணப்பத்தை நிச்சயமாக நிரந்தரமாக நீக்க விரும்புகிறீர்களா?`);
       if (!confirmDelete) return;
 
-      // 1. Blacklist & remove from local storage & memory & customer applications
+      // 1. Remove from MongoDB Cloud (deletes from Application collection + pulls from all Customer.applications arrays in DB)
+      try {
+        await deleteApplicationCloud(strId);
+      } catch (e) {
+        console.error('Delete application error:', e);
+      }
+
+      // 2. Clean local storage & memory
       deleteApplicationRecord(strId);
 
-      // 2. Remove from React state
+      // 3. Immediately update React state for applicationRecords
       if (setApplicationRecords) {
         setApplicationRecords((prev = {}) => {
           const copy = { ...prev };
           delete copy[strId];
+          Object.keys(copy).forEach((k) => {
+            if (copy[k]?.id === strId || copy[k]?.ackNo === strId) {
+              delete copy[k];
+            }
+          });
           return copy;
         });
       }
+
+      // 4. Immediately update React state for customerRecords (pure state updater without async network side-effects)
       if (setCustomerRecords) {
         setCustomerRecords((prevRecords = {}) => {
           const updatedRecords = { ...prevRecords };
+          let hasChanges = false;
           Object.keys(updatedRecords).forEach((key) => {
             const cust = updatedRecords[key];
             if (cust && Array.isArray(cust.applications)) {
               const filteredApps = cust.applications.filter(a => a && String(a.id || a.ackNo).trim() !== strId);
               if (filteredApps.length !== cust.applications.length) {
-                const cleanPhone = String(cust.phone || key).replace(/\D/g, '');
-                const updatedCust = { ...cust, phone: cleanPhone, applications: filteredApps, updatedAt: new Date().toISOString() };
-                updatedRecords[key] = updatedCust;
-                if (cleanPhone) {
-                  updatedRecords[cleanPhone] = updatedCust;
-                  saveCustomerProfileCloud(cleanPhone, updatedCust);
-                }
+                updatedRecords[key] = {
+                  ...cust,
+                  applications: filteredApps
+                };
+                hasChanges = true;
               }
             }
           });
-          return updatedRecords;
+          return hasChanges ? updatedRecords : prevRecords;
         });
       }
 
-      // 3. Remove from Mongo Cloud
-      try {
-        await deleteApplicationCloud(strId);
-      } catch (e) {}
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('akesevai-data-changed'));
+      }
 
       notify(`🗑️ Application ${strId} deleted permanently from everywhere!`);
     };

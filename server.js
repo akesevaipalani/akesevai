@@ -1803,10 +1803,32 @@ app.post('/api/applications', async (req, res) => {
 
 app.delete('/api/applications/:id', async (req, res) => {
   try {
-    await Application.deleteMany({ $or: [{ id: req.params.id }, { ackNo: req.params.id }] });
-    res.json({ success: true });
+    const targetId = String(req.params.id || '').trim();
+    if (!targetId) {
+      return res.status(400).json({ success: false, error: 'Application ID is required' });
+    }
+
+    // 1. Delete from Application collection
+    await Application.deleteMany({ $or: [{ id: targetId }, { ackNo: targetId }] });
+
+    // 2. Cascade delete from all Customer.applications arrays in MongoDB
+    await Customer.updateMany(
+      {},
+      {
+        $pull: {
+          applications: {
+            $or: [
+              { id: targetId },
+              { ackNo: targetId }
+            ]
+          }
+        }
+      }
+    );
+
+    res.json({ success: true, deletedId: targetId });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
