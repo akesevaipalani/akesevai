@@ -7,6 +7,8 @@ import { getStoredApplications, updateApplicationStage, deleteApplicationRecord,
 import { handleViewDocument, handleDownloadDocument, validatePhotoUpload } from './utils/documentHelper';
 import {
   clearAllApplicationLocalStorage,
+  normalizePhone,
+  logoutCustomerCloud,
   saveCustomerProfileCloud,
   deleteCustomerProfileCloud,
   saveApplicationCloud,
@@ -60,6 +62,9 @@ import { allWebLinks } from './data/weblinksData';
 import PhotoMakerPage from './pages/PhotoMakerPage';
 import PhotoToolsHubPage from './pages/PhotoToolsHubPage';
 import PhotoToolPage from './pages/PhotoToolPage';
+import XeroxPrintingPage from './pages/XeroxPrintingPage';
+import TypingServicesPage from './pages/TypingServicesPage';
+import SpiralBindingPage from './pages/SpiralBindingPage';
 import { PHOTO_TOOLS_CATALOG } from './data/photoToolsData';
 import HeroDocumentShowcase from './components/HeroDocumentShowcase';
 import HeroBannerSlider from './components/HeroBannerSlider';
@@ -1155,10 +1160,14 @@ function App() {
       localStorage.removeItem(CUSTOMER_SESSION_KEY);
       sessionStorage.removeItem('akesevai-customer-token');
       localStorage.removeItem('akesevai-customer-token');
+      localStorage.removeItem('AKESEVAI_CUSTOMER');
       setCustomer(null);
-      setShowLogoutModal(true);
-      navigate('home');
-      notify('பாதுகாப்பாக வெளியேற்றப்பட்டீர்கள். முகப்புப் பக்கம் மாற்றப்பட்டது.');
+      setCustomerTab('overview');
+      setPage('customer');
+      try {
+        window.history.pushState({ page: 'customer' }, '', '/customer');
+      } catch (e) {}
+      notify('பாதுகாப்பாக வெளியேற்றப்பட்டீர்கள். (Logged out safely)');
     };
 
     const loginAdmin = async (password) => {
@@ -1442,6 +1451,9 @@ function App() {
           {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
           {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
           {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
+          {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
+          {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
+          {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
           {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
           {page === 'photo-maker' && <PhotoMakerPage notify={notify} lang={lang} />}
           {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
@@ -2679,50 +2691,9 @@ const getServiceVisual = (group, title = '') => {
     });
 
     const selected = matchingCustomers.find((customer) => customer.phone === activeCustomer) || matchingCustomers[0];
-    const totalApplications = Object.keys(applicationRecords || {}).length || customers.reduce((total, customer) => total + (Array.isArray(customer.applications) ? customer.applications.length : 0), 0);
-
-    const uniqueDocsCounterMap = new Map();
-    (cloudExpiryDocs || []).forEach((d) => {
-      if (!d) return;
-      const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
-      if (k) uniqueDocsCounterMap.set(k, d);
-    });
-    customers.forEach((c) => {
-      if (c && Array.isArray(c.documents)) {
-        c.documents.forEach((d) => {
-          if (!d) return;
-          const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
-          if (k) uniqueDocsCounterMap.set(k, d);
-        });
-      }
-    });
-    const totalDocuments = uniqueDocsCounterMap.size;
-    
-    const deletedTokensSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
-
-    const combinedTokensList = [
-      ...(tokenBookings || []),
-      ...Object.values(customerRecords || {}).map(c => c.lastToken).filter(Boolean)
-    ].filter(t => {
-      if (!t) return false;
-      const tNo = String(t.tokenNo || t.tokenId || t.id || '').trim();
-      return tNo && !deletedTokensSet.has(tNo);
-    }).reduce((acc, current) => {
-      const tNo = String(current.tokenNo || current.tokenId || current.id || '').trim();
-      if (tNo && !acc.some(item => String(item.tokenNo || item.tokenId || item.id || '').trim() === tNo)) {
-        acc.push(current);
-      }
-      return acc;
-    }, []);
-
-    const filteredTokens = combinedTokensList.filter((tok) => {
-      const q = tokenSearch.trim().toLowerCase();
-      if (!q) return true;
-      return (tok.tokenNo || '').toLowerCase().includes(q) || (tok.phone || '').toLowerCase().includes(q) || (tok.customerName || '').toLowerCase().includes(q) || (tok.service || '').toLowerCase().includes(q) || (tok.date || '').toLowerCase().includes(q);
-    });
 
     const customerAppsList = [];
-    Object.values(customerRecords || {}).forEach((cust) => {
+    customers.forEach((cust) => {
       if (!cust) return;
       const custName = cust.profile?.name || cust.name || 'வாடிக்கையாளர்';
       const custPhone = cust.phone || '';
@@ -2774,6 +2745,48 @@ const getServiceVisual = (group, title = '') => {
       if (!app) return false;
       const appIdKey = String(app.id || app.ackNo || '').trim();
       return appIdKey && !delAppsSet.has(appIdKey);
+    });
+
+    const totalApplications = allAppsList.length;
+
+    const uniqueDocsCounterMap = new Map();
+    (cloudExpiryDocs || []).forEach((d) => {
+      if (!d) return;
+      const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+      if (k) uniqueDocsCounterMap.set(k, d);
+    });
+    customers.forEach((c) => {
+      if (c && Array.isArray(c.documents)) {
+        c.documents.forEach((d) => {
+          if (!d) return;
+          const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+          if (k) uniqueDocsCounterMap.set(k, d);
+        });
+      }
+    });
+    const totalDocuments = uniqueDocsCounterMap.size;
+
+    const deletedTokensSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
+
+    const combinedTokensList = [
+      ...(tokenBookings || []),
+      ...Object.values(customerRecords || {}).map(c => c.lastToken).filter(Boolean)
+    ].filter(t => {
+      if (!t) return false;
+      const tNo = String(t.tokenNo || t.tokenId || t.id || '').trim();
+      return tNo && !deletedTokensSet.has(tNo);
+    }).reduce((acc, current) => {
+      const tNo = String(current.tokenNo || current.tokenId || current.id || '').trim();
+      if (tNo && !acc.some(item => String(item.tokenNo || item.tokenId || item.id || '').trim() === tNo)) {
+        acc.push(current);
+      }
+      return acc;
+    }, []);
+
+    const filteredTokens = combinedTokensList.filter((tok) => {
+      const q = tokenSearch.trim().toLowerCase();
+      if (!q) return true;
+      return (tok.tokenNo || '').toLowerCase().includes(q) || (tok.phone || '').toLowerCase().includes(q) || (tok.customerName || '').toLowerCase().includes(q) || (tok.service || '').toLowerCase().includes(q) || (tok.date || '').toLowerCase().includes(q);
     });
 
     const filteredApps = allAppsList.filter((app) => {
@@ -4777,11 +4790,13 @@ const getServiceVisual = (group, title = '') => {
         selectedService.includes(title)
       );
       const requirements = getRequiredDocuments(selectedService, service?.[2]);
+      const appId = `AK-${Math.floor(10000000 + Math.random() * 90000000)}`;
+      const appDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       const application = {
-        id: `AK-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        id: appId,
         name: selectedService,
         status: 'Submitted',
-        date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        date: appDate,
         progress: 22,
         requirements
       };
@@ -4790,6 +4805,35 @@ const getServiceVisual = (group, title = '') => {
         ...current,
         applications: [application, ...(current.applications || [])]
       }));
+
+      // Dual-write: save standalone application record to MongoDB via saveApplicationCloud
+      const rawPhone = customer.phone || customer.profile?.phone || '';
+      const cleanPhone = String(rawPhone).replace(/\D/g, '');
+      const custName = customer.profile?.name || customer.name || 'Customer';
+      const appRecord = {
+        id: appId,
+        ackNo: appId,
+        phone: cleanPhone,
+        applicantName: custName,
+        service: selectedService,
+        name: selectedService,
+        status: 'Submitted',
+        statusLabel: 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)',
+        date: appDate,
+        submittedDate: appDate,
+        currentStage: 1,
+        stage: 1,
+        progress: 22,
+        requirements,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (typeof saveApplicationCloud === 'function') {
+        saveApplicationCloud(appId, appRecord).catch((err) => {
+          console.warn('[AkEsevai Cloud Application Sync Notice]:', err);
+        });
+      }
+
       setSelectedService('');
       setActiveTab('documents');
       notify('🎉 Service selected!');

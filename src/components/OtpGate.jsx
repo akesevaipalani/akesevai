@@ -107,16 +107,30 @@ export default function OtpGate({ onVerified, notify, onClose }) {
     setLoading(true);
     setErrorMessage('');
 
+    let res = null;
     try {
-      const res = await loginCustomerPasswordCloud(cleanPhone, password);
+      res = await loginCustomerPasswordCloud(cleanPhone, password);
+    } catch (err) {
+      console.warn('Customer Login Error:', err);
+      if (typeof notify === 'function') notify('⚠️ உள்நுழைவில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      setLoading(false);
+      return;
+    }
 
+    try {
       if (res && res.success && res.customer) {
         const custName = res.customer.profile?.name || res.customer.name || 'வாடிக்கையாளர்';
         if (typeof notify === 'function') {
           notify(`👋 நல்வரவு ${custName}! உங்கள் கணக்கு வெற்றிகரமாக திறக்கப்படுகிறது...`);
         }
         if (typeof onVerified === 'function') {
-          await onVerified(cleanPhone, res.customer, null);
+          try {
+            await onVerified(cleanPhone, res.customer, null);
+          } catch (postLoginErr) {
+            console.warn('Post-login transition non-fatal warning:', postLoginErr);
+          }
         }
         return;
       }
@@ -135,11 +149,6 @@ export default function OtpGate({ onVerified, notify, onClose }) {
       const errMsg = res?.message || 'தவறான மொபைல் எண் அல்லது கடவுச்சொல். தயவுசெய்து சரிபார்க்கவும்.';
       if (typeof notify === 'function') notify(`❌ ${errMsg}`);
       setErrorMessage(errMsg);
-      setIsError(true);
-      setTimeout(() => setIsError(false), 1200);
-    } catch (err) {
-      console.warn('Customer Login Error:', err);
-      if (typeof notify === 'function') notify('⚠️ உள்நுழைவில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
       setIsError(true);
       setTimeout(() => setIsError(false), 1200);
     } finally {

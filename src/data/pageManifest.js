@@ -11,4 +11,7 @@ export const publicPages = [
   { id: 'status-track', label: 'Status Track', file: 'pages/StatusTrackPage.jsx' },
   { id: 'token-generator', label: 'Token Slip', file: 'pages/TokenGeneratorPage.jsx' },
   { id: 'contact', label: 'Contact Us', file: 'pages/ContactPage.jsx' },
+  { id: 'xerox-printing', label: 'Xerox & Printing', file: 'pages/XeroxPrintingPage.jsx' },
+  { id: 'typing-services', label: 'Typing Services', file: 'pages/TypingServicesPage.jsx' },
+  { id: 'spiral-binding', label: 'Spiral Binding', file: 'pages/SpiralBindingPage.jsx' }
 ];
