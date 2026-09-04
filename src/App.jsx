@@ -35,11 +35,16 @@ import {
   uploadDataUrlToFirebaseStorage,
   fetchAllCloudRecords,
   fetchSingleCustomerProfileCloud,
-  normalizePhone,
   subscribeSponsoredAds,
   saveSponsoredAdCloud,
   deleteSponsoredAdCloud
 } from './utils/dataService';
+import {
+  authenticateAdminApi,
+  changeAdminPasswordApi,
+  logoutAdminApi,
+  verifyAdminSessionApi
+} from './utils/mongoService';
 import { saveDocBinary, getDocBinary, deleteDocBinary, getAllDocBinaries } from './utils/idbDocStore';
 import AdvertisementBannerSection from './components/AdvertisementBannerSection';
 import ServiceCard from './components/ServiceCard';
@@ -55,6 +60,9 @@ import { allWebLinks } from './data/weblinksData';
 import PhotoMakerPage from './pages/PhotoMakerPage';
 import PhotoToolsHubPage from './pages/PhotoToolsHubPage';
 import PhotoToolPage from './pages/PhotoToolPage';
+import XeroxPrintingPage from './pages/XeroxPrintingPage';
+import TypingServicesPage from './pages/TypingServicesPage';
+import SpiralBindingPage from './pages/SpiralBindingPage';
 import { PHOTO_TOOLS_CATALOG } from './data/photoToolsData';
 import HeroDocumentShowcase from './components/HeroDocumentShowcase';
 import HeroBannerSlider from './components/HeroBannerSlider';
@@ -87,6 +95,12 @@ import PremiumHomeAdShowcase from './components/PremiumHomeAdShowcase';
 import AkEsevaiOfficePhotoSlider from './components/AkEsevaiOfficePhotoSlider';
 import CustomerEasyGuide from './components/CustomerEasyGuide';
 import SEOHeadManager from './components/SEOHeadManager';
+import GovernmentServiceSelector from './components/GovernmentServiceSelector';
+import {
+  GOVERNMENT_SERVICES,
+  SERVICE_CATEGORIES,
+  getRequiredDocumentsList
+} from './data/governmentServicesData';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './components/SocialIcons';
 import {
   ArrowRight, Award, BadgeCheck, Bell, Calendar, CalendarDays, Check, ChevronDown, ChevronUp, Clock, Clock3, CreditCard,
@@ -240,6 +254,13 @@ function getRequiredDocuments(serviceTitle, group) {
   if (!serviceTitle) return documentRequirements[group] || ['Aadhaar Card', 'Family Card', 'Address Proof', 'Photo', 'Supporting Document'];
 
   const cleanTitle = String(serviceTitle).trim();
+
+  // 1. Check Master Government Services Registry
+  const masterReqs = getRequiredDocumentsList(cleanTitle, group);
+  if (masterReqs && masterReqs.length > 0 && (masterReqs[0] !== 'Aadhaar Card' || masterReqs.length >= 4)) {
+    return masterReqs;
+  }
+
   if (serviceDocumentRequirements[cleanTitle]) return serviceDocumentRequirements[cleanTitle];
 
   // Try matching by lowercase or substring
@@ -351,48 +372,17 @@ const notifications = [
 ];
 
 const serviceCatalog = [
-  ['ஆதாரில் மொபைல் எண் இணைக்க', 'Aadhaar Mobile Number Update', 'Aadhaar'],
-  ['ஆதாரில் முகவரி மாற்றம் செய்ய', 'Aadhaar Address Change', 'Aadhaar'],
-  ['புதிய ஆதார் பதிவு / Photo & Biometric Update', 'New Aadhaar and biometric update', 'Aadhaar'],
-  ['வருமானச்சான்று', 'Income Certificate', 'Certificates'],
-  ['சாதிச்சான்று', 'Community Certificate', 'Certificates'],
-  ['பிறப்பிடச்சான்று', 'Nativity Certificate', 'Certificates'],
-  ['இருப்பிடச்சான்று', 'Residence Certificate', 'Certificates'],
-  ['முதல் பட்டதாரி சான்றிதழ்', 'First Graduate Certificate', 'Certificates'],
-  ['OBC சான்றிதழ்', 'OBC Certificate', 'Certificates'],
-  ['தமிழ்வழிச் சான்றிதழ்', 'PSTM Certificate', 'Certificates'],
-  ['வாரிசு சான்றிதழ்', 'Legal Heir Certificate', 'Certificates'],
-  ['விதவை / ஆதரவற்ற விதவை சான்றிதழ்', 'Widow and Destitute Widow Certificate', 'Certificates'],
-  ['கலப்புத் திருமணச் சான்றிதழ்', 'Inter Caste Marriage Certificate', 'Welfare Schemes'],
-  ['முதியோர் ஓய்வூதியம்', 'Old Age Pension', 'Welfare Schemes'],
-  ['விதவை ஓய்வூதியம்', 'Destitute Widow Pension', 'Welfare Schemes'],
-  ['மாற்றுத்திறனாளி ஓய்வூதியம்', 'Disability Pension', 'Welfare Schemes'],
-  ['விதவை மகள் திருமண நிதியுதவி', "Widow's Daughter Marriage Assistance", 'Welfare Schemes'],
-  ['மாற்றுத்திறனாளி கல்வி நிதியுதவி', 'Differently Abled Scholarship', 'Welfare Schemes'],
-  ['இலவச தையல் இயந்திரம்', 'Free Sewing Machine Scheme', 'Welfare Schemes'],
-  ['பாஸ்போர்ட்', 'Passport Application', 'Identity Documents'],
-  ['பான்கார்டு / PAN CARD', 'New PAN Card', 'Identity Documents'],
-  ['பான்கார்டு திருத்தம்', 'PAN Card Correction', 'Identity Documents'],
-  ['புதிய குடும்ப அட்டை / Smart Card', 'New Smart Card', 'Smart Card'],
-  ['குடும்ப அட்டை முகவரி மாற்றம்', 'Smart Card Address Change', 'Smart Card'],
-  ['குடும்ப அட்டையில் பெயர் சேர்த்தல் / நீக்குதல்', 'Smart Card Name Add or Remove', 'Smart Card'],
-  ['புதிய வாக்காளர் அட்டை', 'New Voter Card', 'Identity Documents'],
-  ['வாக்காளர் அட்டை திருத்தம்', 'Voter Card Correction', 'Identity Documents'],
-  ['சிறு தொழில் சான்று', 'MSME Certificate', 'Business'],
-  ['வேலைவாய்ப்பு புதிய பதிவு', 'Employment Exchange Registration', 'Employment'],
-  ['வேலைவாய்ப்பு கல்வி சேர்க்கை', 'Employment Qualification Update', 'Employment'],
-  ['வேலைவாய்ப்பு புதுப்பித்தல்', 'Employment Renewal', 'Employment'],
-  ['e-SHRAM CARD', 'e-Shram Card Registration', 'Employment'],
-  ['FSSAI REGISTRATION', 'FSSAI Food Business Registration', 'Business'],
-  ['TNPSC விண்ணப்பம்', 'TNPSC Application Support', 'Education & Exams'],
-  ['10, 12ஆம் வகுப்பு Duplicate Mark Sheet', 'Duplicate Mark Sheet Application', 'Education & Exams'],
-  ['நலவாரியம் புதிய பதிவு / புதுப்பித்தல்', 'Welfare Board Registration and Renewal', 'Welfare Schemes'],
-  ['கல்விக்கடன்', 'Education Loan Application', 'Financial Services'],
-  ['மாவட்ட தொழில் மையக்கடன் / PMEGP', 'DIC Loan and PMEGP Support', 'Business'],
-  ['EPFO Advance Claim / Full Claim', 'EPFO Claim Support', 'Financial Services'],
-  ['TN Police Self Verification', 'TN Police Verification Support', 'Verification'],
-  ['Typing / டைப்பிங் சேவை', 'Tamil and English Typing', 'General Services'],
-  ['விரிவான அரசு கடன் திட்டம்', 'Comprehensive Business & Industrial Loan Scheme', 'Business'],
+  ...GOVERNMENT_SERVICES.map((s) => [
+    s.nameTa,
+    s.nameEn,
+    s.departmentTa || s.department,
+    s.id,
+    s.category
+  ]),
+  ['ஆதாரில் மொபைல் எண் இணைக்க', 'Aadhaar Mobile Number Update', 'Aadhaar', 'AAD-01', 'identity_national'],
+  ['ஆதாரில் முகவரி மாற்றம் செய்ய', 'Aadhaar Address Change', 'Aadhaar', 'AAD-02', 'identity_national'],
+  ['புதிய ஆதார் பதிவு / Photo & Biometric Update', 'New Aadhaar and biometric update', 'Aadhaar', 'AAD-03', 'identity_national'],
+  ['Typing / டைப்பிங் சேவை', 'Tamil and English Typing', 'General Services', 'GEN-01', 'general_services'],
 ];
 
 
@@ -454,7 +444,8 @@ function toDownloadLink(link) {
 const validPages = [
   'home', 'services', 'status-track', 'token-generator', 'notifications',
   'about', 'contact', 'customer', 'admin', 'weblink', 'useful-links', 'important-links', 'forms', 'software',
-  'photo-maker', 'whatsapp-poster', 'photo-tools'
+  'photo-maker', 'whatsapp-poster', 'photo-tools',
+  'xerox-printing', 'typing-services', 'spiral-binding'
 ];
 
 const getInitialPage = () => {
@@ -467,17 +458,25 @@ const getInitialPage = () => {
   if (queryTool) return `tools/${queryTool}`;
   if (queryPage) {
     if (queryPage === 'tools' && queryTool) return `tools/${queryTool}`;
+    if (queryPage === 'tools') return 'photo-tools';
+    if (queryPage === 'esevai' || queryPage === 'online-services') return 'services';
+    if (queryPage === 'palani-esevai-centre') return 'about';
     if (queryPage === 'useful-links' || queryPage === 'important-links') return 'weblink';
     return queryPage;
   }
 
-  if (pathname === 'photo-tools') return 'photo-tools';
+  if (pathname === 'tools' || pathname === 'photo-tools') return 'photo-tools';
+  if (pathname === 'esevai' || pathname === 'online-services') return 'services';
+  if (pathname === 'palani-esevai-centre') return 'about';
   if (pathname.startsWith('tools/')) return pathname;
   if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') return 'weblink';
   if (pathname && validPages.includes(pathname)) return pathname;
 
-  const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim();
-  if (hash === 'photo-tools' || hash.startsWith('tools/')) return hash;
+  const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim().toLowerCase();
+  if (hash === 'tools' || hash === 'photo-tools') return 'photo-tools';
+  if (hash === 'esevai' || hash === 'online-services') return 'services';
+  if (hash === 'palani-esevai-centre') return 'about';
+  if (hash.startsWith('tools/')) return hash;
   if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') return 'weblink';
   if (hash && validPages.includes(hash)) return hash;
 
@@ -506,7 +505,9 @@ function App() {
     const records = readCustomerRecords();
     return records[phone] || { phone, profile: { name: 'Customer' }, applications: [], documents: [] };
   });
-  const [adminLoggedIn, setAdminLoggedIn] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true');
+  const [adminLoggedIn, setAdminLoggedIn] = useState(() => {
+    return sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true' && Boolean(sessionStorage.getItem('akesevai-admin-token'));
+  });
   const [customerTab, setCustomerTab] = useState('overview');
   const [adminNavTab, setAdminNavTab] = useState('smartdesk');
   const [toast, setToast] = useState('');
@@ -522,22 +523,49 @@ function App() {
 
   const t = translations[lang] || translations.en;
 
+  // Verify Admin Session with Backend on Mount
+  useEffect(() => {
+    if (adminLoggedIn) {
+      verifyAdminSessionApi().then((isValid) => {
+        if (!isValid) {
+          sessionStorage.removeItem(ADMIN_SESSION_KEY);
+          sessionStorage.removeItem('akesevai-admin-token');
+          localStorage.removeItem('akesevai-admin-password');
+          sessionStorage.removeItem('akesevai-admin-password');
+          setAdminLoggedIn(false);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
   useEffect(() => {
     const handlePopState = (event) => {
       let targetPage = 'home';
       if (event.state && event.state.page) {
         targetPage = event.state.page;
       } else {
-        const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').trim();
-        if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') {
+        const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').trim().toLowerCase();
+        if (pathname === 'tools' || pathname === 'photo-tools') {
+          targetPage = 'photo-tools';
+        } else if (pathname === 'esevai' || pathname === 'online-services') {
+          targetPage = 'services';
+        } else if (pathname === 'palani-esevai-centre') {
+          targetPage = 'about';
+        } else if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') {
           targetPage = 'weblink';
-        } else if (pathname === 'photo-tools' || pathname.startsWith('tools/') || validPages.includes(pathname)) {
+        } else if (pathname.startsWith('tools/') || validPages.includes(pathname)) {
           targetPage = pathname;
         } else {
-          const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim();
-          if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') {
+          const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim().toLowerCase();
+          if (hash === 'tools' || hash === 'photo-tools') {
+            targetPage = 'photo-tools';
+          } else if (hash === 'esevai' || hash === 'online-services') {
+            targetPage = 'services';
+          } else if (hash === 'palani-esevai-centre') {
+            targetPage = 'about';
+          } else if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') {
             targetPage = 'weblink';
-          } else if (hash === 'photo-tools' || hash.startsWith('tools/') || validPages.includes(hash)) {
+          } else if (hash.startsWith('tools/') || validPages.includes(hash)) {
             targetPage = hash;
           }
         }
@@ -549,7 +577,12 @@ function App() {
     window.addEventListener('popstate', handlePopState);
     const initial = getInitialPage();
     try {
-      const cleanPath = initial === 'home' ? '/' : `/${initial}`;
+      const search = window.location.search || '';
+      const urlLang = new URLSearchParams(search).get('lang');
+      if ((urlLang === 'en' || urlLang === 'ta') && urlLang !== lang) {
+        setLang(urlLang);
+      }
+      const cleanPath = (initial === 'home' ? '/' : `/${initial}`) + search;
       window.history.replaceState({ page: initial }, '', cleanPath);
     } catch (e) {
       console.warn('History replaceState notice:', e);
@@ -567,17 +600,22 @@ function App() {
     window.scrollTo(0, 0);
 
     const pageTitles = {
-      home: 'AkEsevai Palani | Digital Service Centre | Official Website www.akesevai.com',
+      home: 'AK E-SEVAI Palani | e-Sevai, Xerox, Printing & Online Services',
       services: 'All eSevai Services in Palani | Aadhaar, Income & Community | www.akesevai.com',
-      'status-track': 'Track Application Status Online | AkEsevai Palani | www.akesevai.com',
-      'token-generator': 'Live Token Booking | AkEsevai Palani Digital Centre | www.akesevai.com',
-      notifications: 'Government Job & Exam Notifications | AkEsevai Palani | www.akesevai.com',
-      about: 'About AkEsevai Palani | Trusted Digital Service Centre | www.akesevai.com',
-      contact: 'Contact Us | AkEsevai Palani Office Location & Phone | www.akesevai.com',
-      weblink: 'முக்கியமான இணைப்புகள் | Important Official Govt Links | AkEsevai Palani'
+      'xerox-printing': 'Xerox & Printing Services in Palani | AK E-SEVAI',
+      'typing-services': 'Tamil & English Typing Centre in Palani | AK E-SEVAI',
+      'spiral-binding': 'Spiral Binding & Lamination in Palani | AK E-SEVAI',
+      'status-track': 'Track Application Status Online | AK E-SEVAI Palani | www.akesevai.com',
+      'token-generator': 'Live Token Booking | AK E-SEVAI Palani Digital Centre | www.akesevai.com',
+      notifications: 'Government Job & Exam Notifications | AK E-SEVAI Palani | www.akesevai.com',
+      about: 'About AK E-SEVAI Palani | Trusted Digital Service Centre | www.akesevai.com',
+      contact: 'Contact Us | AK E-SEVAI Palani Office Location & Phone | www.akesevai.com',
+      weblink: 'முக்கியமான இணைப்புகள் | Important Official Govt Links | AK E-SEVAI Palani'
     };
 
-    document.title = pageTitles[page] || 'AkEsevai Palani | Digital Service Centre | www.akesevai.com';
+    if (!page.startsWith('tools/')) {
+      document.title = pageTitles[page] || 'AK E-SEVAI Palani | Digital Service Centre | www.akesevai.com';
+    }
   }, [page]);
 
   useEffect(() => {
@@ -982,7 +1020,7 @@ function App() {
       return null;
     };
 
-    const loginCustomer = async (phone, pass = '', regDetails = null) => {
+    const loginCustomer = async (phone, authCustomer = null, regDetails = null) => {
       const cleanPhone = normalizePhone(phone);
       if (!cleanPhone) return false;
 
@@ -994,7 +1032,7 @@ function App() {
       }
 
       const records = customerRecords || readCustomerRecords();
-      let existingRecord = findExistingCustomerRecord(cleanPhone, records);
+      let existingRecord = authCustomer || findExistingCustomerRecord(cleanPhone, records);
 
       // If not found in local storage and not a new registration, check MongoDB cloud server directly
       if (!existingRecord && cleanPhone && !regDetails) {
@@ -1034,7 +1072,6 @@ function App() {
           dob: custDob,
           aadhaarNo: custAadhaar,
           aadhar: custAadhaar,
-          password: pass || existingRecord?.profile?.password || '',
           complete: true
         },
         applications: existingRecord?.applications || [],
@@ -1045,11 +1082,17 @@ function App() {
         name: '',
         dob: '',
         aadhaarNo: '',
-        profile: { name: '', password: pass, createdAt: new Date().toISOString(), complete: false },
+        profile: { name: '', createdAt: new Date().toISOString(), complete: false },
         applications: [],
         documents: [],
         appointment: { date: '', time: '' },
       };
+
+      // Ensure no password properties are persisted in client storage
+      if (record.password) delete record.password;
+      if (record.profile && record.profile.password) delete record.profile.password;
+      if (record.passwordHash) delete record.passwordHash;
+      if (record.passwordSalt) delete record.passwordSalt;
 
       saveCustomerRecord(record);
       sessionStorage.setItem(CUSTOMER_SESSION_KEY, cleanPhone || phone);
@@ -1092,28 +1135,82 @@ function App() {
     };
 
     const logoutCustomer = () => {
+      logoutCustomerCloud().catch(() => {});
       sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
       localStorage.removeItem(CUSTOMER_SESSION_KEY);
+      sessionStorage.removeItem('akesevai-customer-token');
+      localStorage.removeItem('akesevai-customer-token');
       setCustomer(null);
       setShowLogoutModal(true);
       navigate('home');
       notify('பாதுகாப்பாக வெளியேற்றப்பட்டீர்கள். முகப்புப் பக்கம் மாற்றப்பட்டது.');
     };
 
-    const loginAdmin = (password) => {
-      if (password !== 'admin123') { notify('Incorrect admin password.'); return false; }
-      sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
-      setAdminLoggedIn(true);
-      recordLoginEventCloud({
-        type: 'admin_login',
-        role: 'Administrator'
-      });
-      notify('Admin dashboard opened.');
-      return true;
+    const loginAdmin = async (password) => {
+      if (!password) {
+        notify('⚠️ தயவுசெய்து அட்மின் கடவுச்சொல்லை உள்ளிடவும். (Password required)');
+        return false;
+      }
+      try {
+        const { ok, data } = await authenticateAdminApi(password);
+        if (ok && data?.token) {
+          sessionStorage.setItem(ADMIN_SESSION_KEY, 'true');
+          sessionStorage.setItem('akesevai-admin-token', data.token);
+          // Purge legacy plaintext password entries
+          localStorage.removeItem('akesevai-admin-password');
+          sessionStorage.removeItem('akesevai-admin-password');
+          setAdminLoggedIn(true);
+          recordLoginEventCloud({
+            type: 'admin_login',
+            role: 'Administrator'
+          });
+          notify('✅ அட்மின் அங்கீகாரம் வெற்றிகரமாக முடிந்தது! அட்மின் டாஷ்போர்டு திறக்கிறது...');
+          return true;
+        } else {
+          notify(data?.message || '❌ தவறான அட்மின் கடவுச்சொல்! (Incorrect admin password)');
+          return false;
+        }
+      } catch (err) {
+        notify('❌ அட்மின் உள்நுழைவு பிழை: ' + (err?.message || 'Server error'));
+        return false;
+      }
     };
 
-    const logoutAdmin = () => {
+    const changeAdminPassword = async (currentPassword, newPassword) => {
+      if (!currentPassword) {
+        notify('❌ தவறான தற்போதைய கடவுச்சொல்! (Incorrect current password)');
+        return { success: false, message: 'Current password required' };
+      }
+      if (!newPassword || newPassword.length < 4) {
+        notify('⚠️ புதிய கடவுச்சொல் குறைந்தது 4 எழுத்துக்கள் இருக்க வேண்டும் (Min 4 characters)');
+        return { success: false, message: 'Min 4 characters required' };
+      }
+      try {
+        const { ok, data } = await changeAdminPasswordApi(currentPassword, newPassword);
+        if (ok) {
+          if (data?.token) {
+            sessionStorage.setItem('akesevai-admin-token', data.token);
+          }
+          localStorage.removeItem('akesevai-admin-password');
+          sessionStorage.removeItem('akesevai-admin-password');
+          notify(data?.message || '✅ அட்மின் கடவுச்சொல் வெற்றிகரமாக மாற்றப்பட்டது!');
+          return { success: true, message: data?.message };
+        } else {
+          notify(data?.message || '❌ கடவுச்சொல் மாற்ற முடியவில்லை');
+          return { success: false, message: data?.message || 'Password update failed' };
+        }
+      } catch (err) {
+        notify('❌ கடவுச்சொல் மாற்ற முடியவில்லை: ' + (err?.message || 'Server error'));
+        return { success: false, message: err?.message };
+      }
+    };
+
+    const logoutAdmin = async () => {
+      await logoutAdminApi().catch(() => {});
       sessionStorage.removeItem(ADMIN_SESSION_KEY);
+      sessionStorage.removeItem('akesevai-admin-token');
+      localStorage.removeItem('akesevai-admin-password');
+      sessionStorage.removeItem('akesevai-admin-password');
       setAdminLoggedIn(false);
       navigate('home');
       notify('Admin logged out safely.');
@@ -1328,6 +1425,9 @@ function App() {
         <main>
           {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
           {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
+          {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
+          {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
+          {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
           {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
           {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
           {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
@@ -1342,15 +1442,15 @@ function App() {
           {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
           {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} customerRecords={customerRecords} onClose={() => navigate('home')} />}
           {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} activeTab={customerTab} setActiveTab={setCustomerTab} lang={lang} navigate={navigate} />}
-          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
+          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} changeAdminPassword={changeAdminPassword} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
         </main>
 
         <footer className="site-footer">
           <div>
             <button className="brand footer-brand" onClick={() => navigate('home')} style={{ gap: '12px' }}>
-              <img src="/logo.png" alt="AkEsevai Logo" className="brand-logo-img" style={{ height: '44px', background: 'white', padding: '4px', borderRadius: '8px' }} />
+              <img src="/logo.png" alt="AK E-SEVAI Logo" className="brand-logo-img" style={{ height: '44px', background: 'white', padding: '4px', borderRadius: '8px' }} />
               <div>
-                <strong className="brand-name" style={{ fontSize: '18px', color: 'white' }}>AkEsevai CENTRE</strong>
+                <strong className="brand-name" style={{ fontSize: '18px', color: 'white' }}>AK E-SEVAI CENTRE</strong>
                 <small style={{ color: '#86efac', display: 'block', fontSize: '9px', fontWeight: 700, lineHeight: 1.25 }}>{t.tagline}</small>
               </div>
             </button>
@@ -1367,15 +1467,31 @@ function App() {
               </a>
             </div>
 
+            {/* In-Centre Document Services Links */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+              <strong style={{ fontSize: '12px', color: '#fde047', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                {lang === 'ta' ? '🖨️ நேரடி ஜெராக்ஸ், தட்டச்சு & ஸ்பைரல் பைண்டிங்:' : '🖨️ In-Centre Xerox, Typing & Binding Services:'}
+              </strong>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
+                <button onClick={() => navigate('xerox-printing')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Colour Printing'}</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('typing-services')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'தமிழ் & ஆங்கில தட்டச்சு' : 'Tamil & English Typing'}</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('spiral-binding')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'}</button>
+              </div>
+            </div>
+
             {/* Photo Tools Footer Links */}
-            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
               <strong style={{ fontSize: '12px', color: '#93c5fd', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                📸 Free Photo & Document Tools:
+                {lang === 'ta' ? '📸 இலவச போட்டோ & ஆவணக் கருவிகள்:' : '📸 Free Photo & Document Tools:'}
               </strong>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
                 <button onClick={() => navigate('photo-tools')} style={{ background: 'none', border: 'none', color: '#86efac', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>All Tools Hub</button>
                 <span style={{ color: '#475569' }}>•</span>
                 <button onClick={() => navigate('tools/passport-size-photo')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Passport Photo</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/signature-resize')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Signature Resize (20KB)</button>
                 <span style={{ color: '#475569' }}>•</span>
                 <button onClick={() => navigate('tools/photo-compress-20kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 20KB</button>
                 <span style={{ color: '#475569' }}>•</span>
@@ -1447,7 +1563,7 @@ function HomePage({ navigate, notify, lang, visitorCount = 18472 }) {
         <section className="modern-home-hero">
           <div className="hero-badge-pill">
             <span>🏛️</span>
-            <span>{isTa ? 'தமிழ்நாடு & மத்திய அரசு அங்கீகரிக்கப்பட்ட இ-சேவை மையம் • Palani' : 'Government Approved e-Sevai Digital Centre • Palani'}</span>
+            <span>{isTa ? 'அரசு & ஆன்லைன் குடிமக்கள் சேவை மையம் • Palani' : 'Digital Citizen Services & e-Sevai Assistance Centre • Palani'}</span>
           </div>
 
           <h1 className="hero-main-headline">
@@ -1617,9 +1733,10 @@ const getServiceVisual = (group, title = '') => {
 
   function ServicesPage({ navigate, lang }) {
     const t = translations[lang] || translations.en;
+    const isTa = lang === 'ta';
+    const [viewMode, setViewMode] = useState('catalog');
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState('All Services');
-    const [selectedService, setSelectedService] = useState(null);
     const [expandedTitle, setExpandedTitle] = useState(null);
 
     const categories = ['All Services', ...new Set(serviceCatalog.map((service) => service[2]))];
@@ -1628,6 +1745,13 @@ const getServiceVisual = (group, title = '') => {
       const matchesCategory = category === 'All Services' || service[2] === category;
       return matchesQuery && matchesCategory;
     });
+
+    const handleSelectServiceFromCatalog = (serviceObj) => {
+      try {
+        sessionStorage.setItem('akesevai_pending_service', JSON.stringify(serviceObj));
+      } catch (e) {}
+      navigate('customer');
+    };
 
     return (
       <PageIntro
@@ -1649,152 +1773,209 @@ const getServiceVisual = (group, title = '') => {
           <span className="showcase-logo-text">{t.brandShowcaseText}</span>
         </div>
 
-        <div className="service-search">
-          <Search size={18} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />
-          <span>{filteredServices.length} {t.resultsCount}</span>
-        </div>
-
-        <div className="category-tabs">
-          {categories.map((item) => (
-            <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>
-              {item === 'All Services' ? t.allCategories : item}
+        {/* View Mode Switcher */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 14px', flexWrap: 'wrap', gap: '10px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 800, color: '#334155' }}>
+            🏛️ {isTa ? 'அரசு சேவைகள் மற்றும் ஆவணப் பட்டியல்' : 'Official Government Services & Document Checklists'}
+          </span>
+          <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('catalog')}
+              style={{
+                background: viewMode === 'catalog' ? '#0052cc' : 'transparent',
+                color: viewMode === 'catalog' ? '#ffffff' : '#475569',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '7px',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              📋 {isTa ? 'விரிவான பட்டியல் (Interactive)' : 'Interactive Catalog'}
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              style={{
+                background: viewMode === 'grid' ? '#0052cc' : 'transparent',
+                color: viewMode === 'grid' ? '#ffffff' : '#475569',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: '7px',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              🎴 {isTa ? 'அட்டை வடிவம் (Cards Grid)' : 'Cards Grid'}
+            </button>
+          </div>
         </div>
 
-        <div className="catalog-grid">
-          {filteredServices.map(([tamil, title, group]) => {
-            const visual = getServiceVisual(group, title);
-            const isExpanded = expandedTitle === title;
-            const docs = getRequiredDocuments(title, group);
+        {viewMode === 'catalog' ? (
+          <GovernmentServiceSelector
+            lang={lang}
+            onSelectService={handleSelectServiceFromCatalog}
+          />
+        ) : (
+          <>
+            <div className="service-search">
+              <Search size={18} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />
+              <span>{filteredServices.length} {t.resultsCount}</span>
+            </div>
 
-            return (
-              <article
-                className={`catalog-card ${isExpanded ? 'catalog-card-expanded' : ''}`}
-                key={title}
-                style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-              >
-                <div
-                  className="service-card-image-header"
-                  style={{
-                    position: 'relative',
-                    height: '120px',
-                    background: visual.bgGradient,
-                    display: 'flex',
-                    alignItems: 'flex-end',
-                    padding: '12px',
-                    backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.75)), url(${visual.bannerImage})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center'
-                  }}
-                >
-                  <span
-                    style={{
-                      position: 'absolute',
-                      top: '10px',
-                      left: '10px',
-                      background: 'rgba(255, 255, 255, 0.95)',
-                      color: '#0f172a',
-                      padding: '4px 10px',
-                      borderRadius: '20px',
-                      fontSize: '10px',
-                      fontWeight: 800,
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
+            <div className="category-tabs">
+              {categories.map((item) => (
+                <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>
+                  {item === 'All Services' ? t.allCategories : item}
+                </button>
+              ))}
+            </div>
+
+            <div className="catalog-grid">
+              {filteredServices.map(([tamil, title, group]) => {
+                const visual = getServiceVisual(group, title);
+                const isExpanded = expandedTitle === title;
+                const docs = getRequiredDocuments(title, group);
+
+                return (
+                  <article
+                    className={`catalog-card ${isExpanded ? 'catalog-card-expanded' : ''}`}
+                    key={title}
+                    style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
                   >
-                    <span>{visual.icon}</span> {group}
-                  </span>
-                </div>
-
-                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                  <h3 style={{ font: '800 15px Manrope', margin: 0, color: 'var(--ink)', lineHeight: 1.3 }}>
-                    {lang === 'ta' ? tamil : title}
-                  </h3>
-                  <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0, fontWeight: 500 }}>
-                    {lang === 'ta' ? title : tamil}
-                  </p>
-
-                  <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px', alignItems: 'center' }}>
-                    <button
-                      className="card-link"
-                      style={{
-                        background: isExpanded ? '#f1f5f9' : '#e0f2fe',
-                        color: isExpanded ? '#334155' : '#0052cc',
-                        padding: '7px 12px',
-                        borderRadius: '7px',
-                        fontWeight: 800,
-                        fontSize: '11px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px'
-                      }}
-                      onClick={() => setExpandedTitle(isExpanded ? null : title)}
-                    >
-                      {isExpanded ? '✕ Hide (மறை)' : `📄 ${t.viewDetails}`}
-                    </button>
-
-                    <button
-                      style={{
-                        background: '#16a34a',
-                        color: 'white',
-                        padding: '7px 14px',
-                        borderRadius: '7px',
-                        fontWeight: 800,
-                        fontSize: '11px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        marginLeft: 'auto'
-                      }}
-                      onClick={() => navigate('customer')}
-                    >
-                      Apply <ArrowRight size={13} />
-                    </button>
-                  </div>
-
-                  {isExpanded && (
                     <div
-                      className="inline-service-detail"
+                      className="service-card-image-header"
                       style={{
-                        marginTop: '12px',
-                        paddingTop: '12px',
-                        borderTop: '1px dashed #cbd5e1',
-                        animation: 'fadeIn 0.2s ease'
+                        position: 'relative',
+                        height: '120px',
+                        background: visual.bgGradient,
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        padding: '12px',
+                        backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.75)), url(${visual.bannerImage})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
                       }}
                     >
-                      <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        📋 தேவைப்படும் ஆவணங்கள் (Required Documents):
-                      </h4>
-                      <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
-                        {docs.map((doc) => (
-                          <span key={doc} style={{ fontSize: '11px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                            <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} /> {doc}
-                          </span>
-                        ))}
-                      </div>
-                      <button
-                        className="button button-primary"
-                        style={{ width: '100%', fontSize: '11px', padding: '8px', justifyContent: 'center' }}
-                        onClick={() => navigate('customer')}
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: '10px',
+                          left: '10px',
+                          background: 'rgba(255, 255, 255, 0.95)',
+                          color: '#0f172a',
+                          padding: '4px 10px',
+                          borderRadius: '20px',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
                       >
-                        Start this application <ArrowRight size={14} />
-                      </button>
+                        <span>{visual.icon}</span> {group}
+                      </span>
                     </div>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-        {filteredServices.length === 0 && <div className="empty-search">{t.noServiceFound}</div>}
+
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                      <h3 style={{ font: '800 15px Manrope', margin: 0, color: 'var(--ink)', lineHeight: 1.3 }}>
+                        {lang === 'ta' ? tamil : title}
+                      </h3>
+                      <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0, fontWeight: 500 }}>
+                        {lang === 'ta' ? title : tamil}
+                      </p>
+
+                      <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px', alignItems: 'center' }}>
+                        <button
+                          className="card-link"
+                          style={{
+                            background: isExpanded ? '#f1f5f9' : '#e0f2fe',
+                            color: isExpanded ? '#334155' : '#0052cc',
+                            padding: '7px 12px',
+                            borderRadius: '7px',
+                            fontWeight: 800,
+                            fontSize: '11px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px'
+                          }}
+                          onClick={() => setExpandedTitle(isExpanded ? null : title)}
+                        >
+                          {isExpanded ? '✕ Hide (மறை)' : `📄 ${t.viewDetails}`}
+                        </button>
+
+                        <button
+                          style={{
+                            background: '#16a34a',
+                            color: 'white',
+                            padding: '7px 14px',
+                            borderRadius: '7px',
+                            fontWeight: 800,
+                            fontSize: '11px',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            marginLeft: 'auto'
+                          }}
+                          onClick={() => navigate('customer')}
+                        >
+                          Apply <ArrowRight size={13} />
+                        </button>
+                      </div>
+
+                      {isExpanded && (
+                        <div
+                          className="inline-service-detail"
+                          style={{
+                            marginTop: '12px',
+                            paddingTop: '12px',
+                            borderTop: '1px dashed #cbd5e1',
+                            animation: 'fadeIn 0.2s ease'
+                          }}
+                        >
+                          <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            📋 தேவைப்படும் ஆவணங்கள் (Required Documents):
+                          </h4>
+                          <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
+                            {docs.map((doc) => (
+                              <span key={doc} style={{ fontSize: '11px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                                <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} /> {doc}
+                              </span>
+                            ))}
+                          </div>
+                          <button
+                            className="button button-primary"
+                            style={{ width: '100%', fontSize: '11px', padding: '8px', justifyContent: 'center' }}
+                            onClick={() => navigate('customer')}
+                          >
+                            Start this application <ArrowRight size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {viewMode === 'grid' && filteredServices.length === 0 && <div className="empty-search">{t.noServiceFound}</div>}
         <div className="service-callout">
           <div className="service-callout-icon"><Phone /></div>
           <div>
@@ -1886,7 +2067,7 @@ const getServiceVisual = (group, title = '') => {
   function WhatsappPosterPage({ notify }) { const [message, setMessage] = useState('AkEsevai - Digital services made simple'); return <PageIntro kicker="WHATSAPP POSTER" title="Create a shareable service poster." text="Add your message, preview a clean poster and share it with your customers or family groups."><div className="poster-maker"><div className="poster-controls"><label>Poster message<textarea rows="4" value={message} onChange={(event) => setMessage(event.target.value)} /></label><button className="button button-primary" onClick={() => notify('Poster preview is ready to share on WhatsApp.')}><Download size={17} /> Download poster</button></div><div className="poster-preview"><div className="poster-logo"><Sparkles size={17} /> AkEsevai</div><div className="poster-lines"><span>YOUR LOCAL</span><strong>{message}</strong><small>Mill Road, Sanmugapuram, Palani - 624601</small><b>93423 18844</b></div><div className="poster-stamp">OPEN<br /><strong>10 AM - 8 PM</strong></div></div></div></PageIntro>; }
 
   function AboutPage({ navigate, lang }) {
-    return <PageIntro kicker={lang === 'ta' ? 'AKESEVAI பற்றி' : 'ABOUT AKESEVAI'} title={lang === 'ta' ? 'உள்ளூர் அனுபவம். டிஜிட்டல் நிச்சயம்.' : 'Local knowledge. Digital confidence.'} text={lang === 'ta' ? 'பழனி மற்றும் சுற்றியுள்ள குடும்பங்களுக்கு படிவங்கள், இணையதளங்களின் சிரமமின்றி அத்தியாவசிய ஆன்லைன் சேவைகளை பெற உதவுகிறோம்.' : 'We help families in and around Palani navigate essential online services without the stress of forms, portals and follow-ups.'}><div className="about-grid"><div className="about-photo"><div className="photo-overlay"><span>{lang === 'ta' ? 'பழனி மக்களுக்குச் சேவை' : 'Serving Palani'}</span><strong>{lang === 'ta' ? 'முதல் நாளிலிருந்தே கனிவுடன்.' : 'With care since day one.'}</strong></div></div><div className="about-copy"><span className="section-kicker">{lang === 'ta' ? 'எங்கள் உறுதிமொழி' : 'OUR PROMISE'}</span><h2>{lang === 'ta' ? 'ஒவ்வொரு விண்ணப்பத்திற்கும் மனித வழிகாட்டுதல் அவசியம்.' : 'Every application deserves a human guide.'}</h2><p>{lang === 'ta' ? 'அரசு தளங்கள் கடினமாக இருக்கலாம். சிறு தவறுகள் தாமதத்தை உருவாக்கலாம். AkEsevai உங்களை சரியான பாதையில் அழைத்துச் செல்லும்.' : 'Government websites can be hard to navigate and small mistakes can create long delays. AkEsevai combines local understanding with a simple digital process so you always know what is happening next.'}</p><div className="promise-list"><span><Check /> {lang === 'ta' ? 'தொ தொடங்கும் முன் தெளிவான கட்டணம்' : 'Clear pricing before we begin'}</span><span><Check /> {lang === 'ta' ? 'எளிதில் புரியும் உடனுக்குடன் தகவல்கள்' : 'Updates you can understand'}</span><span><Check /> {lang === 'ta' ? 'பாதுகாப்பான ஆவண பராமரிப்பு' : 'Your documents handled with care'}</span></div><button className="button button-primary" onClick={() => navigate('contact')}>{lang === 'ta' ? 'பழனியில் எங்களைச் சந்திக்க' : 'Meet us in Palani'} <MapPin size={17} /></button></div></div></PageIntro>;
+    return <PageIntro kicker={lang === 'ta' ? 'AKESEVAI பற்றி' : 'ABOUT AKESEVAI'} title={lang === 'ta' ? 'உள்ளூர் அனுபவம். டிஜிட்டல் நிச்சயம்.' : 'Local knowledge. Digital confidence.'} text={lang === 'ta' ? 'பழனி மற்றும் சுற்றியுள்ள குடும்பங்களுக்கு படிவங்கள், இணையதளங்களின் சிரமமின்றி அத்தியாவசிய ஆன்லைன் சேவைகளை பெற உதவுகிறோம்.' : 'We help families in and around Palani navigate essential online services without the stress of forms, portals and follow-ups.'}><div className="about-grid"><div className="about-photo"><div className="photo-overlay"><span>{lang === 'ta' ? 'பழனி மக்களுக்குச் சேவை' : 'Serving Palani'}</span><strong>{lang === 'ta' ? 'முதல் நாளிலிருந்தே கனிவுடன்.' : 'With care since day one.'}</strong></div></div><div className="about-copy"><span className="section-kicker">{lang === 'ta' ? 'எங்கள் உறுதிமொழி' : 'OUR PROMISE'}</span><h2>{lang === 'ta' ? 'ஒவ்வொரு விண்ணப்பத்திற்கும் மனித வழிகாட்டுதல் அவசியம்.' : 'Every application deserves a human guide.'}</h2><p>{lang === 'ta' ? 'அரசு தளங்கள் கடினமாக இருக்கலாம். சிறு தவறுகள் தாமதத்தை உருவாக்கலாம். AkEsevai உங்களை சரியான பாதையில் அழைத்துச் செல்லும்.' : 'Government websites can be hard to navigate and small mistakes can create long delays. AkEsevai combines local understanding with a simple digital process so you always know what is happening next.'}</p><div className="promise-list"><span><Check /> {lang === 'ta' ? 'தொடங்கும் முன் தெளிவான கட்டணம்' : 'Clear pricing before we begin'}</span><span><Check /> {lang === 'ta' ? 'எளிதில் புரியும் உடனுக்குடன் தகவல்கள்' : 'Updates you can understand'}</span><span><Check /> {lang === 'ta' ? 'பாதுகாப்பான ஆவண பராமரிப்பு' : 'Your documents handled with care'}</span></div><button className="button button-primary" onClick={() => navigate('contact')}>{lang === 'ta' ? 'பழனியில் எங்களைச் சந்திக்க' : 'Meet us in Palani'} <MapPin size={17} /></button></div></div></PageIntro>;
   }
 
   function ContactPage({ notify, lang }) {
@@ -1897,16 +2078,16 @@ const getServiceVisual = (group, title = '') => {
           <div className="contact-panel">
             <div className="contact-item"><span><MapPin /></span><div><small>{t.visitUs}</small><strong>Mill Road, Sanmugapuram</strong><p>Palani - 624601, Tamil Nadu</p></div></div>
             <div className="contact-item"><span><Phone /></span><div><small>{t.callUs}</small><a href="tel:9342318844"><strong>93423 18844</strong></a><p>{lang === 'ta' ? siteConfig.hoursTamil : siteConfig.hours}</p></div></div>
-            <div className="contact-item"><span><Mail /></span><div><small>EMAIL US</small><a href="mailto:akesevaipalani@gmail.com"><strong>akesevaipalani@gmail.com</strong></a><p>We reply within 24 hours</p></div></div>
-            <div className="contact-item"><span><MessageCircle /></span><div><small>{t.whatsappUs}</small><a href="https://wa.me/919342318844"><strong>Chat with AkEsevai</strong></a><p>Quick questions and document checklist</p></div></div>
-            <div className="contact-item"><span><YoutubeIcon size={20} color="#FF0000" /></span><div><small>YOUTUBE CHANNEL</small><a href={siteConfig.youtube} target="_blank" rel="noreferrer"><strong>@AkEsevai</strong></a><p>Subscribe for video guides & updates</p></div></div>
-            <div className="contact-item"><span><InstagramIcon size={20} color="#E1306C" /></span><div><small>INSTAGRAM PAGE</small><a href={siteConfig.instagram} target="_blank" rel="noreferrer"><strong>@akesevai</strong></a><p>Follow us for daily posts & news</p></div></div>
-            <div className="contact-item"><span><FacebookIcon size={20} color="#1877F2" /></span><div><small>FACEBOOK PAGE</small><a href={siteConfig.facebook} target="_blank" rel="noreferrer"><strong>AkEsevai Facebook</strong></a><p>Connect on our Facebook page</p></div></div>
+            <div className="contact-item"><span><Mail /></span><div><small>{lang === 'ta' ? 'மின்னஞ்சல்' : 'EMAIL US'}</small><a href="mailto:akesevaipalani@gmail.com"><strong>akesevaipalani@gmail.com</strong></a><p>{lang === 'ta' ? '24 மணி நேரத்திற்குள் பதிலளிப்போம்' : 'We reply within 24 hours'}</p></div></div>
+            <div className="contact-item"><span><MessageCircle /></span><div><small>{t.whatsappUs}</small><a href="https://wa.me/919342318844"><strong>Chat with AkEsevai</strong></a><p>{lang === 'ta' ? 'உடனடி சந்தேகங்கள் மற்றும் ஆவண சரிபார்ப்பு' : 'Quick questions and document checklist'}</p></div></div>
+            <div className="contact-item"><span><YoutubeIcon size={20} color="#FF0000" /></span><div><small>YOUTUBE CHANNEL</small><a href={siteConfig.youtube} target="_blank" rel="noreferrer"><strong>@AkEsevai</strong></a><p>{lang === 'ta' ? 'வீடியோ வழிகாட்டிகள் மற்றும் தகவல்களுக்கு' : 'Subscribe for video guides & updates'}</p></div></div>
+            <div className="contact-item"><span><InstagramIcon size={20} color="#E1306C" /></span><div><small>INSTAGRAM PAGE</small><a href={siteConfig.instagram} target="_blank" rel="noreferrer"><strong>@akesevai</strong></a><p>{lang === 'ta' ? 'தினசரி அறிவிப்புகள் மற்றும் செய்திகள்' : 'Follow us for daily posts & news'}</p></div></div>
+            <div className="contact-item"><span><FacebookIcon size={20} color="#1877F2" /></span><div><small>FACEBOOK PAGE</small><a href={siteConfig.facebook} target="_blank" rel="noreferrer"><strong>AkEsevai Facebook</strong></a><p>{lang === 'ta' ? 'எங்கள் முகநூல் பக்கத்தில் இணையுங்கள்' : 'Connect on our Facebook page'}</p></div></div>
           </div>
           <form className="contact-form" onSubmit={(event) => { event.preventDefault(); notify(lang === 'ta' ? 'செய்தி பெறப்பட்டது. AkEsevai விரைவில் உங்களை அழைக்கும்.' : 'Message received. AkEsevai will call you shortly.'); event.currentTarget.reset(); }}>
-            <label>{t.yourName}<input required placeholder="Enter your name" /></label>
-            <label>{t.phoneNumber}<input required type="tel" placeholder="10-digit mobile number" /></label>
-            <label>{t.howCanWeHelp}<textarea required placeholder="Tell us a little about your service need" rows="4" /></label>
+            <label>{t.yourName}<input required placeholder={lang === 'ta' ? 'உங்கள் பெயரை உள்ளிடவும்' : 'Enter your name'} /></label>
+            <label>{t.phoneNumber}<input required type="tel" placeholder={lang === 'ta' ? '10 இலக்க மொபைல் எண்' : '10-digit mobile number'} /></label>
+            <label>{t.howCanWeHelp}<textarea required placeholder={lang === 'ta' ? 'உங்களுக்கு தேவையான சேவை பற்றி சுருக்கமாக குறிப்பிடவும்' : 'Tell us a little about your service need'} rows="4" /></label>
             <button className="button button-primary" type="submit">{t.sendMessage} <Send size={16} /></button>
           </form>
         </div>
@@ -2394,7 +2575,7 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
-  function AdminPage({ loggedIn, login, logout, navigate, tokenBookings = [], setTokenBookings, customerRecords = {}, setCustomerRecords, applicationRecords = {}, setApplicationRecords, cloudExpiryDocs = [], notify, activeTab: propAdminTab, setActiveTab: setPropAdminTab, lang = 'ta' }) {
+  function AdminPage({ loggedIn, login, logout, changeAdminPassword, navigate, tokenBookings = [], setTokenBookings, customerRecords = {}, setCustomerRecords, applicationRecords = {}, setApplicationRecords, cloudExpiryDocs = [], notify, activeTab: propAdminTab, setActiveTab: setPropAdminTab, lang = 'ta' }) {
     const [password, setPassword] = useState('');
     const [query, setQuery] = useState('');
     const [tokenSearch, setTokenSearch] = useState('');
@@ -2483,7 +2664,7 @@ const getServiceVisual = (group, title = '') => {
       };
     }, []);
 
-    if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={(event) => { event.preventDefault(); if (login(password)) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button></form></section>;
+    if (!loggedIn) return <section className="customer-entry"><div className="login-art"><span className="eyebrow"><span className="live-dot" /> AkEsevai administration</span><h1>Manage customer<br /><em>service requests.</em></h1><p>Review every customer's selected service and their uploaded required documents in one place.</p></div><form className="login-card" onSubmit={async (event) => { event.preventDefault(); const ok = await login(password); if (ok) setPassword(''); }}><div className="login-icon"><LockKeyhole size={22} /></div><span className="section-kicker">ADMIN ACCESS</span><h2>Sign in to admin panel</h2><p>This area is only for the AkEsevai team.</p><label>Admin password<input className="admin-password" required type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Enter password" /></label><button className="button button-primary button-wide" type="submit">Open dashboard <ArrowRight size={17} /></button></form></section>;
     const localRecords = readCustomerRecords();
     const activeRecords = { ...localRecords, ...(customerRecords || {}) };
     const deletedCustSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
@@ -3262,7 +3443,7 @@ const getServiceVisual = (group, title = '') => {
 
         {adminTab === 'smartdesk' && (
           <div style={{ marginTop: '10px' }}>
-            <AdminSevaiSmartDesk notify={notify} />
+            <AdminSevaiSmartDesk notify={notify} changeAdminPassword={changeAdminPassword} />
           </div>
         )}
         {adminTab === 'notifications' && (
@@ -4499,6 +4680,7 @@ const getServiceVisual = (group, title = '') => {
     const setActiveTab = setPropTab || setInternalTab;
     const [selectedService, setSelectedService] = useState('');
     const [showNotifications, setShowNotifications] = useState(false);
+    const [showGovServiceModal, setShowGovServiceModal] = useState(false);
     const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
     const [dobInput, setDobInput] = useState(customer.profile.dob || customer.dob || '');
     const [aadhaarInput, setAadhaarInput] = useState(customer.profile.aadhaarNo || customer.profile.aadhar || customer.aadhaarNo || customer.aadhar || '');
@@ -4507,6 +4689,20 @@ const getServiceVisual = (group, title = '') => {
     const [editName, setEditName] = useState(customer.profile.name || '');
     const [editDob, setEditDob] = useState(customer.profile.dob || customer.dob || '');
     const [editAadhaar, setEditAadhaar] = useState(customer.profile.aadhaarNo || customer.profile.aadhar || customer.aadhaarNo || customer.aadhar || '');
+
+    // Auto-check for pre-selected service from catalog
+    useEffect(() => {
+      try {
+        const pending = sessionStorage.getItem('akesevai_pending_service');
+        if (pending) {
+          sessionStorage.removeItem('akesevai_pending_service');
+          const serviceObj = JSON.parse(pending);
+          if (serviceObj && typeof addApplication === 'function') {
+            addApplication(null, serviceObj);
+          }
+        }
+      } catch (e) {}
+    }, []);
 
     // FIRST TIME PROFILE COMPLETION SCREEN: Name, DOB, Aadhaar Number
     if (!customer.profile.complete) {
@@ -4625,32 +4821,36 @@ const getServiceVisual = (group, title = '') => {
       }
     });
     const applications = Array.from(applicationsMap.values());
-    const addApplication = (event) => {
-      event.preventDefault();
-      if (!selectedService) return;
+    const addApplication = (event, customServiceObj = null) => {
+      if (event && event.preventDefault) event.preventDefault();
+      const serviceToApply = customServiceObj
+        ? (lang === 'ta' ? customServiceObj.nameTa : customServiceObj.nameEn)
+        : selectedService;
+      if (!serviceToApply) return;
       
       const existingApp = (customer.applications || []).find(
-        (a) => a && a.name && a.name.trim().toLowerCase() === selectedService.trim().toLowerCase()
+        (a) => a && a.name && (
+          a.name.trim().toLowerCase() === serviceToApply.trim().toLowerCase() ||
+          (customServiceObj && (a.name === customServiceObj.nameTa || a.name === customServiceObj.nameEn || a.id === `AK-${customServiceObj.id}`))
+        )
       );
       
       if (existingApp) {
         setSelectedService('');
         setActiveTab('documents');
-        notify(`ℹ️ "${selectedService}" சேவை ஏற்கனவே சேர்க்கப்பட்டுள்ளது! (${existingApp.id})`);
+        notify(`ℹ️ "${serviceToApply}" சேவை ஏற்கனவே சேர்க்கப்பட்டுள்ளது! (${existingApp.id})`);
         return;
       }
 
-      const service = serviceCatalog.find(([tamil, title]) => 
-        tamil === selectedService || 
-        title === selectedService || 
-        `${tamil} (${title})` === selectedService ||
-        selectedService.includes(tamil) || 
-        selectedService.includes(title)
-      );
-      const requirements = getRequiredDocuments(selectedService, service?.[2]);
+      const requirements = customServiceObj && Array.isArray(customServiceObj.requiredDocuments)
+        ? (lang === 'ta' && customServiceObj.requiredDocumentsTa?.length ? customServiceObj.requiredDocumentsTa : customServiceObj.requiredDocuments)
+        : getRequiredDocuments(serviceToApply);
+
       const application = {
-        id: `AK-${Math.floor(10000000 + Math.random() * 90000000)}`,
-        name: selectedService,
+        id: customServiceObj?.id ? `AK-${customServiceObj.id}-${Math.floor(1000 + Math.random() * 9000)}` : `AK-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        name: serviceToApply,
+        serviceId: customServiceObj?.id,
+        department: customServiceObj?.department,
         status: 'Submitted',
         date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
         progress: 22,
@@ -4663,7 +4863,7 @@ const getServiceVisual = (group, title = '') => {
       }));
       setSelectedService('');
       setActiveTab('documents');
-      notify('🎉 Service selected!');
+      notify(`🎉 "${serviceToApply}" சேவை சேர்க்கப்பட்டது!`);
     };
 
     const handleSaveSelfProfile = async () => {
@@ -4996,16 +5196,102 @@ const getServiceVisual = (group, title = '') => {
                 )) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
               </div>
               <div className="quick-panel">
-                <span className="section-kicker">SELECT A SERVICE</span><h2>Start your request</h2><p>We will show only the documents required for the service you choose.</p>
-                <form onSubmit={addApplication}>
+                <span className="section-kicker">SELECT A SERVICE</span>
+                <h2>Start your request</h2>
+                <p>Choose an official service to view its requirements and upload documents.</p>
+
+                <button
+                  type="button"
+                  className="btn-open-catalog-modal"
+                  onClick={() => setShowGovServiceModal(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginBottom: '12px',
+                    boxShadow: '0 4px 14px rgba(0, 82, 204, 0.2)'
+                  }}
+                >
+                  <Sparkles size={16} /> 🏛️ {lang === 'ta' ? 'அரசு சேவை பட்டியல் (Explore 97+ Services)' : 'Browse Government Services (97+)'}
+                </button>
+
+                <div style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8', margin: '4px 0 8px', fontWeight: 700 }}>
+                  — {lang === 'ta' ? 'அல்லது விரைவு தேர்வு' : 'OR QUICK SELECT'} —
+                </div>
+
+                <form onSubmit={(e) => addApplication(e)}>
                   <select value={selectedService} onChange={(event) => setSelectedService(event.target.value)} required>
                     <option value="">Select a service</option>
-                    {serviceCatalog.map(([, title]) => <option key={title}>{title}</option>)}
+                    {SERVICE_CATEGORIES.filter(c => c.id !== 'all').map(cat => {
+                      const catServices = GOVERNMENT_SERVICES.filter(s => s.category === cat.id);
+                      if (!catServices.length) return null;
+                      return (
+                        <optgroup key={cat.id} label={`${cat.icon} ${lang === 'ta' ? cat.nameTa : cat.nameEn}`}>
+                          {catServices.map(s => (
+                            <option key={s.id} value={lang === 'ta' ? s.nameTa : s.nameEn}>
+                              {lang === 'ta' ? `${s.nameTa} (${s.id})` : `${s.nameEn} (${s.id})`}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
                   </select>
                   <button className="button button-primary button-wide" type="submit">Continue to documents <ArrowRight size={16} /></button>
                 </form>
               </div>
             </div>
+
+            {/* GOVERNMENT SERVICES CATALOG MODAL */}
+            {showGovServiceModal && (
+              <div
+                style={{
+                  position: 'fixed',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  backdropFilter: 'blur(5px)',
+                  zIndex: 99999,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '16px'
+                }}
+                onClick={() => setShowGovServiceModal(false)}
+              >
+                <div
+                  style={{
+                    maxWidth: '1100px',
+                    width: '100%',
+                    maxHeight: '92vh',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <GovernmentServiceSelector
+                    lang={lang}
+                    isModal={true}
+                    onClose={() => setShowGovServiceModal(false)}
+                    onSelectService={(serviceObj) => {
+                      setShowGovServiceModal(false);
+                      addApplication(null, serviceObj);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </>
         )}
         {activeTab === 'applications' && (
@@ -5458,6 +5744,10 @@ const getServiceVisual = (group, title = '') => {
             <span className="section-kicker">DOCUMENT VAULT</span>
             <h2>Required documents</h2>
             <p>Only documents required for your selected service can be uploaded, viewed, or deleted.</p>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px', margin: '8px 0 14px', fontSize: '11px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>🔒</span>
+              <span>Your uploaded documents are processed securely and are not publicly accessible. (உங்கள் ஆவணங்கள் பாதுகாப்பாக செயலாக்கப்படுகின்றன; அனுமதியின்றி எவரும் அணுக முடியாது).</span>
+            </div>
           </div>
         </div>
 

@@ -16,26 +16,19 @@ export const getAuthHeaders = () => {
   const headers = {};
   if (typeof window !== 'undefined') {
     try {
-      // 1. Admin Session Check
-      const adminSession = sessionStorage.getItem('akesevai-admin-session') || localStorage.getItem('akesevai-admin-session');
-      if (adminSession === 'true' || adminSession === 'admin-auth-token-2026' || adminSession === 'akesevai-admin-2026' || adminSession === 'admin123') {
-        headers['x-admin-token'] = 'admin123';
-      } else if (adminSession) {
-        try {
-          const parsed = JSON.parse(adminSession);
-          if (parsed?.token || parsed?.password) {
-            headers['x-admin-token'] = parsed.token || parsed.password;
-          } else if (typeof parsed === 'string' && parsed.length > 0) {
-            headers['x-admin-token'] = parsed;
-          } else {
-            headers['x-admin-token'] = 'admin123';
-          }
-        } catch (e) {
-          headers['x-admin-token'] = String(adminSession);
-        }
+      // 1. Admin Session Token (Dynamic Secure Opaque Token)
+      const adminToken = sessionStorage.getItem('akesevai-admin-token');
+      if (adminToken && typeof adminToken === 'string' && adminToken.trim().length > 0) {
+        headers['x-admin-token'] = adminToken.trim();
       }
 
-      // 2. Customer Session Check (handles raw phone string or JSON object)
+      // 2. Customer Cryptographic Token (HMAC Signed)
+      const custToken = sessionStorage.getItem('akesevai-customer-token') || localStorage.getItem('akesevai-customer-token');
+      if (custToken && typeof custToken === 'string' && custToken.trim().length > 0) {
+        headers['x-customer-token'] = custToken.trim();
+      }
+
+      // 3. Customer Session Check (handles raw phone string or JSON object)
       const custSession = sessionStorage.getItem('akesevai-customer-session') || localStorage.getItem('akesevai-customer-session');
       if (custSession) {
         let phoneStr = '';
@@ -486,10 +479,124 @@ export const verifyOtpMongo = async (phone, otp, purpose = 'register') => {
       body: JSON.stringify({ phone: cleanPhone, otp, purpose })
     });
     const data = await res.json();
+    if (data && data.customerToken) {
+      try {
+        sessionStorage.setItem('akesevai-customer-token', data.customerToken);
+        localStorage.setItem('akesevai-customer-token', data.customerToken);
+      } catch (e) {}
+    }
     return { ...data, status: res.status };
   } catch (err) {
     return { success: false, error: 'NETWORK_ERROR', message: 'சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.' };
   }
+};
+
+export const loginCustomerPasswordMongo = async (phone, password) => {
+  const cleanPhone = cleanDigits(phone);
+  if (!cleanPhone || !password) {
+    return { success: false, error: 'INVALID_INPUT', message: 'மொபைல் எண் மற்றும் கடவுச்சொல் தேவை.' };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/customer/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: cleanPhone, password })
+    });
+    const data = await res.json();
+    if (data && data.customerToken) {
+      try {
+        sessionStorage.setItem('akesevai-customer-token', data.customerToken);
+        localStorage.setItem('akesevai-customer-token', data.customerToken);
+      } catch (e) {}
+    }
+    return { ...data, status: res.status };
+  } catch (err) {
+    return { success: false, error: 'NETWORK_ERROR', message: 'சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.' };
+  }
+};
+
+export const registerCustomerMongo = async (phone, verifiedToken, details = {}) => {
+  const cleanPhone = cleanDigits(phone);
+  if (!cleanPhone) return { success: false, error: 'INVALID_PHONE', message: '10-இலக்க மொபைல் எண் தேவை.' };
+  try {
+    const authHeaders = getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/customer/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        verifiedToken,
+        name: details.name || 'Customer',
+        dob: details.dob || '',
+        aadhaarNo: details.aadhaarNo || '',
+        password: details.password || ''
+      })
+    });
+    const data = await res.json();
+    if (data && data.customerToken) {
+      try {
+        sessionStorage.setItem('akesevai-customer-token', data.customerToken);
+        localStorage.setItem('akesevai-customer-token', data.customerToken);
+      } catch (e) {}
+    }
+    return { ...data, status: res.status };
+  } catch (err) {
+    return { success: false, error: 'NETWORK_ERROR', message: 'சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.' };
+  }
+};
+
+export const setCustomerPasswordMongo = async (phone, verifiedToken, newPassword) => {
+  const cleanPhone = cleanDigits(phone);
+  if (!cleanPhone || !newPassword) {
+    return { success: false, error: 'INVALID_INPUT', message: 'மொபைல் எண் மற்றும் புதிய கடவுச்சொல் தேவை.' };
+  }
+  try {
+    const authHeaders = getAuthHeaders();
+    const res = await fetch(`${API_BASE_URL}/customer/set-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        verifiedToken,
+        newPassword
+      })
+    });
+    const data = await res.json();
+    if (data && data.customerToken) {
+      try {
+        sessionStorage.setItem('akesevai-customer-token', data.customerToken);
+        localStorage.setItem('akesevai-customer-token', data.customerToken);
+      } catch (e) {}
+    }
+    return { ...data, status: res.status };
+  } catch (err) {
+    return { success: false, error: 'NETWORK_ERROR', message: 'சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.' };
+  }
+};
+
+export const logoutCustomerMongo = async () => {
+  try {
+    const authHeaders = getAuthHeaders();
+    await fetch(`${API_BASE_URL}/customer/logout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders
+      }
+    });
+  } catch (err) {}
+  try {
+    sessionStorage.removeItem('akesevai-customer-token');
+    localStorage.removeItem('akesevai-customer-token');
+    sessionStorage.removeItem('akesevai-customer-session');
+    localStorage.removeItem('akesevai-customer-session');
+  } catch (e) {}
 };
 
 export const resendOtpMongo = async (phone, purpose = 'register') => {
@@ -565,4 +672,62 @@ export const subscribeLiveQueueMongo = (callback, intervalMs = 2000) => {
     isMounted = false;
     clearInterval(timer);
   };
+};
+
+// --- ADMIN AUTHENTICATION API SERVICES ---
+
+export const authenticateAdminApi = async (password) => {
+  const url = `${getApiBaseUrl()}/admin/login`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json().catch(() => ({ success: false, message: 'Server response parsing error' }));
+    return { ok: res.ok && Boolean(data.success), data, status: res.status };
+  } catch (err) {
+    return { ok: false, data: { success: false, message: err.message || 'Network error' }, status: 500 };
+  }
+};
+
+export const changeAdminPasswordApi = async (currentPassword, newPassword) => {
+  const url = `${getApiBaseUrl()}/admin/change-password`;
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+    const data = await res.json().catch(() => ({ success: false, message: 'Server response parsing error' }));
+    return { ok: res.ok && Boolean(data.success), data, status: res.status };
+  } catch (err) {
+    return { ok: false, data: { success: false, message: err.message || 'Network error' }, status: 500 };
+  }
+};
+
+export const logoutAdminApi = async () => {
+  const url = `${getApiBaseUrl()}/admin/logout`;
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders()
+    };
+    await fetch(url, { method: 'POST', headers });
+  } catch (err) {}
+};
+
+export const verifyAdminSessionApi = async () => {
+  const url = `${getApiBaseUrl()}/admin/verify-session`;
+  try {
+    const res = await fetch(url, { headers: getAuthHeaders() });
+    const data = await res.json();
+    return res.ok && Boolean(data.authenticated);
+  } catch (err) {
+    return false;
+  }
 };

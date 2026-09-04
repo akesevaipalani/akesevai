@@ -33,6 +33,10 @@ import {
   subscribeNotificationsMongo,
   sendOtpMongo,
   verifyOtpMongo,
+  loginCustomerPasswordMongo,
+  registerCustomerMongo,
+  setCustomerPasswordMongo,
+  logoutCustomerMongo,
   resendOtpMongo,
   fetchAllAdvertisementsMongo,
   saveAdvertisementMongo,
@@ -54,6 +58,22 @@ export const sendOtpCloud = async (phone, purpose) => {
 
 export const verifyOtpCloud = async (phone, otp, purpose) => {
   return await verifyOtpMongo(phone, otp, purpose);
+};
+
+export const loginCustomerPasswordCloud = async (phone, password) => {
+  return await loginCustomerPasswordMongo(phone, password);
+};
+
+export const registerCustomerCloud = async (phone, verifiedToken, details) => {
+  return await registerCustomerMongo(phone, verifiedToken, details);
+};
+
+export const setCustomerPasswordCloud = async (phone, verifiedToken, newPassword) => {
+  return await setCustomerPasswordMongo(phone, verifiedToken, newPassword);
+};
+
+export const logoutCustomerCloud = async () => {
+  return await logoutCustomerMongo();
 };
 
 export const resendOtpCloud = async (phone, purpose) => {

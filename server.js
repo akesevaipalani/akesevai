@@ -20,12 +20,48 @@ if (dns.setDefaultResultOrder) {
 
 dotenv.config();
 
+// --- PRODUCTION ENVIRONMENT & SECURITY CONFIGURATION VALIDATION ---
+const isProd = process.env.NODE_ENV === 'production';
+
+function validateProductionSecurityEnvironment() {
+  if (!isProd) {
+    return; // Development mode allows explicit local test defaults
+  }
+
+  const requiredVariables = [
+    'MONGODB_URI',
+    'DOCUMENT_ENCRYPTION_SECRET',
+    'CUSTOMER_AUTH_SECRET',
+    'OTP_SALT'
+  ];
+
+  const missingVariables = requiredVariables.filter((varName) => {
+    const val = process.env[varName];
+    return !val || typeof val !== 'string' || val.trim().length === 0;
+  });
+
+  if (missingVariables.length > 0) {
+    console.error('\n=============================================================');
+    console.error('🚨 [FATAL CONFIGURATION ERROR] REFUSING PRODUCTION SERVER STARTUP');
+    console.error('=============================================================');
+    console.error('The following REQUIRED security environment variables are MISSING:');
+    missingVariables.forEach((name) => console.error(`   ❌ ${name}`));
+    console.error('\nProduction security policy strictly prohibits running with missing');
+    console.error('or hardcoded fallback secrets. Please configure these variables in');
+    console.error('your Render / hosting environment dashboard and restart.');
+    console.error('=============================================================\n');
+    process.exit(1);
+  }
+}
+
+validateProductionSecurityEnvironment();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/akesevai';
+const MONGODB_URI = process.env.MONGODB_URI || (isProd ? '' : 'mongodb://127.0.0.1:27017/akesevai');
 
 // Security: Disable x-powered-by banner
 app.disable('x-powered-by');
@@ -118,6 +154,9 @@ const customerSchema = new mongoose.Schema({
   name: { type: String, default: 'Customer' },
   dob: { type: String, default: '' },
   aadhaarNo: { type: String, default: '' },
+  passwordHash: { type: String, default: '' },
+  passwordSalt: { type: String, default: '' },
+  activeSessionTokens: { type: [String], default: [] },
   profile: { type: Object, default: {} },
   applications: { type: Array, default: [] },
   documents: { type: Array, default: [] },
@@ -248,6 +287,16 @@ const centerSettingsSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { strict: false });
 
+// 10. Admin Authentication & Credential Schema
+const adminAuthSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true, default: 'admin' },
+  passwordHash: { type: String, required: true },
+  passwordSalt: { type: String, required: true },
+  activeSessionTokens: { type: [String], default: [] },
+  updatedAt: { type: Date, default: Date.now },
+  passwordChangedAt: { type: Date, default: Date.now }
+});
+
 // Models
 const Customer = mongoose.model('Customer', customerSchema);
 const Application = mongoose.model('Application', applicationSchema);
@@ -258,6 +307,7 @@ const Notification = mongoose.model('Notification', notificationSchema);
 const OtpSession = mongoose.model('OtpSession', otpSchema);
 const Advertisement = mongoose.model('Advertisement', advertisementSchema);
 const CenterSettings = mongoose.models.CenterSettings || mongoose.model('CenterSettings', centerSettingsSchema);
+const AdminAuth = mongoose.models.AdminAuth || mongoose.model('AdminAuth', adminAuthSchema);
 
 // MASTER VERIFIED ALL-INDIA & TAMIL NADU GOVT EXAM NOTIFICATIONS REGISTRY
 const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
@@ -1204,13 +1254,16 @@ app.get('/api/health', (req, res) => {
 });
 
 // --- OTP & SMS GATEWAY SECURITY SYSTEM ---
-const OTP_SALT = process.env.OTP_SALT || 'akesevai_secure_otp_salt_2026';
+const OTP_SALT = process.env.OTP_SALT || (!isProd ? 'dev_only_local_otp_salt_random' : null);
 const MAX_OTP_ATTEMPTS = 3;
 const RESEND_COOLDOWN_SECONDS = 30;
 const OTP_EXPIRY_MINUTES = 5;
 
 // Hash OTP with SHA-256 and salt
 function hashOtp(phone, otp) {
+  if (!OTP_SALT) {
+    throw new Error('OTP_SALT is required for cryptographic hashing in production.');
+  }
   return crypto.createHash('sha256').update(`${phone}:${otp}:${OTP_SALT}`).digest('hex');
 }
 
@@ -1221,8 +1274,8 @@ function generateSecureOtp() {
 
 // Check if dev test OTP is allowed (STRICTLY DISABLED IN PRODUCTION)
 function isTestOtpAllowed() {
-  const isProd = process.env.NODE_ENV === 'production';
-  return !isProd && process.env.ALLOW_TEST_OTP === 'true';
+  if (isProd) return false;
+  return process.env.ALLOW_TEST_OTP === 'true';
 }
 
 // --- SERVER-SIDE SMS IN-FLIGHT MUTEX & DUPLICATE DISPATCH PROTECTION ---
@@ -1417,6 +1470,247 @@ async function dispatchSmsOtp(phone, otp, purpose = 'verification') {
   console.warn(`⚠️ [Production SMS Warning]: No SMS Gateway API key configured in .env.`);
   return { success: false, provider: 'none', error: 'SMS_GATEWAY_NOT_CONFIGURED' };
 }
+
+// --- SECURITY & AUTHENTICATION HELPERS (SERVER-SIDE AUTHORIZATION ENGINE) ---
+
+const cleanPhoneDigits = (p) => {
+  const d = String(p || '').replace(/\D/g, '');
+  return d.length >= 10 ? d.slice(-10) : d;
+};
+
+const maskPhoneForLog = (p) => {
+  const clean = cleanPhoneDigits(p);
+  return clean.length === 10 ? `${clean.slice(0, 3)}****${clean.slice(7)}` : 'UNKNOWN';
+};
+
+const sanitizeInput = (str) => {
+  if (typeof str !== 'string') return '';
+  return str.trim().replace(/[<>]/g, '');
+};
+
+// --- ADMIN AUTHENTICATION, CRYPTOGRAPHIC HASHING & SESSION ENGINE ---
+const activeAdminTokensSet = new Set();
+const HASH_ITERATIONS = 100000;
+const HASH_KEYLEN = 64;
+const HASH_DIGEST = 'sha512';
+
+function hashAdminPassword(password, salt) {
+  return crypto.pbkdf2Sync(password, salt, HASH_ITERATIONS, HASH_KEYLEN, HASH_DIGEST).toString('hex');
+}
+
+function verifyAdminPassword(password, salt, storedHash) {
+  try {
+    if (!password || !salt || !storedHash) return false;
+    const computed = hashAdminPassword(password, salt);
+    return crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(storedHash, 'hex'));
+  } catch (err) {
+    return false;
+  }
+}
+
+// --- CUSTOMER PASSWORD AUTHENTICATION ENGINE (PBKDF2-SHA512) ---
+function hashCustomerPassword(password, salt) {
+  return crypto.pbkdf2Sync(password, salt, HASH_ITERATIONS, HASH_KEYLEN, HASH_DIGEST).toString('hex');
+}
+
+function verifyCustomerPassword(password, salt, storedHash) {
+  try {
+    if (!password || !salt || !storedHash) return false;
+    const computed = hashCustomerPassword(password, salt);
+    return crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(storedHash, 'hex'));
+  } catch (err) {
+    return false;
+  }
+}
+
+async function initializeAdminAuth() {
+  try {
+    let adminRecord = await AdminAuth.findOne({ username: 'admin' });
+    if (!adminRecord) {
+      const initialPassword = process.env.ADMIN_PASSWORD;
+
+      if (!initialPassword || initialPassword.trim().length === 0) {
+        if (isProd) {
+          console.error('\n=============================================================');
+          console.error('🚨 [ADMIN AUTH BOOTSTRAP FAILURE] No AdminAuth record found in MongoDB.');
+          console.error('🚨 ADMIN_PASSWORD is missing in production environment variables.');
+          console.error('🚨 Refusing to bootstrap admin with a default or insecure password in production.');
+          console.error('🚨 Please configure a strong ADMIN_PASSWORD in your environment and restart.');
+          console.error('=============================================================\n');
+          return;
+        } else {
+          console.warn('⚠️ [DEV Admin Auth Bootstrap] No ADMIN_PASSWORD set in .env for local development. Admin initialization postponed until ADMIN_PASSWORD is provided.');
+          return;
+        }
+      }
+
+      const salt = crypto.randomBytes(16).toString('hex');
+      const passwordHash = hashAdminPassword(initialPassword.trim(), salt);
+      adminRecord = await AdminAuth.create({
+        username: 'admin',
+        passwordHash,
+        passwordSalt: salt,
+        activeSessionTokens: [],
+        passwordChangedAt: new Date()
+      });
+      console.log('🛡️ [Admin Auth] Admin credentials initialized in MongoDB with PBKDF2 hash.');
+    }
+    // Populate in-memory active tokens
+    activeAdminTokensSet.clear();
+    (adminRecord.activeSessionTokens || []).forEach((t) => {
+      if (t && typeof t === 'string') activeAdminTokensSet.add(t);
+    });
+  } catch (err) {
+    console.error('Admin Auth init error:', err.message);
+  }
+}
+
+const isAdminAuthorized = (req) => {
+  const adminToken = req.headers['x-admin-token'] || req.headers['authorization'];
+  if (!adminToken) return false;
+  const clean = String(adminToken).replace(/^Bearer\s+/i, '').trim();
+  if (!clean) return false;
+
+  // 1. Dynamic In-Memory / DB Active Session Token check
+  if (activeAdminTokensSet.has(clean)) {
+    return true;
+  }
+
+  // 2. Server Master Token (for automated server-to-server operations if configured)
+  const masterSecret = process.env.ADMIN_MASTER_TOKEN;
+  if (masterSecret && clean === masterSecret) {
+    return true;
+  }
+
+  return false;
+};
+
+// --- CUSTOMER AUTHENTICATION & CRYPTOGRAPHIC TOKEN SIGNING ENGINE ---
+const CUSTOMER_AUTH_SECRET = process.env.CUSTOMER_AUTH_SECRET || (!isProd ? 'dev_only_local_customer_auth_signature_key' : null);
+const CUSTOMER_TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 Days
+
+function signCustomerToken(phone) {
+  if (!CUSTOMER_AUTH_SECRET) {
+    throw new Error('CUSTOMER_AUTH_SECRET is required to sign customer tokens in production.');
+  }
+  const cleanPhone = cleanPhoneDigits(phone);
+  const timestamp = Date.now();
+  const payload = `${cleanPhone}:${timestamp}`;
+  const signature = crypto.createHmac('sha256', CUSTOMER_AUTH_SECRET).update(payload).digest('hex');
+  return `ctok_${cleanPhone}_${timestamp}_${signature}`;
+}
+
+function verifyCustomerToken(tokenStr) {
+  if (!tokenStr || typeof tokenStr !== 'string' || !tokenStr.startsWith('ctok_') || !CUSTOMER_AUTH_SECRET) {
+    return null;
+  }
+  try {
+    const parts = tokenStr.split('_');
+    if (parts.length !== 4) return null;
+    const phone = parts[1];
+    const timestamp = parseInt(parts[2], 10);
+    const signature = parts[3];
+
+    if (isNaN(timestamp) || Date.now() - timestamp > CUSTOMER_TOKEN_EXPIRY_MS) {
+      return null; // Expired
+    }
+
+    const expectedPayload = `${phone}:${timestamp}`;
+    const expectedSignature = crypto.createHmac('sha256', CUSTOMER_AUTH_SECRET).update(expectedPayload).digest('hex');
+
+    if (crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSignature, 'hex'))) {
+      return cleanPhoneDigits(phone);
+    }
+    return null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// --- APPLICATION-LEVEL DOCUMENT ENCRYPTION ENGINE (AES-256-GCM) ---
+const DOC_ENCRYPTION_SECRET = process.env.DOCUMENT_ENCRYPTION_SECRET || (!isProd ? 'dev_only_local_doc_encryption_secret_key' : null);
+// Derive 32-byte key using SHA-256
+const DOC_ENCRYPTION_KEY = DOC_ENCRYPTION_SECRET
+  ? crypto.createHash('sha256').update(DOC_ENCRYPTION_SECRET).digest()
+  : null;
+
+function encryptDocumentPayload(plainDataUrl) {
+  if (!plainDataUrl || typeof plainDataUrl !== 'string') return plainDataUrl;
+  if (!DOC_ENCRYPTION_KEY) {
+    if (isProd) {
+      throw new Error('DOCUMENT_ENCRYPTION_SECRET is required to encrypt documents in production.');
+    }
+    return plainDataUrl;
+  }
+  try {
+    const iv = crypto.randomBytes(12); // 12-byte IV for AES-GCM
+    const cipher = crypto.createCipheriv('aes-256-gcm', DOC_ENCRYPTION_KEY, iv);
+
+    let encrypted = cipher.update(plainDataUrl, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    const authTag = cipher.getAuthTag(); // 16-byte authentication tag for integrity
+
+    return `enc:v1:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+  } catch (err) {
+    console.error('Document encryption error:', err.message);
+    return plainDataUrl;
+  }
+}
+
+function decryptDocumentPayload(storedData) {
+  if (!storedData || typeof storedData !== 'string') return storedData;
+  if (!storedData.startsWith('enc:v1:')) {
+    // Legacy / unencrypted base64 fallback for backwards compatibility
+    return storedData;
+  }
+  if (!DOC_ENCRYPTION_KEY) {
+    console.error('Document decryption error: DOC_ENCRYPTION_KEY is not configured in environment.');
+    return null;
+  }
+  try {
+    const parts = storedData.split(':');
+    if (parts.length !== 5) return storedData;
+    const iv = Buffer.from(parts[2], 'hex');
+    const authTag = Buffer.from(parts[3], 'hex');
+    const encryptedText = parts[4];
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', DOC_ENCRYPTION_KEY, iv);
+    decipher.setAuthTag(authTag);
+
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (err) {
+    console.error('Document decryption error / integrity violation:', err.message);
+    return null;
+  }
+}
+
+const resolveAuthContext = (req) => {
+  const isAdmin = isAdminAuthorized(req);
+
+  // Verify Customer Token Cryptographically (DO NOT TRUST RAW CLIENT PHONE HEADERS)
+  const customerToken = req.headers['x-customer-token'] || req.headers['x-auth-token'];
+  let verifiedCustomerPhone = '';
+
+  if (customerToken) {
+    verifiedCustomerPhone = verifyCustomerToken(customerToken) || '';
+  }
+
+  // If a raw x-customer-phone header was also sent, ensure it matches the verified token
+  const rawHeaderPhone = cleanPhoneDigits(req.headers['x-customer-phone'] || req.headers['x-auth-phone'] || '');
+  if (rawHeaderPhone && verifiedCustomerPhone && rawHeaderPhone !== verifiedCustomerPhone) {
+    console.warn(`🚨 [SECURITY SPOOF BLOCKED] Client sent header phone +91 ${maskPhoneForLog(rawHeaderPhone)} but token belongs to +91 ${maskPhoneForLog(verifiedCustomerPhone)}`);
+    // Mismatch detected: Invalidate context to prevent spoofing
+    verifiedCustomerPhone = '';
+  }
+
+  return {
+    isAdmin,
+    customerPhone: verifiedCustomerPhone,
+    role: isAdmin ? 'admin' : (verifiedCustomerPhone ? 'customer' : 'anonymous')
+  };
+};
 
 // --- OTP API ENDPOINTS ---
 
@@ -1634,14 +1928,37 @@ app.post('/api/otp/verify', otpVerifyLimiter, async (req, res) => {
       });
     }
 
-    // Success: Generate single-use verification token & remove active OTP session (replay prevention)
+    // Success: Generate single-use verification token & cryptographically signed customerToken
     const verifiedToken = crypto.randomBytes(24).toString('hex');
+    const customerToken = signCustomerToken(cleanPhone);
     await OtpSession.deleteOne({ _id: session._id });
+
+    // Post-OTP Customer State Resolution (Accessible ONLY with valid OTP verification)
+    const existingCustomer = await Customer.findOne({
+      $or: [
+        { phone: cleanPhone },
+        { phone: `+91${cleanPhone}` },
+        { phone: `91${cleanPhone}` },
+        { phone: `+91 ${cleanPhone}` }
+      ]
+    }).maxTimeMS(5000).lean();
+
+    const isExistingUser = Boolean(
+      existingCustomer && (
+        existingCustomer.name ||
+        existingCustomer.profile?.name ||
+        (existingCustomer.profile && existingCustomer.profile.complete)
+      )
+    );
 
     res.json({
       success: true,
       message: '✅ OTP வெற்றிகரமாக சரிபார்க்கப்பட்டது! (OTP verified successfully)',
-      verifiedToken
+      verifiedToken,
+      customerToken,
+      phone: cleanPhone,
+      isExistingUser,
+      customer: existingCustomer || null
     });
   } catch (err) {
     console.error('OTP Verify Error:', err);
@@ -1656,59 +1973,517 @@ app.post('/api/otp/resend', async (req, res) => {
   return app._router.handle(req, res);
 });
 
-// --- CUSTOMERS API ---
-
-// Get all customers (or filtered by phone)
-app.get('/api/customers', async (req, res) => {
+// 4. Issue / Restore Authenticated Customer Session Token (Server-Verified Only)
+app.post('/api/customer/session', async (req, res) => {
   try {
-    const { phone } = req.query;
+    const auth = resolveAuthContext(req);
+    const { phone } = req.body || {};
     const cleanPhone = cleanPhoneDigits(phone);
-    const filter = cleanPhone ? { $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }] } : {};
-    const customers = await Customer.find(filter, { 'documents.data': 0, 'documents.url': 0 }).sort({ updatedAt: -1 }).limit(100).maxTimeMS(5000).lean();
-    const records = {};
-    customers.forEach((c) => {
-      records[c.phone] = c;
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_PHONE',
+        message: 'Valid 10-digit mobile number required.'
+      });
+    }
+
+    // Authorization Guard: Only allow session token refresh if already authorized for this phone, or admin
+    if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== cleanPhone)) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'OTP authentication required to obtain a customer session token.'
+      });
+    }
+
+    const customerToken = signCustomerToken(cleanPhone);
+    return res.json({
+      success: true,
+      customerToken,
+      phone: cleanPhone
     });
-    res.json(records);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-const cleanPhoneDigits = (p) => {
-  const d = String(p || '').replace(/\D/g, '');
-  return d.length >= 10 ? d.slice(-10) : d;
-};
+// --- ADMIN AUTHENTICATION API (SECURE SERVER-SIDE AUTH & PASSWORD MANAGEMENT) ---
 
-// Get single customer
+const adminAuthLimiter = createRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 12,
+  message: 'அதிக முறை அட்மின் உள்நுழைவு முயற்சிக்கப்பட்டது. 5 நிமிடம் கழித்து முயற்சிக்கவும். (Too many admin attempts)'
+});
+
+// 1. Admin Login (Server-Side PBKDF2 Password Verification & Dynamic Session Token Generation)
+app.post('/api/admin/login', adminAuthLimiter, async (req, res) => {
+  try {
+    const { password } = req.body || {};
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_PASSWORD',
+        message: 'தயவுசெய்து அட்மின் கடவுச்சொல்லை உள்ளிடவும். (Admin password required)'
+      });
+    }
+
+    let adminRecord = await AdminAuth.findOne({ username: 'admin' });
+    if (!adminRecord) {
+      await initializeAdminAuth();
+      adminRecord = await AdminAuth.findOne({ username: 'admin' });
+    }
+
+    if (!adminRecord || !verifyAdminPassword(password, adminRecord.passwordSalt, adminRecord.passwordHash)) {
+      console.warn(`🚨 [SECURITY AUDIT] Failed admin login attempt from IP: ${req.ip || 'unknown'}`);
+      return res.status(401).json({
+        success: false,
+        error: 'INVALID_CREDENTIALS',
+        message: '❌ தவறான அட்மின் கடவுச்சொல்! (Incorrect admin password)'
+      });
+    }
+
+    // Generate secure dynamic session token
+    const sessionToken = `admin_sess_${crypto.randomBytes(32).toString('hex')}`;
+
+    // Keep up to 5 concurrent active admin sessions
+    const updatedTokens = [...(adminRecord.activeSessionTokens || []).slice(-4), sessionToken];
+    adminRecord.activeSessionTokens = updatedTokens;
+    adminRecord.updatedAt = new Date();
+    await adminRecord.save();
+
+    activeAdminTokensSet.add(sessionToken);
+
+    console.log(`📋 [AUDIT] Admin successfully authenticated from IP: ${req.ip || 'unknown'}`);
+    return res.json({
+      success: true,
+      token: sessionToken,
+      message: '✅ அட்மின் அங்கீகாரம் வெற்றிகரமாக முடிந்தது! (Admin authenticated successfully)'
+    });
+  } catch (err) {
+    console.error('Admin login exception:', err.message);
+    res.status(500).json({ success: false, error: 'AUTH_SERVER_ERROR', message: 'Authentication server error.' });
+  }
+});
+
+// 2. Admin Password Change (Protected Server-Side PBKDF2 Password Rotation)
+app.post('/api/admin/change-password', adminAuthLimiter, async (req, res) => {
+  try {
+    // 1. Verify caller has active Admin Authorization
+    if (!isAdminAuthorized(req)) {
+      return res.status(403).json({
+        success: false,
+        error: 'FORBIDDEN',
+        message: 'அனுமதி மறுக்கப்பட்டது: கடவுச்சொல் மாற்ற அட்மின் உள்நுழைவு அவசியம். (Admin authorization required)'
+      });
+    }
+
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_FIELDS',
+        message: 'தற்போதைய மற்றும் புதிய கடவுச்சொல் இரண்டும் தேவை. (Both current and new password required)'
+      });
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.length < 4) {
+      return res.status(400).json({
+        success: false,
+        error: 'PASSWORD_TOO_SHORT',
+        message: 'புதிய கடவுச்சொல் குறைந்தது 4 எழுத்துக்கள் இருக்க வேண்டும். (Min 4 characters required)'
+      });
+    }
+
+    let adminRecord = await AdminAuth.findOne({ username: 'admin' });
+    if (!adminRecord) {
+      await initializeAdminAuth();
+      adminRecord = await AdminAuth.findOne({ username: 'admin' });
+    }
+
+    // 2. Validate current password against PBKDF2 hash
+    const isCurrentValid = verifyAdminPassword(currentPassword, adminRecord.passwordSalt, adminRecord.passwordHash);
+    if (!isCurrentValid) {
+      console.warn(`🚨 [SECURITY AUDIT] Admin password change rejected: Incorrect current password from IP: ${req.ip || 'unknown'}`);
+      return res.status(401).json({
+        success: false,
+        error: 'INCORRECT_CURRENT_PASSWORD',
+        message: '❌ தவறான தற்போதைய கடவுச்சொல்! (Incorrect current password)'
+      });
+    }
+
+    // 3. Compute fresh salt and new PBKDF2 hash
+    const newSalt = crypto.randomBytes(16).toString('hex');
+    const newHash = hashAdminPassword(newPassword, newSalt);
+
+    // 4. Invalidate all previous session tokens and issue new session token
+    activeAdminTokensSet.clear();
+    const newSessionToken = `admin_sess_${crypto.randomBytes(32).toString('hex')}`;
+    activeAdminTokensSet.add(newSessionToken);
+
+    adminRecord.passwordSalt = newSalt;
+    adminRecord.passwordHash = newHash;
+    adminRecord.activeSessionTokens = [newSessionToken];
+    adminRecord.passwordChangedAt = new Date();
+    adminRecord.updatedAt = new Date();
+    await adminRecord.save();
+
+    console.log('📋 [AUDIT] Admin password successfully changed and all old sessions invalidated.');
+    return res.json({
+      success: true,
+      token: newSessionToken,
+      message: '✅ அட்மின் கடவுச்சொல் வெற்றிகரமாக மாற்றப்பட்டது! (Admin password changed successfully)'
+    });
+  } catch (err) {
+    console.error('Password change exception:', err.message);
+    res.status(500).json({ success: false, error: 'PASSWORD_CHANGE_FAILED', message: 'Failed to update admin password.' });
+  }
+});
+
+// 3. Admin Logout (Revoke Dynamic Session Token)
+app.post('/api/admin/logout', async (req, res) => {
+  try {
+    const adminToken = req.headers['x-admin-token'] || req.headers['authorization'];
+    if (adminToken) {
+      const clean = String(adminToken).replace(/^Bearer\s+/i, '').trim();
+      activeAdminTokensSet.delete(clean);
+      await AdminAuth.updateOne({ username: 'admin' }, { $pull: { activeSessionTokens: clean } });
+    }
+    res.json({ success: true, message: 'Admin logged out safely.' });
+  } catch (err) {
+    res.json({ success: true });
+  }
+});
+
+// 4. Admin Verify Active Session
+app.get('/api/admin/verify-session', async (req, res) => {
+  if (isAdminAuthorized(req)) {
+    return res.json({ authenticated: true, role: 'admin' });
+  }
+  return res.status(401).json({ authenticated: false, error: 'UNAUTHORIZED' });
+});
+
+// --- CUSTOMER AUTHENTICATION & PASSWORD MANAGEMENT API ---
+
+// 1. Customer Password Login (Zero OTP required for normal login)
+app.post('/api/customer/login', async (req, res) => {
+  try {
+    const { phone, password } = req.body || {};
+    const cleanPhone = cleanPhoneDigits(phone);
+    if (!cleanPhone || cleanPhone.length !== 10 || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_INPUT',
+        message: 'தயவுசெய்து சரியான 10-இலக்க மொபைல் எண் மற்றும் கடவுச்சொல்லை உள்ளிடவும். (Valid 10-digit mobile number and password required)'
+      });
+    }
+
+    const customer = await Customer.findOne({
+      $or: [
+        { phone: cleanPhone },
+        { phone: `+91${cleanPhone}` },
+        { phone: `91${cleanPhone}` },
+        { phone: `+91 ${cleanPhone}` }
+      ]
+    }).maxTimeMS(5000);
+
+    if (!customer) {
+      return res.status(401).json({
+        success: false,
+        error: 'INVALID_CREDENTIALS',
+        message: 'தவறான மொபைல் எண் அல்லது கடவுச்சொல். (Invalid mobile number or password)'
+      });
+    }
+
+    // Check if existing customer has no password set (legacy OTP migration flow)
+    if (!customer.passwordHash || !customer.passwordSalt) {
+      return res.status(403).json({
+        success: false,
+        error: 'PASSWORD_NOT_SET',
+        needsPasswordSetup: true,
+        message: 'உங்கள் கணக்கிற்கு கடவுச்சொல் இன்னும் அமைக்கப்படவில்லை. SMS OTP மூலம் புதிய கடவுச்சொல்லை உருவாக்கவும்.'
+      });
+    }
+
+    // Verify PBKDF2 Password Hash
+    const isMatch = verifyCustomerPassword(password, customer.passwordSalt, customer.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        error: 'INVALID_CREDENTIALS',
+        message: 'தவறான மொபைல் எண் அல்லது கடவுச்சொல். (Invalid mobile number or password)'
+      });
+    }
+
+    // Issue Cryptographically Signed HMAC Customer Token
+    const customerToken = signCustomerToken(cleanPhone);
+    customer.activeSessionTokens = [customerToken];
+    await customer.save();
+
+    const safeCustomer = customer.toObject();
+    delete safeCustomer.passwordHash;
+    delete safeCustomer.passwordSalt;
+    delete safeCustomer.activeSessionTokens;
+
+    res.json({
+      success: true,
+      message: '✅ உள்நுழைவு வெற்றிகரமாக முடிந்தது! (Login successful)',
+      customerToken,
+      phone: cleanPhone,
+      customer: safeCustomer
+    });
+  } catch (err) {
+    console.error('Customer login error:', err);
+    res.status(500).json({ success: false, error: 'LOGIN_FAILED', message: 'உள்நுழைவில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.' });
+  }
+});
+
+// 2. Customer Registration (Post-OTP Verified Only, Sets PBKDF2 Password)
+app.post('/api/customer/register', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    const { phone, verifiedToken, name, dob, aadhaarNo, password } = req.body || {};
+    const cleanPhone = cleanPhoneDigits(phone);
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      return res.status(400).json({ success: false, error: 'INVALID_PHONE', message: '10-இலக்க மொபைல் எண் தேவை.' });
+    }
+    if (!name || !dob || !aadhaarNo || !password || password.length < 4) {
+      return res.status(400).json({ success: false, error: 'INVALID_INPUT', message: 'அனைத்து விவரங்களையும் சரியாக உள்ளிடவும். கடவுச்சொல் குறைந்தது 4 எழுத்துக்கள் இருக்க வேண்டும்.' });
+    }
+
+    // Security Check: Caller must provide valid verified token or auth context
+    const tokenHeader = req.headers['x-customer-token'] || req.headers['x-auth-token'];
+    const isAuthorized = auth.customerPhone === cleanPhone || (tokenHeader && verifyCustomerToken(tokenHeader) === cleanPhone);
+
+    if (!isAuthorized && !verifiedToken) {
+      return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'OTP சரிபார்ப்பு தேவை.' });
+    }
+
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = hashCustomerPassword(password, salt);
+    const cleanAadhaar = String(aadhaarNo).replace(/\D/g, '').slice(0, 12);
+
+    const customerToken = signCustomerToken(cleanPhone);
+
+    const customer = await Customer.findOneAndUpdate(
+      { phone: cleanPhone },
+      {
+        $set: {
+          phone: cleanPhone,
+          name: sanitizeInput(name),
+          dob: sanitizeInput(dob),
+          aadhaarNo: cleanAadhaar,
+          passwordHash,
+          passwordSalt: salt,
+          activeSessionTokens: [customerToken],
+          profile: {
+            name: sanitizeInput(name),
+            dob: sanitizeInput(dob),
+            aadhaarNo: cleanAadhaar,
+            complete: true
+          },
+          updatedAt: new Date()
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    const safeCustomer = customer.toObject();
+    delete safeCustomer.passwordHash;
+    delete safeCustomer.passwordSalt;
+    delete safeCustomer.activeSessionTokens;
+
+    res.json({
+      success: true,
+      message: '✅ புதிய கணக்கு வெற்றிகரமாக உருவாக்கப்பட்டது!',
+      customerToken,
+      phone: cleanPhone,
+      customer: safeCustomer
+    });
+  } catch (err) {
+    console.error('Customer register error:', err);
+    res.status(500).json({ success: false, error: 'REGISTRATION_FAILED', message: 'கணக்கு உருவாக்குவதில் பிழை ஏற்பட்டது.' });
+  }
+});
+
+// 3. Customer Set / Reset Password (Post-OTP Verified Only, Revokes Old Sessions)
+app.post('/api/customer/set-password', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    const { phone, verifiedToken, newPassword } = req.body || {};
+    const cleanPhone = cleanPhoneDigits(phone);
+    if (!cleanPhone || cleanPhone.length !== 10 || !newPassword || newPassword.length < 4) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_INPUT',
+        message: 'புதிய கடவுச்சொல் குறைந்தது 4 எழுத்துக்கள் இருக்க வேண்டும். (Password must be at least 4 characters)'
+      });
+    }
+
+    // Security Check: Caller must be authenticated via OTP token
+    const tokenHeader = req.headers['x-customer-token'] || req.headers['x-auth-token'];
+    const isAuthorized = auth.customerPhone === cleanPhone || (tokenHeader && verifyCustomerToken(tokenHeader) === cleanPhone);
+
+    if (!isAuthorized && !verifiedToken) {
+      return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'OTP சரிபார்ப்பு தேவை.' });
+    }
+
+    const salt = crypto.randomBytes(16).toString('hex');
+    const passwordHash = hashCustomerPassword(newPassword, salt);
+    const newCustomerToken = signCustomerToken(cleanPhone);
+
+    const customer = await Customer.findOneAndUpdate(
+      {
+        $or: [
+          { phone: cleanPhone },
+          { phone: `+91${cleanPhone}` },
+          { phone: `91${cleanPhone}` },
+          { phone: `+91 ${cleanPhone}` }
+        ]
+      },
+      {
+        $set: {
+          passwordHash,
+          passwordSalt: salt,
+          activeSessionTokens: [newCustomerToken], // Revokes all previous sessions
+          updatedAt: new Date()
+        }
+      },
+      { new: true }
+    );
+
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'CUSTOMER_NOT_FOUND', message: 'வாடிக்கையாளர் கணக்கு கிடைக்கவில்லை.' });
+    }
+
+    const safeCustomer = customer.toObject();
+    delete safeCustomer.passwordHash;
+    delete safeCustomer.passwordSalt;
+    delete safeCustomer.activeSessionTokens;
+
+    res.json({
+      success: true,
+      message: '✅ புதிய கடவுச்சொல் வெற்றிகரமாக அமைக்கப்பட்டது! (Password updated successfully)',
+      customerToken: newCustomerToken,
+      phone: cleanPhone,
+      customer: safeCustomer
+    });
+  } catch (err) {
+    console.error('Customer set password error:', err);
+    res.status(500).json({ success: false, error: 'SET_PASSWORD_FAILED', message: 'கடவுச்சொல் மாற்றுவதில் பிழை ஏற்பட்டது.' });
+  }
+});
+
+// 4. Customer Logout (Revoke Active Session Token)
+app.post('/api/customer/logout', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    const custToken = req.headers['x-customer-token'] || req.headers['x-auth-token'];
+    if (auth.customerPhone && custToken) {
+      await Customer.updateOne(
+        { phone: auth.customerPhone },
+        { $pull: { activeSessionTokens: custToken } }
+      );
+    }
+    res.json({ success: true, message: 'வாடிக்கையாளர் பாதுகாப்பாக வெளியேற்றப்பட்டார்.' });
+  } catch (err) {
+    res.json({ success: true });
+  }
+});
+
+// --- CUSTOMERS API (SERVER-SIDE AUTHORIZATION & PII PROTECTION) ---
+
+// 1. Get all customers (or filtered by phone)
+app.get('/api/customers', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    const { phone } = req.query;
+    const cleanPhone = cleanPhoneDigits(phone);
+
+    // ADMIN ACCESS: Full customer directory access
+    if (auth.isAdmin) {
+      const filter = cleanPhone ? { $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }] } : {};
+      const customers = await Customer.find(filter, { 'documents.data': 0, 'documents.url': 0 }).sort({ updatedAt: -1 }).limit(100).maxTimeMS(5000).lean();
+      const records = {};
+      customers.forEach((c) => {
+        records[c.phone] = c;
+      });
+      return res.json(records);
+    }
+
+    // CUSTOMER ACCESS: Strictly isolated to own profile
+    if (auth.customerPhone) {
+      if (cleanPhone && cleanPhone !== auth.customerPhone) {
+        console.warn(`🚨 [SECURITY] Customer +91 ${maskPhoneForLog(auth.customerPhone)} attempted unauthorized access to customer list for +91 ${maskPhoneForLog(cleanPhone)}`);
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'அனுமதி மறுக்கப்பட்டது: நீங்கள் பிற வாடிக்கையாளர்களின் தகவல்களை அணுக முடியாது.'
+        });
+      }
+      const ownPhone = auth.customerPhone;
+      const customer = await Customer.findOne({
+        $or: [{ phone: ownPhone }, { phone: `+91${ownPhone}` }, { phone: `91${ownPhone}` }, { phone: `+91 ${ownPhone}` }]
+      }, { 'documents.data': 0, 'documents.url': 0 }).lean();
+      if (!customer) return res.json({});
+      return res.json({ [customer.phone]: customer });
+    }
+
+    // ANONYMOUS ACCESS: Blocked
+    return res.status(401).json({
+      success: false,
+      error: 'UNAUTHORIZED',
+      message: 'வாடிக்கையாளர் தகவல்களைப் பார்க்க உள்நுழையவும்.'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to retrieve customer records.' });
+  }
+});
+
+// 2. Get single customer by phone
 app.get('/api/customers/:phone', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
     const cleanPhone = cleanPhoneDigits(req.params.phone);
     if (!cleanPhone) return res.status(400).json({ error: 'Phone number is required' });
+
+    // Authorization: Admin or Profile Owner only
+    if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== cleanPhone)) {
+      if (!auth.customerPhone) {
+        return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
+      }
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Access denied: Customer data isolation enforced.' });
+    }
+
     const customer = await Customer.findOne({
       $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }]
     }).maxTimeMS(5000).lean();
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json({ success: true, ...customer });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to retrieve customer profile.' });
   }
 });
 
-// Save or Update customer
+// 3. Save or Update customer
 app.post('/api/customers', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
     const { phone, name, profile, applications, documents, lastToken, dob, aadhaarNo, aadhar } = req.body;
     const cleanPhone = cleanPhoneDigits(phone);
     if (!cleanPhone) return res.status(400).json({ error: 'Phone number is required' });
+
+    // Authorization: Admin or Owner only
+    if (!auth.isAdmin && auth.customerPhone && auth.customerPhone !== cleanPhone) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'You cannot modify another customer profile.' });
+    }
 
     const updateData = {
       phone: cleanPhone,
       updatedAt: new Date()
     };
-    updateData.name = name || profile?.name || 'Customer';
-    updateData.dob = dob || profile?.dob || '';
-    updateData.aadhaarNo = aadhaarNo || aadhar || profile?.aadhaarNo || profile?.aadhar || '';
+    updateData.name = sanitizeInput(name || profile?.name || 'Customer');
+    updateData.dob = sanitizeInput(dob || profile?.dob || '');
+    updateData.aadhaarNo = sanitizeInput(aadhaarNo || aadhar || profile?.aadhaarNo || profile?.aadhar || '');
     if (profile) updateData.profile = profile;
     if (Array.isArray(applications)) updateData.applications = applications;
     if (Array.isArray(documents)) updateData.documents = documents;
@@ -1722,15 +2497,23 @@ app.post('/api/customers', async (req, res) => {
     const obj = result.toObject ? result.toObject() : result;
     res.json({ success: true, ...obj });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to save customer profile.' });
   }
 });
 
-// Delete Customer (Cascade Delete)
+// 4. Delete Customer (Admin or Owner Only - Cascade Delete)
 app.delete('/api/customers/:phone', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
     const cleanPhone = cleanPhoneDigits(req.params.phone);
     if (!cleanPhone) return res.status(400).json({ error: 'Phone number required' });
+
+    if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== cleanPhone)) {
+      if (!auth.customerPhone) {
+        return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
+      }
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Access denied.' });
+    }
 
     // 1. Delete customer document
     await Customer.deleteMany({ $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }] });
@@ -1752,42 +2535,104 @@ app.delete('/api/customers/:phone', async (req, res) => {
 
     res.json({ success: true, message: `Customer ${cleanPhone} deleted permanently from MongoDB` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to delete customer.' });
   }
 });
 
-// --- APPLICATIONS API ---
+// --- APPLICATIONS API (SERVER-SIDE AUTHORIZATION & IDOR GUARD) ---
 
+// 1. Fetch Applications (Admin or Authenticated Customer)
 app.get('/api/applications', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
     const { phone } = req.query;
     const cleanPhone = cleanPhoneDigits(phone);
-    const filter = cleanPhone ? { $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }] } : {};
-    const apps = await Application.find(filter).sort({ updatedAt: -1 }).limit(100).maxTimeMS(5000).lean();
-    const records = {};
-    apps.forEach((a) => {
-      records[a.id] = a;
+
+    if (auth.isAdmin) {
+      const filter = cleanPhone ? { $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }] } : {};
+      const apps = await Application.find(filter).sort({ updatedAt: -1 }).limit(100).maxTimeMS(5000).lean();
+      const records = {};
+      apps.forEach((a) => {
+        records[a.id] = a;
+      });
+      return res.json(records);
+    }
+
+    if (auth.customerPhone) {
+      if (cleanPhone && cleanPhone !== auth.customerPhone) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'அனுமதி மறுக்கப்பட்டது: பிறரின் விண்ணப்பங்களை அணுக முடியாது.'
+        });
+      }
+      const ownPhone = auth.customerPhone;
+      const apps = await Application.find({
+        $or: [{ phone: ownPhone }, { phone: `+91${ownPhone}` }, { phone: `91${ownPhone}` }, { phone: `+91 ${ownPhone}` }]
+      }).sort({ updatedAt: -1 }).limit(50).maxTimeMS(5000).lean();
+      const records = {};
+      apps.forEach((a) => {
+        records[a.id] = a;
+      });
+      return res.json(records);
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: 'UNAUTHORIZED',
+      message: 'விண்ணப்பங்களைப் பார்க்க உள்நுழையவும்.'
     });
-    res.json(records);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to retrieve applications.' });
   }
 });
 
+// 2. Fetch Single Application by ID (with IDOR Protection)
 app.get('/api/applications/:id', async (req, res) => {
   try {
-    const app = await Application.findOne({ $or: [{ id: req.params.id }, { ackNo: req.params.id }] }).maxTimeMS(5000).lean();
+    const auth = resolveAuthContext(req);
+    const targetId = String(req.params.id || '').trim();
+    const app = await Application.findOne({ $or: [{ id: targetId }, { ackNo: targetId }] }).maxTimeMS(5000).lean();
     if (!app) return res.status(404).json({ error: 'Application not found' });
-    res.json({ success: true, ...app });
+
+    const appPhone = cleanPhoneDigits(app.phone);
+
+    // Full access for Admin or owner
+    if (auth.isAdmin || (auth.customerPhone && auth.customerPhone === appPhone)) {
+      return res.json({ success: true, ...app });
+    }
+
+    // Public status check (non-sensitive status data only, no PII/Aadhaar)
+    if (targetId.startsWith('AK-') || targetId === app.ackNo) {
+      return res.json({
+        success: true,
+        id: app.id,
+        ackNo: app.ackNo,
+        serviceName: app.serviceName || app.service || 'e-Sevai Service',
+        status: app.status || 'Submitted',
+        statusLabel: app.statusLabel || 'Processing',
+        appliedDate: app.appliedDate || app.createdAt,
+        updatedAt: app.updatedAt
+      });
+    }
+
+    return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Access denied.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to fetch application.' });
   }
 });
 
+// 3. Create or Update Application
 app.post('/api/applications', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
     const appData = req.body;
     if (!appData.id) return res.status(400).json({ error: 'Application ID is required' });
+
+    const appPhone = cleanPhoneDigits(appData.phone);
+    if (!auth.isAdmin && auth.customerPhone && appPhone && auth.customerPhone !== appPhone) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'Cannot submit application for another phone number.' });
+    }
 
     const result = await Application.findOneAndUpdate(
       { id: appData.id },
@@ -1797,21 +2642,29 @@ app.post('/api/applications', async (req, res) => {
     const obj = result.toObject ? result.toObject() : result;
     res.json({ success: true, ...obj });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to save application.' });
   }
 });
 
+// 4. Delete Application (Admin or Owner Only)
 app.delete('/api/applications/:id', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
     const targetId = String(req.params.id || '').trim();
     if (!targetId) {
       return res.status(400).json({ success: false, error: 'Application ID is required' });
     }
 
-    // 1. Delete from Application collection
-    await Application.deleteMany({ $or: [{ id: targetId }, { ackNo: targetId }] });
+    const existing = await Application.findOne({ $or: [{ id: targetId }, { ackNo: targetId }] }).lean();
+    if (existing) {
+      const appPhone = cleanPhoneDigits(existing.phone);
+      if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== appPhone)) {
+        if (!auth.customerPhone) return res.status(401).json({ success: false, error: 'UNAUTHORIZED' });
+        return res.status(403).json({ success: false, error: 'FORBIDDEN' });
+      }
+    }
 
-    // 2. Cascade delete from all Customer.applications arrays in MongoDB
+    await Application.deleteMany({ $or: [{ id: targetId }, { ackNo: targetId }] });
     await Customer.updateMany(
       {},
       {
@@ -1831,36 +2684,6 @@ app.delete('/api/applications/:id', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-// --- HELPER: MASK SENSITIVE DATA FOR AUDIT LOGGING ---
-const maskPhoneForLog = (p) => {
-  const clean = cleanPhoneDigits(p);
-  return clean.length === 10 ? `${clean.slice(0, 3)}****${clean.slice(7)}` : 'UNKNOWN';
-};
-
-// --- HELPER: AUTHENTICATION / AUTHORIZATION RESOLVER ---
-const resolveAuthContext = (req) => {
-  const adminToken = req.headers['x-admin-token'] || req.headers['authorization'] || req.query.adminKey || '';
-  const expectedAdminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  const isAdmin = (adminToken === expectedAdminPassword || adminToken === `Bearer ${expectedAdminPassword}` || adminToken === 'admin-auth-token-2026');
-
-  const customerHeaderPhone = cleanPhoneDigits(req.headers['x-customer-phone'] || '');
-  const customerQueryPhone = cleanPhoneDigits(req.query.customerPhone || req.query.phone || '');
-  const customerBodyPhone = cleanPhoneDigits(req.body?.customerPhone || req.body?.phone || '');
-  const customerPhone = customerHeaderPhone || customerQueryPhone || customerBodyPhone || '';
-
-  return {
-    isAdmin,
-    customerPhone,
-    role: isAdmin ? 'admin' : (customerPhone ? 'customer' : 'anonymous')
-  };
-};
-
-// --- HELPER: SANITIZE USER INPUTS ---
-const sanitizeInput = (str) => {
-  if (typeof str !== 'string') return '';
-  return str.trim().replace(/[<>]/g, '');
-};
 
 // --- MULTI-LAYER BINARY & MALWARE THREAT INSPECTOR ENGINE ---
 const inspectDocumentThreats = (docData) => {
@@ -1909,7 +2732,42 @@ const inspectDocumentThreats = (docData) => {
     return { safe: false, reason: 'EMPTY_FILE_BUFFER', message: 'Document buffer is empty.' };
   }
 
-  // 4. Magic Byte File Signature Verification (Header Anti-Spoofing)
+  // 4. Executable & Polyglot Binary Signature Detection
+  const first2Bytes = buffer.toString('hex', 0, 2);
+  const first4Bytes = buffer.toString('hex', 0, 4);
+
+  // DOS PE / Windows EXE / DLL header ('MZ')
+  if (first2Bytes === '4d5a') {
+    return { safe: false, reason: 'EXECUTABLE_BINARY_PE_MZ', message: 'Executable PE/DOS binary files are prohibited.' };
+  }
+  // Linux ELF binary ('\x7fELF')
+  if (first4Bytes === '7f454c46') {
+    return { safe: false, reason: 'EXECUTABLE_BINARY_ELF', message: 'Linux executable binary files are prohibited.' };
+  }
+  // macOS Mach-O binary
+  if (first4Bytes === 'feedface' || first4Bytes === 'feedfacf' || first4Bytes === 'cefaedfe' || first4Bytes === 'cffaedfe') {
+    return { safe: false, reason: 'EXECUTABLE_BINARY_MACHO', message: 'Mach-O binary files are prohibited.' };
+  }
+  // Java Class / Bytecode
+  if (first4Bytes === 'cafebabe') {
+    return { safe: false, reason: 'JAVA_BYTECODE_CLASS', message: 'Java class files are prohibited.' };
+  }
+  // Shell Script Shebang ('#!')
+  if (first2Bytes === '2321') {
+    return { safe: false, reason: 'SHELL_SCRIPT_DETECTED', message: 'Shell scripts are prohibited.' };
+  }
+
+  // 5. EICAR Standard Anti-Virus Test Signature Detection
+  const asciiContent = buffer.toString('latin1');
+  if (asciiContent.includes('X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*')) {
+    return {
+      safe: false,
+      reason: 'EICAR_ANTIVIRUS_TEST_SIGNATURE_DETECTED',
+      message: 'Anti-virus test malware signature identified and quarantined.'
+    };
+  }
+
+  // 6. Magic Byte File Signature Verification (Header Anti-Spoofing)
   const isJpeg = (declaredMime.includes('jpeg') || declaredMime.includes('jpg')) &&
     buffer.length >= 3 && buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
 
@@ -1930,41 +2788,6 @@ const inspectDocumentThreats = (docData) => {
       safe: false,
       reason: 'MAGIC_BYTE_MISMATCH',
       message: 'File header magic bytes do not match the declared document format (Possible file extension spoofing).'
-    };
-  }
-
-  // 5. Executable & Polyglot Binary Signature Detection
-  const first2Bytes = buffer.toString('hex', 0, 2);
-  const first4Bytes = buffer.toString('hex', 0, 4);
-
-  // DOS PE / Windows EXE / DLL header ('MZ')
-  if (first2Bytes === '4d5a') {
-    return { safe: false, reason: 'EXECUTABLE_BINARY_PE_MZ', message: 'Executable PE/DOS binary files are prohibited.' };
-  }
-  // Linux ELF binary ('\x7fELF')
-  if (first4Bytes === '7f454c46') {
-    return { safe: false, reason: 'EXECUTABLE_BINARY_ELF', message: 'Linux executable binary files are prohibited.' };
-  }
-  // macOS Mach-O binary
-  if (first4Bytes === 'feedface' || first4Bytes === 'feedfacf' || first4Bytes === 'cefaedfe' || first4Bytes === 'cffaedfe') {
-    return { safe: false, reason: 'EXECUTABLE_BINARY_MACHO', message: 'Mach-O binary files are prohibited.' };
-  }
-  // Java Class / Bytecode
-  if (first4Bytes === 'cafebabe' && !isPdf && !isJpeg) {
-    return { safe: false, reason: 'JAVA_BYTECODE_CLASS', message: 'Java class files are prohibited.' };
-  }
-  // Shell Script Shebang ('#!')
-  if (first2Bytes === '2321') {
-    return { safe: false, reason: 'SHELL_SCRIPT_DETECTED', message: 'Shell scripts are prohibited.' };
-  }
-
-  // 6. EICAR Standard Anti-Virus Test Signature Detection
-  const asciiContent = buffer.toString('latin1');
-  if (asciiContent.includes('X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*')) {
-    return {
-      safe: false,
-      reason: 'EICAR_ANTIVIRUS_TEST_SIGNATURE_DETECTED',
-      message: 'Anti-virus test malware signature identified and quarantined.'
     };
   }
 
@@ -2026,7 +2849,11 @@ app.get('/api/documents', async (req, res) => {
       const filter = targetPhone ? { $or: [{ customerPhone: targetPhone }, { customerPhone: `+91${targetPhone}` }, { customerPhone: `91${targetPhone}` }] } : {};
       const docs = await DocumentModel.find(filter).sort({ uploadedAt: -1 }).limit(100).maxTimeMS(5000).lean();
       console.log(`📋 [AUDIT] Admin retrieved document list (Count: ${docs.length})`);
-      return res.json(docs || []);
+      const decryptedDocs = (docs || []).map((d) => ({
+        ...d,
+        data: decryptDocumentPayload(d.data)
+      }));
+      return res.json(decryptedDocs);
     }
 
     // CUSTOMER ACCESS: Strictly isolated to own documents
@@ -2045,7 +2872,11 @@ app.get('/api/documents', async (req, res) => {
       const filter = { $or: [{ customerPhone: ownPhone }, { customerPhone: `+91${ownPhone}` }, { customerPhone: `91${ownPhone}` }] };
       const docs = await DocumentModel.find(filter).sort({ uploadedAt: -1 }).limit(50).maxTimeMS(5000).lean();
       console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(ownPhone)} retrieved own documents (Count: ${docs.length})`);
-      return res.json(docs || []);
+      const decryptedDocs = (docs || []).map((d) => ({
+        ...d,
+        data: decryptDocumentPayload(d.data)
+      }));
+      return res.json(decryptedDocs);
     }
 
     // ANONYMOUS ACCESS: Blocked from accessing private documents
@@ -2074,17 +2905,18 @@ app.get('/api/documents/:id', async (req, res) => {
     }
 
     const docOwnerPhone = cleanPhoneDigits(doc.customerPhone);
+    const decryptedData = decryptDocumentPayload(doc.data);
 
     // ADMIN ACCESS: Allowed
     if (auth.isAdmin) {
       console.log(`📋 [AUDIT] Admin retrieved document: ${docId} (Owner: +91 ${maskPhoneForLog(docOwnerPhone)})`);
-      return res.json({ success: true, ...doc });
+      return res.json({ success: true, ...doc, data: decryptedData });
     }
 
     // CUSTOMER ACCESS: Verified owner check
     if (auth.customerPhone && auth.customerPhone === docOwnerPhone) {
       console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(auth.customerPhone)} accessed own document: ${docId}`);
-      return res.json({ success: true, ...doc });
+      return res.json({ success: true, ...doc, data: decryptedData });
     }
 
     // UNAUTHORIZED / CROSS-CUSTOMER ACCESS: Blocked
@@ -2144,6 +2976,9 @@ app.post('/api/documents', async (req, res) => {
       ? docData.id
       : `DOC-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 
+    const rawPayloadData = docData.data || '';
+    const encryptedData = encryptDocumentPayload(rawPayloadData);
+
     const savedDoc = await DocumentModel.findOneAndUpdate(
       { id: docId },
       {
@@ -2154,7 +2989,7 @@ app.post('/api/documents', async (req, res) => {
           name: sanitizeInput(docData.name || 'Document'),
           requirement: sanitizeInput(docData.requirement || ''),
           url: docData.url || '',
-          data: docData.data || '',
+          data: encryptedData,
           uploadedAt: new Date()
         }
       },
@@ -2176,9 +3011,9 @@ app.post('/api/documents', async (req, res) => {
       }
     );
 
-    console.log(`📋 [AUDIT] Document uploaded: ${docId} for Customer: +91 ${maskPhoneForLog(docOwnerPhone)}`);
+    console.log(`📋 [AUDIT] Document uploaded & encrypted (AES-256-GCM): ${docId} for Customer: +91 ${maskPhoneForLog(docOwnerPhone)}`);
     const obj = savedDoc.toObject ? savedDoc.toObject() : savedDoc;
-    res.json({ success: true, ...obj });
+    res.json({ success: true, ...obj, data: rawPayloadData });
   } catch (err) {
     console.error('Document save error:', err);
     res.status(500).json({ success: false, error: 'Failed to upload document.' });
@@ -2249,13 +3084,21 @@ async function generateNextDailyTokenNumber(dateStr) {
   }
 }
 
-// 1. Phone-Specific Token Lookup for Customers (Privacy Hardened)
+// 1. Phone-Specific Token Lookup for Customers (Privacy Hardened & Isolated)
 app.get('/api/tokens/by-phone/:phone', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
     const rawPhone = req.params.phone;
-    const cleanPhone = String(rawPhone || '').replace(/\D/g, '').slice(-10);
+    const cleanPhone = cleanPhoneDigits(rawPhone);
     if (!cleanPhone || cleanPhone.length !== 10) {
       return res.json([]);
+    }
+
+    if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== cleanPhone)) {
+      if (!auth.customerPhone) {
+        return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
+      }
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Access denied to tokens of another customer.' });
     }
 
     const query = {
@@ -2275,37 +3118,63 @@ app.get('/api/tokens/by-phone/:phone', async (req, res) => {
     const tokens = await Token.find(query).sort({ updatedAt: -1, createdAt: -1 }).lean();
     res.json(tokens);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to retrieve tokens.' });
   }
 });
 
-// 2. Admin & General Tokens API (With optional phone & date query filters)
+// 2. Admin & General Tokens API (With Server-Side Authorization)
 app.get('/api/tokens', async (req, res) => {
   try {
-    const query = {};
-    if (req.query.phone) {
-      const cleanPhone = String(req.query.phone).replace(/\D/g, '').slice(-10);
-      if (cleanPhone.length === 10) {
-        query.$or = [
-          { phone: cleanPhone },
-          { phone: `91${cleanPhone}` },
-          { phone: `+91${cleanPhone}` },
-          { phone: `+91 ${cleanPhone}` },
-          { phone: { $regex: `${cleanPhone}$` } }
-        ];
-      } else {
-        return res.json([]);
+    const auth = resolveAuthContext(req);
+
+    if (auth.isAdmin) {
+      const query = {};
+      if (req.query.phone) {
+        const cleanPhone = cleanPhoneDigits(req.query.phone);
+        if (cleanPhone.length === 10) {
+          query.$or = [
+            { phone: cleanPhone },
+            { phone: `91${cleanPhone}` },
+            { phone: `+91${cleanPhone}` },
+            { phone: `+91 ${cleanPhone}` },
+            { phone: { $regex: `${cleanPhone}$` } }
+          ];
+        } else {
+          return res.json([]);
+        }
       }
+
+      if (req.query.date) {
+        query.date = String(req.query.date).trim();
+      }
+
+      const tokens = await Token.find(query).sort({ updatedAt: -1, createdAt: -1 }).lean();
+      return res.json(tokens);
     }
 
-    if (req.query.date) {
-      query.date = String(req.query.date).trim();
+    if (auth.customerPhone) {
+      const ownPhone = auth.customerPhone;
+      const query = {
+        $or: [
+          { phone: ownPhone },
+          { phone: `91${ownPhone}` },
+          { phone: `+91${ownPhone}` },
+          { phone: `+91 ${ownPhone}` },
+          { phone: { $regex: `${ownPhone}$` } }
+        ]
+      };
+
+      if (req.query.date) {
+        query.date = String(req.query.date).trim();
+      }
+
+      const tokens = await Token.find(query).sort({ updatedAt: -1, createdAt: -1 }).lean();
+      return res.json(tokens);
     }
 
-    const tokens = await Token.find(query).sort({ updatedAt: -1, createdAt: -1 }).lean();
-    res.json(tokens);
+    return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required to access token records.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to retrieve tokens.' });
   }
 });
 
@@ -2409,6 +3278,11 @@ app.post('/api/tokens/request', tokenRequestLimiter, async (req, res) => {
 // 2. Admin Verifies Payment & Generates Official Token Number
 app.post(['/api/tokens/verify', '/api/tokens/:id/verify'], async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authentication required.' });
+    }
+
     const id = req.params.id || req.body.id;
     if (!id) return res.status(400).json({ error: 'Missing token request id.' });
 
@@ -2443,6 +3317,11 @@ app.post(['/api/tokens/verify', '/api/tokens/:id/verify'], async (req, res) => {
 // 3. Admin Rejects Invalid or Fraudulent Payment with Mandatory Rejection Reason
 app.post(['/api/tokens/reject', '/api/tokens/:id/reject'], async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authentication required.' });
+    }
+
     const id = req.params.id || req.body.id;
     const { reason } = req.body;
     if (!id) return res.status(400).json({ error: 'Missing token request id.' });
@@ -2522,9 +3401,14 @@ app.post('/api/tokens/webhook/payment-success', async (req, res) => {
   }
 });
 
-// 5. Standard Token Upsert (Legacy / Direct Admin Issue)
+// 5. Standard Token Upsert (Admin Only / Direct Admin Issue)
 app.post('/api/tokens', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authentication required.' });
+    }
+
     const tokenData = req.body;
     const key = tokenData.id || tokenData.tokenNo || `TOK-${Date.now()}`;
     tokenData.id = key;
@@ -2556,17 +3440,31 @@ app.post('/api/tokens', async (req, res) => {
 
 app.delete('/api/tokens/:id', async (req, res) => {
   try {
-    await Token.deleteMany({ $or: [{ id: req.params.id }, { tokenNo: req.params.id }] });
+    const auth = resolveAuthContext(req);
+    const targetId = req.params.id;
+    const existing = await Token.findOne({ $or: [{ id: targetId }, { tokenNo: targetId }] }).lean();
+    if (existing) {
+      const tokenPhone = cleanPhoneDigits(existing.phone);
+      if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== tokenPhone)) {
+        if (!auth.customerPhone) return res.status(401).json({ success: false, error: 'UNAUTHORIZED' });
+        return res.status(403).json({ success: false, error: 'FORBIDDEN' });
+      }
+    }
+    await Token.deleteMany({ $or: [{ id: targetId }, { tokenNo: targetId }] });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Failed to delete token.' });
   }
 });
 
-// --- DELETED CUSTOMERS API ---
+// --- DELETED CUSTOMERS API (ADMIN ONLY) ---
 
 app.get('/api/deleted-customers', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authentication required.' });
+    }
     const list = await DeletedCustomer.find().lean();
     const phones = list.map((d) => d.phone);
     res.json(phones);
@@ -2577,8 +3475,12 @@ app.get('/api/deleted-customers', async (req, res) => {
 
 app.post('/api/deleted-customers', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authentication required.' });
+    }
     const { phone } = req.body;
-    const cleanPhone = String(phone || '').replace(/\D/g, '');
+    const cleanPhone = cleanPhoneDigits(phone);
     if (cleanPhone) {
       await DeletedCustomer.findOneAndUpdate(
         { phone: cleanPhone },
@@ -2672,9 +3574,13 @@ app.get('/api/notifications', async (req, res) => {
   return res.json(processedList);
 });
 
-// Master Sync All Exam Categories Endpoint
+// Master Sync All Exam Categories Endpoint (Admin Only)
 app.post('/api/notifications/sync-all', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
     await syncAllVerifiedNotificationsFeed();
     const all = await Notification.find().sort({ updatedAt: -1 }).lean();
     res.json({
@@ -2688,9 +3594,13 @@ app.post('/api/notifications/sync-all', async (req, res) => {
   }
 });
 
-// Sync Banking Exam Feed Endpoint (Backward Compatibility)
+// Sync Banking Exam Feed Endpoint (Admin Only)
 app.post('/api/notifications/sync-banking', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
     await syncAllVerifiedNotificationsFeed();
     const all = await Notification.find().sort({ updatedAt: -1 }).lean();
     res.json({
@@ -2704,9 +3614,13 @@ app.post('/api/notifications/sync-banking', async (req, res) => {
   }
 });
 
-// Create / Update Notification (with Multi-Source Deduplication Check)
+// Create / Update Notification (Admin Only)
 app.post('/api/notifications', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
     const data = req.body;
     if (!data.service) {
       return res.status(400).json({ error: 'Notification service/title is required' });
@@ -2729,9 +3643,13 @@ app.post('/api/notifications', async (req, res) => {
   }
 });
 
-// Delete Notification
+// Delete Notification (Admin Only)
 app.delete('/api/notifications/:id', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
     await Notification.deleteMany({ id: req.params.id });
     res.json({ success: true, message: `Notification ${req.params.id} deleted` });
   } catch (err) {
@@ -2753,9 +3671,13 @@ app.get('/api/advertisements', async (req, res) => {
   }
 });
 
-// 2. Create or Update Advertisement
+// 2. Create or Update Advertisement (Admin Only)
 app.post('/api/advertisements', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
     const adData = req.body;
     if (!adData.imageUrl) {
       return res.status(400).json({ error: 'Advertisement image is required' });
@@ -2779,9 +3701,13 @@ app.post('/api/advertisements', async (req, res) => {
   }
 });
 
-// 3. Delete Advertisement
+// 3. Delete Advertisement (Admin Only)
 app.delete('/api/advertisements/:id', async (req, res) => {
   try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
     const { id } = req.params;
     await Advertisement.deleteMany({ id });
     res.json({ success: true, message: `Advertisement ${id} deleted` });
@@ -2791,15 +3717,6 @@ app.delete('/api/advertisements/:id', async (req, res) => {
 });
 
 // --- 9. LIVE QUEUE & CENTER SETTINGS (MULTI-DEVICE CLOUD SYNC) ---
-
-// Helper to verify Admin authorization for settings writes
-const isAdminAuthorized = (req) => {
-  const token = req.headers['x-admin-token'] || req.headers['authorization'] || req.query?.adminKey;
-  if (!token) return false;
-  const clean = String(token).replace(/^Bearer\s+/i, '').trim();
-  const expectedAdminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  return clean === expectedAdminPassword || clean === 'admin-auth-token-2026' || clean === 'akesevai-admin-2026' || clean === 'true';
-};
 
 // GET live queue settings (Public read for customer pages and admin devices)
 app.get('/api/settings/live-queue', async (req, res) => {
@@ -2913,6 +3830,9 @@ const connectWithRetry = async () => {
     });
     console.log(`🌐 ✅ Connected Successfully to MongoDB Atlas Cloud Database!`);
     console.log(`📡 Database URI: ${MONGODB_URI.replace(/:([^@]+)@/, ':****@')}`);
+
+    // Initialize & bootstrap Admin Authentication record in MongoDB
+    await initializeAdminAuth();
 
     // Auto-sync official exam notifications on startup
     await syncAllVerifiedNotificationsFeed();

@@ -1,30 +1,57 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowRight, LockKeyhole, Phone, ShieldCheck, UserCheck, Eye, EyeOff, KeyRound, Fingerprint, ArrowLeft, UserPlus, MessageSquareCode, CheckCircle2, X, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
-import { sendOtpCloud, verifyOtpCloud, resendOtpCloud, fetchSingleCustomerProfileCloud } from '../utils/dataService';
+import {
+  ArrowRight,
+  Phone,
+  ShieldCheck,
+  UserCheck,
+  KeyRound,
+  Fingerprint,
+  ArrowLeft,
+  UserPlus,
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  X,
+  RefreshCw,
+  Clock,
+  AlertTriangle,
+  HelpCircle
+} from 'lucide-react';
+import {
+  sendOtpCloud,
+  verifyOtpCloud,
+  loginCustomerPasswordCloud,
+  registerCustomerCloud,
+  setCustomerPasswordCloud
+} from '../utils/dataService';
 
-export default function OtpGate({ onVerified, notify, customerRecords, onClose }) {
-  const [step, setStep] = useState(1); // 1: Mobile Number, 2: Password / Setup
+export default function OtpGate({ onVerified, notify, onClose }) {
+  // Mode: 'login' | 'register' | 'forgot_password' | 'migrate_password'
+  const [mode, setMode] = useState('login');
+  const [step, setStep] = useState(1); // For register/forgot_password/migrate: 1: Phone, 2: OTP, 3: Details/Password
+
+  // Inputs
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [otpInput, setOtpInput] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isExistingUser, setIsExistingUser] = useState(false);
-  const [isResetMode, setIsResetMode] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [verifiedToken, setVerifiedToken] = useState(null);
+
+  // New Customer Registration Fields (Step 3)
+  const [regName, setRegName] = useState('');
+  const [regDob, setRegDob] = useState('');
+  const [regAadhaar, setRegAadhaar] = useState('');
+
+  // UI state
   const [isError, setIsError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-
-  // OTP State
-  const [otpSent, setOtpSent] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [sendingOtp, setSendingOtp] = useState(false);
   const isSendingOtpRef = useRef(false);
   const [resendCountdown, setResendCountdown] = useState(0);
   const [attemptsRemaining, setAttemptsRemaining] = useState(3);
-
-  // New Customer Registration Fields
-  const [regName, setRegName] = useState('');
-  const [regDob, setRegDob] = useState('');
-  const [regAadhaar, setRegAadhaar] = useState('');
-  const [loading, setLoading] = useState(false);
 
   // Countdown timer for Resend OTP
   useEffect(() => {
@@ -52,16 +79,83 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
     }
   };
 
-  // Trigger Real SMS OTP via Server (Guarded against duplicate rapid clicks)
-  const triggerSendOtp = async (cleanPhone, purpose) => {
+  const getCleanPhone = () => {
+    const cleaned = phone.replace(/\D/g, '');
+    return cleaned.length >= 10 ? cleaned.slice(-10) : cleaned;
+  };
+
+  // --- 1. EXISTING CUSTOMER PASSWORD LOGIN (NO OTP REQUESTED) ---
+  const handlePasswordLogin = async (event) => {
+    if (event) event.preventDefault();
+    if (loading) return;
+
+    const cleanPhone = getCleanPhone();
+    if (cleanPhone.length !== 10) {
+      if (typeof notify === 'function') notify('⚠️ தயவுசெய்து 10-இலக்க மொபைல் எண்ணை உள்ளிடவும் (Enter valid 10-digit mobile number)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+
+    if (!password) {
+      if (typeof notify === 'function') notify('⚠️ தயவுசெய்து உங்கள் கடவுச்சொல்லை உள்ளிடவும் (Enter password)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage('');
+
+    try {
+      const res = await loginCustomerPasswordCloud(cleanPhone, password);
+
+      if (res && res.success && res.customer) {
+        const custName = res.customer.profile?.name || res.customer.name || 'வாடிக்கையாளர்';
+        if (typeof notify === 'function') {
+          notify(`👋 நல்வரவு ${custName}! உங்கள் கணக்கு வெற்றிகரமாக திறக்கப்படுகிறது...`);
+        }
+        if (typeof onVerified === 'function') {
+          await onVerified(cleanPhone, res.customer, null);
+        }
+        return;
+      }
+
+      // Check if existing customer has no password set (legacy OTP migration)
+      if (res && res.error === 'PASSWORD_NOT_SET') {
+        if (typeof notify === 'function') {
+          notify('🔑 உங்கள் கணக்கிற்கு கடவுச்சொல் அமைக்கப்படவில்லை. SMS OTP மூலம் புதிய கடவுச்சொல் அமைக்கவும்.');
+        }
+        setMode('migrate_password');
+        setStep(2);
+        await triggerSendOtp(cleanPhone, 'reset_password');
+        return;
+      }
+
+      const errMsg = res?.message || 'தவறான மொபைல் எண் அல்லது கடவுச்சொல். தயவுசெய்து சரிபார்க்கவும்.';
+      if (typeof notify === 'function') notify(`❌ ${errMsg}`);
+      setErrorMessage(errMsg);
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+    } catch (err) {
+      console.warn('Customer Login Error:', err);
+      if (typeof notify === 'function') notify('⚠️ உள்நுழைவில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 2. TRIGGER REAL SMS OTP VIA SERVER ---
+  const triggerSendOtp = async (cleanDigits, purpose = 'auth') => {
     if (isSendingOtpRef.current) return;
     isSendingOtpRef.current = true;
     setSendingOtp(true);
     setErrorMessage('');
     try {
-      const res = await sendOtpCloud(cleanPhone, purpose);
+      const res = await sendOtpCloud(cleanDigits, purpose);
       if (res && res.success) {
-        setOtpSent(true);
         setResendCountdown(res.resendCooldown || 30);
         setAttemptsRemaining(3);
         if (res.deliveryStatus && res.deliveryStatus.dispatched === false) {
@@ -69,7 +163,7 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
           if (typeof notify === 'function') notify(`⚠️ ${warnMsg}`);
         } else {
           if (typeof notify === 'function') {
-            notify(`📱 SMS OTP +91 ${cleanPhone.slice(0, 5)}***** எண்ணிற்கு அனுப்பப்பட்டது! (OTP sent via SMS)`);
+            notify(`📱 SMS OTP +91 ${cleanDigits.slice(0, 5)}***** எண்ணிற்கு அனுப்பப்பட்டது!`);
           }
         }
       } else {
@@ -86,13 +180,12 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
     }
   };
 
-  // Step 1: Validate Mobile and check if user exists
-  const handleCheckPhoneStep = async (event) => {
+  // --- 3. START OTP FLOW (FOR REGISTRATION / FORGOT PASSWORD) ---
+  const handleStartOtpFlow = async (event) => {
     if (event) event.preventDefault();
     if (sendingOtp || isSendingOtpRef.current || loading) return;
 
-    const cleanedPhone = phone.replace(/\D/g, '');
-    const cleanDigits = cleanedPhone.length >= 10 ? cleanedPhone.slice(-10) : cleanedPhone;
+    const cleanDigits = getCleanPhone();
     if (cleanDigits.length !== 10) {
       if (typeof notify === 'function') notify('⚠️ தயவுசெய்து 10-இலக்க மொபைல் எண்ணை உள்ளிடவும் (Enter valid 10-digit mobile number)');
       setIsError(true);
@@ -100,204 +193,192 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
       return;
     }
 
-    // Fast path: In-memory customerRecords / LocalStorage cache
-    let records = customerRecords;
-    if (!records || typeof records !== 'object' || Object.keys(records).length === 0) {
-      try {
-        const r1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
-        const r2 = JSON.parse(localStorage.getItem('akesevai-customers') || '{}');
-        records = { ...r2, ...r1 };
-      } catch (err) {
-        records = {};
-      }
-    }
-
-    let exists = Boolean(records && (records[cleanDigits] || records[`+91 ${cleanDigits}`] || records[`+91${cleanDigits}`] || records[`91${cleanDigits}`]));
-
-    // Real-time Cloud Verification: If not in local cache, query MongoDB Cloud directly
-    if (!exists) {
-      setLoading(true);
-      let cloudLookupFailed = false;
-      try {
-        const apiBase = (typeof window !== 'undefined' && import.meta.env?.VITE_API_URL && !import.meta.env.VITE_API_URL.includes('localhost') && import.meta.env.VITE_API_URL.startsWith('http'))
-          ? import.meta.env.VITE_API_URL
-          : '/api';
-
-        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
-
-        const res = await fetch(`${apiBase}/customers/${cleanDigits}`, {
-          signal: controller?.signal,
-          headers: { 'Content-Type': 'application/json' }
-        });
-        if (timeoutId) clearTimeout(timeoutId);
-
-        if (res.status === 200) {
-          const cloudCustomer = await res.json();
-          if (cloudCustomer && (cloudCustomer.phone || cloudCustomer.name || cloudCustomer.profile)) {
-            exists = true;
-            // Cache to localStorage for fast subsequent lookup
-            try {
-              const localRecs = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
-              localRecs[cleanDigits] = cloudCustomer;
-              localStorage.setItem('akesevai-customer-records', JSON.stringify(localRecs));
-              localStorage.setItem('akesevai-customers', JSON.stringify(localRecs));
-            } catch (e) {}
-          }
-        } else if (res.status === 404) {
-          // Confirmed by backend that customer does not exist
-          exists = false;
-        } else {
-          // Server returned 500, 502, 503, 504 or other non-404 error
-          cloudLookupFailed = true;
-        }
-      } catch (cloudErr) {
-        cloudLookupFailed = true;
-        console.warn('Direct Cloud Customer Lookup failed:', cloudErr);
-      } finally {
-        setLoading(false);
-      }
-
-      if (cloudLookupFailed) {
-        if (typeof notify === 'function') {
-          notify('⚠️ சர்வர் இணைப்பு பிழை. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
-        }
-        setErrorMessage('சர்வர் இணைப்பு பிழை. தயவுசெய்து சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.');
-        setIsError(true);
-        setTimeout(() => setIsError(false), 2500);
-        return;
-      }
-    }
-
-    setIsExistingUser(exists);
+    setOtpInput('');
+    setErrorMessage('');
     setStep(2);
-    setOtpInput('');
 
-    if (exists) {
-      if (typeof notify === 'function') notify(`👋 நல்வரவு! +91 ${cleanDigits} கணக்கின் கடவுச்சொல்லை உள்ளிடவும்.`);
-    } else {
-      if (typeof notify === 'function') notify(`✨ புதிய வாடிக்கையாளர்! விவரங்களை பூர்த்தி செய்து SMS OTP மூலம் கணக்கைத் தொடங்கவும்.`);
-      // Trigger real SMS OTP generation for new user registration (single execution)
-      await triggerSendOtp(cleanDigits, 'register');
-    }
+    const purpose = mode === 'register' ? 'register' : 'reset_password';
+    await triggerSendOtp(cleanDigits, purpose);
   };
 
-  // Handle Switch to Forgot Password / Reset Mode
-  const handleStartPasswordReset = async () => {
-    if (sendingOtp || isSendingOtpRef.current) return;
-    setIsResetMode(true);
-    setPassword('');
-    setOtpInput('');
-    const cleanedPhone = phone.replace(/\D/g, '');
-    if (cleanedPhone && cleanedPhone.length === 10) {
-      await triggerSendOtp(cleanedPhone, 'reset_password');
-    }
-  };
-
-  // Handle Resend OTP Click
-  const handleResendOtp = async () => {
-    if (resendCountdown > 0 || sendingOtp || isSendingOtpRef.current) return;
-    const cleanedPhone = phone.replace(/\D/g, '');
-    if (!cleanedPhone || cleanedPhone.length !== 10) return;
-    await triggerSendOtp(cleanedPhone, isResetMode ? 'reset_password' : 'register');
-  };
-
-  // Step 2: Perform Login, OTP Password Reset, or New User Registration
-  const handleFinalSubmit = async (event) => {
+  // --- 4. VERIFY OTP STEP ---
+  const handleVerifyOtp = async (event) => {
     if (event) event.preventDefault();
-    const cleanedPhone = phone.replace(/\D/g, '');
-    if (!cleanedPhone || cleanedPhone.length !== 10) return;
+    const cleanDigits = getCleanPhone();
+    if (cleanDigits.length !== 10) return;
 
-    // If New User Registration or Password Reset -> Validate & Verify SMS OTP with Server
-    if (!isExistingUser || isResetMode) {
-      const cleanOtp = otpInput.replace(/\D/g, '');
-      if (!cleanOtp || (cleanOtp.length !== 4 && cleanOtp.length !== 6)) {
-        if (typeof notify === 'function') notify('⚠️ தயவுசெய்து உங்கள் மொபைலுக்கு வந்த SMS OTP எண்ணை உள்ளிடவும் (Enter SMS OTP)');
-        setIsError(true);
-        setTimeout(() => setIsError(false), 1200);
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const verifyRes = await verifyOtpCloud(cleanedPhone, cleanOtp, isResetMode ? 'reset_password' : 'register');
-        if (!verifyRes || !verifyRes.success) {
-          const errMsg = verifyRes?.message || 'தவறான அல்லது காலாவதியான OTP எண். தயவுசெய்து மீண்டும் முயற்சிக்கவும்.';
-          if (typeof notify === 'function') notify(`❌ ${errMsg}`);
-          if (verifyRes?.attemptsRemaining !== undefined) {
-            setAttemptsRemaining(verifyRes.attemptsRemaining);
-          }
-          setErrorMessage(errMsg);
-          setIsError(true);
-          setLoading(false);
-          setTimeout(() => setIsError(false), 1200);
-          return;
-        }
-      } catch (otpErr) {
-        console.warn('OTP Verification Network Error:', otpErr);
-        if (typeof notify === 'function') notify('⚠️ OTP சரிபார்ப்பதில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
-        setIsError(true);
-        setLoading(false);
-        setTimeout(() => setIsError(false), 1200);
-        return;
-      }
-    }
-
-    if (!password || password.length < 3) {
-      if (typeof notify === 'function') notify('⚠️ தயவுசெய்து கடவுச்சொல்லை உள்ளிடவும் (Enter password - Min 3 characters)');
+    const cleanOtp = otpInput.replace(/\D/g, '');
+    if (!cleanOtp || (cleanOtp.length !== 4 && cleanOtp.length !== 6)) {
+      if (typeof notify === 'function') notify('⚠️ தயவுசெய்து 6-இலக்க SMS OTP எண்ணை உள்ளிடவும் (Enter 6-digit SMS OTP)');
       setIsError(true);
-      setLoading(false);
       setTimeout(() => setIsError(false), 1200);
       return;
     }
 
-    if (!isExistingUser) {
-      if (!regName.trim()) {
-        if (typeof notify === 'function') notify('⚠️ தயவுசெய்து உங்கள் பெயரை உள்ளிடவும் (Enter your Full Name)');
+    setLoading(true);
+    setErrorMessage('');
+
+    try {
+      const purpose = mode === 'register' ? 'register' : 'reset_password';
+      const verifyRes = await verifyOtpCloud(cleanDigits, cleanOtp, purpose);
+
+      if (!verifyRes || !verifyRes.success) {
+        const errMsg = verifyRes?.message || 'தவறான அல்லது காலாவதியான OTP எண். தயவுசெய்து மீண்டும் முயற்சிக்கவும்.';
+        if (typeof notify === 'function') notify(`❌ ${errMsg}`);
+        if (verifyRes?.attemptsRemaining !== undefined) {
+          setAttemptsRemaining(verifyRes.attemptsRemaining);
+        }
+        setErrorMessage(errMsg);
         setIsError(true);
         setLoading(false);
         setTimeout(() => setIsError(false), 1200);
         return;
       }
-      if (!regDob) {
-        if (typeof notify === 'function') notify('⚠️ தயவுசெய்து பிறந்த தேதியை உள்ளிடவும் (Enter DOB)');
-        setIsError(true);
-        setLoading(false);
-        setTimeout(() => setIsError(false), 1200);
-        return;
+
+      setVerifiedToken(verifyRes.verifiedToken || verifyRes.customerToken || 'verified');
+
+      if (verifyRes.customerToken) {
+        try {
+          sessionStorage.setItem('akesevai-customer-token', verifyRes.customerToken);
+          localStorage.setItem('akesevai-customer-token', verifyRes.customerToken);
+        } catch (e) {}
       }
-      if (!regAadhaar || regAadhaar.replace(/\D/g, '').length !== 12) {
-        if (typeof notify === 'function') notify('⚠️ தயவுசெய்து 12-இலக்க சரியான ஆதார் எண்ணை உள்ளிடவும் (Enter 12-digit Aadhaar Number)');
-        setIsError(true);
-        setLoading(false);
-        setTimeout(() => setIsError(false), 1200);
-        return;
+
+      if (typeof notify === 'function') {
+        notify('✅ OTP வெற்றிகரமாக சரிபார்க்கப்பட்டது!');
       }
-      if (typeof notify === 'function') notify('✅ SMS OTP சரிபார்க்கப்பட்டது! புதிய கணக்கு வெற்றிகரமாக உருவாக்கப்பட்டது.');
+
+      // Advance to Password / Profile creation step
+      setPassword('');
+      setConfirmPassword('');
+      setStep(3);
+    } catch (otpErr) {
+      console.warn('OTP Verification Network Error:', otpErr);
+      if (typeof notify === 'function') notify('⚠️ OTP சரிபார்ப்பதில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 5. NEW CUSTOMER REGISTRATION SUBMISSION (WITH PASSWORD) ---
+  const handleCompleteRegistration = async (event) => {
+    if (event) event.preventDefault();
+    const cleanDigits = getCleanPhone();
+    if (cleanDigits.length !== 10) return;
+
+    if (!regName.trim()) {
+      if (typeof notify === 'function') notify('⚠️ தயவுசெய்து உங்கள் பெயரை உள்ளிடவும் (Enter your Full Name)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+    if (!regDob) {
+      if (typeof notify === 'function') notify('⚠️ தயவுசெய்து பிறந்த தேதியை உள்ளிடவும் (Enter Date of Birth)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+    const cleanAadhaar = regAadhaar.replace(/\D/g, '');
+    if (cleanAadhaar.length !== 12) {
+      if (typeof notify === 'function') notify('⚠️ தயவுசெய்து 12-இலக்க சரியான ஆதார் எண்ணை உள்ளிடவும் (Enter valid 12-digit Aadhaar Number)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+    if (!password || password.length < 4) {
+      if (typeof notify === 'function') notify('⚠️ கடவுச்சொல் குறைந்தது 4 எழுத்துக்கள் இருக்க வேண்டும் (Password min 4 chars)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+    if (password !== confirmPassword) {
+      if (typeof notify === 'function') notify('⚠️ கடவுச்சொற்கள் பொருந்தவில்லை (Passwords do not match)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
     }
 
-    if (!loading) setLoading(true);
+    setLoading(true);
     try {
+      const regRes = await registerCustomerCloud(cleanDigits, verifiedToken, {
+        name: regName.trim(),
+        dob: regDob,
+        aadhaarNo: cleanAadhaar,
+        password: password.trim()
+      });
+
+      if (!regRes || !regRes.success) {
+        const errMsg = regRes?.message || 'கணக்கு தொடங்குவதில் பிழை ஏற்பட்டது.';
+        if (typeof notify === 'function') notify(`❌ ${errMsg}`);
+        setIsError(true);
+        setTimeout(() => setIsError(false), 1200);
+        return;
+      }
+
+      if (typeof notify === 'function') {
+        notify('✅ புதிய கணக்கு மற்றும் கடவுச்சொல் வெற்றிகரமாக உருவாக்கப்பட்டது! உங்கள் தளம் திறக்கிறது...');
+      }
+
       if (typeof onVerified === 'function') {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('REQUEST_TIMEOUT')), 8000)
-        );
-        await Promise.race([
-          onVerified(cleanedPhone, password, !isExistingUser ? {
-            name: regName.trim(),
-            dob: regDob,
-            aadhaarNo: regAadhaar.trim()
-          } : null),
-          timeoutPromise
-        ]);
+        await onVerified(cleanDigits, regRes.customer, {
+          name: regName.trim(),
+          dob: regDob,
+          aadhaarNo: cleanAadhaar
+        });
       }
     } catch (err) {
-      console.warn('Registration/Login error:', err);
-      if (err?.message === 'REQUEST_TIMEOUT') {
-        if (typeof notify === 'function') notify('⚠️ நேர வரம்பு கடந்துவிட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும். (Request timed out, please retry)');
-      } else {
-        if (typeof notify === 'function') notify('⚠️ கணக்கு தொடங்குவதில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+      console.warn('Registration error:', err);
+      if (typeof notify === 'function') notify('⚠️ கணக்கு தொடங்குவதில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 6. SET / RESET PASSWORD SUBMISSION (POST-OTP VERIFIED) ---
+  const handleSetPasswordSubmit = async (event) => {
+    if (event) event.preventDefault();
+    const cleanDigits = getCleanPhone();
+    if (cleanDigits.length !== 10) return;
+
+    if (!password || password.length < 4) {
+      if (typeof notify === 'function') notify('⚠️ புதிய கடவுச்சொல் குறைந்தது 4 எழுத்துக்கள் இருக்க வேண்டும் (Password min 4 chars)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+    if (password !== confirmPassword) {
+      if (typeof notify === 'function') notify('⚠️ கடவுச்சொற்கள் பொருந்தவில்லை (Passwords do not match)');
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const resetRes = await setCustomerPasswordCloud(cleanDigits, verifiedToken, password.trim());
+
+      if (!resetRes || !resetRes.success) {
+        const errMsg = resetRes?.message || 'கடவுச்சொல் அமைப்பதில் பிழை ஏற்பட்டது.';
+        if (typeof notify === 'function') notify(`❌ ${errMsg}`);
+        setIsError(true);
+        setTimeout(() => setIsError(false), 1200);
+        return;
       }
+
+      if (typeof notify === 'function') {
+        notify('✅ புதிய கடவுச்சொல் வெற்றிகரமாக அமைக்கப்பட்டது! உங்கள் தளம் திறக்கிறது...');
+      }
+
+      if (typeof onVerified === 'function') {
+        await onVerified(cleanDigits, resetRes.customer, null);
+      }
+    } catch (err) {
+      console.warn('Password Set Error:', err);
+      if (typeof notify === 'function') notify('⚠️ கடவுச்சொல் அமைப்பதில் பிழை ஏற்பட்டது. தயவுசெய்து மீண்டும் முயற்சிக்கவும்.');
       setIsError(true);
       setTimeout(() => setIsError(false), 1200);
     } finally {
@@ -306,28 +387,30 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
   };
 
   return (
-    <div className="otp-gate" role="dialog" aria-modal="true">
-      <div className={`otp-gate-card esevai-scan-container ${isError ? 'esevai-shake' : ''}`}>
-        <div className="esevai-scan-laser" />
-
+    <div className="otp-gate" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}>
+      <div className={`otp-gate-card ${isError ? 'esevai-shake' : ''}`}>
         {/* Top Header Bar with Badge & Clean Close Button */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '8px' }}>
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: '6px',
-            background: isResetMode ? '#fef3c7' : step === 2 && !isExistingUser ? '#dcfce7' : '#e0f2fe',
-            color: isResetMode ? '#b45309' : step === 2 && !isExistingUser ? '#15803d' : '#0369a1',
-            padding: '5px 11px',
+            background: mode === 'register' ? '#dcfce7' : '#e0f2fe',
+            color: mode === 'register' ? '#15803d' : '#0369a1',
+            padding: '6px 12px',
             borderRadius: '12px',
-            fontSize: '10.5px',
+            fontSize: '11px',
             fontWeight: 800,
             letterSpacing: '0.2px',
-            maxWidth: 'calc(100% - 90px)'
+            maxWidth: 'calc(100% - 54px)'
           }}>
-            {isResetMode ? <MessageSquareCode size={14} /> : step === 2 && !isExistingUser ? <UserPlus size={14} /> : <UserCheck size={14} />}
+            {mode === 'register' ? <UserPlus size={14} /> : <UserCheck size={14} />}
             <span id="customer-access-badge-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {isResetMode ? 'SMS OTP PASSWORD RESET' : step === 1 ? 'E-SEVAI CUSTOMER ACCESS' : isExistingUser ? 'CUSTOMER LOGIN' : 'NEW CUSTOMER REGISTRATION'}
+              {mode === 'login'
+                ? 'CUSTOMER PASSWORD LOGIN'
+                : mode === 'register'
+                ? (step === 3 ? 'CREATE PASSWORD & REGISTER' : 'NEW CUSTOMER REGISTRATION')
+                : (step === 3 ? 'SET NEW PASSWORD' : 'FORGOT PASSWORD RECOVERY')}
             </span>
           </div>
 
@@ -337,11 +420,10 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
             id="customer-portal-close-btn"
             className="customer-portal-close-btn"
             onClick={handleClose}
-            aria-label="முகப்புக்குத் திரும்பு / Back to Home"
-            title="முகப்புக்குத் திரும்பு / Back to Home"
+            aria-label="மூடு / Close"
+            title="மூடு / Close"
           >
-            <X size={16} strokeWidth={2.4} />
-            <span className="close-btn-label">மூடு / Close</span>
+            <X size={18} strokeWidth={2.4} />
           </button>
         </div>
 
@@ -351,7 +433,7 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
             width: '52px',
             height: '52px',
             borderRadius: '14px',
-            background: isResetMode ? 'linear-gradient(135deg, #d97706 0%, #ca8a04 100%)' : step === 2 && !isExistingUser ? 'linear-gradient(135deg, #16a34a 0%, #059669 100%)' : 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
+            background: mode === 'register' ? 'linear-gradient(135deg, #16a34a 0%, #059669 100%)' : 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
             color: '#ffffff',
             display: 'grid',
             placeItems: 'center',
@@ -364,46 +446,47 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
             வாடிக்கையாளர் தளம் <span style={{ color: '#0052cc' }}>(Customer Portal)</span>
           </h2>
           <p style={{ fontSize: '12px', color: '#64748b', margin: 0, lineHeight: 1.5 }}>
-            {isResetMode
-              ? `+91 ${phone} எண்ணிற்கு அனுப்பப்பட்ட SMS OTP மற்றும் புதிய கடவுச்சொல்லை உள்ளிடவும்.`
-              : step === 1
-              ? 'உங்கள் 10-இலக்க மொபைல் எண்ணை உள்ளிட்டு அடுத்து செல்லவும்.'
-              : isExistingUser
-              ? `+91 ${phone} கணக்கின் கடவுச்சொல்லை உள்ளிட்டு உள்நுழையவும்.`
-              : `+91 ${phone} எண்ணிற்கு SMS OTP அனுப்பப்பட்டுள்ளது. விவரங்களை பூர்த்தி செய்யவும்.`}
+            {mode === 'login'
+              ? 'உங்கள் 10-இலக்க மொபைல் எண் மற்றும் கடவுச்சொல் மூலம் நுழையவும்.'
+              : mode === 'register'
+              ? (step === 1 ? 'புதிய கணக்கு தொடங்க உங்கள் மொபைல் எண்ணை உள்ளிடவும்.' : step === 2 ? `+91 ${phone} எண்ணிற்கு அனுப்பப்பட்ட SMS OTP-ஐ உள்ளிடவும்.` : 'உங்கள் விவரங்கள் மற்றும் புதிய கடவுச்சொல்லை அமைக்கவும்.')
+              : (step === 1 ? 'கடவுச்சொல்லை மாற்ற உங்கள் மொபைல் எண்ணை உள்ளிடவும்.' : step === 2 ? `+91 ${phone} எண்ணிற்கு அனுப்பப்பட்ட SMS OTP-ஐ உள்ளிடவும்.` : 'புதிய கடவுச்சொல்லை உள்ளிட்டு மாற்றவும்.')}
           </p>
         </div>
 
-        {/* STEP 1: ENTER MOBILE NUMBER */}
-        {step === 1 && (
-          <form onSubmit={handleCheckPhoneStep}>
-            <label htmlFor="otp-phone-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '12px', textTransform: 'uppercase' }}>
+        {/* ======================================================== */}
+        {/* MODE 1: EXISTING CUSTOMER LOGIN (MOBILE + PASSWORD ONLY) */}
+        {/* ======================================================== */}
+        {mode === 'login' && (
+          <form onSubmit={handlePasswordLogin}>
+            {/* Mobile Number Field */}
+            <label htmlFor="customer-login-phone" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '10px', textTransform: 'uppercase' }}>
               MOBILE NUMBER / மொபைல் எண் *
-              <div className="otp-phone-input" style={{
+              <div style={{
                 display: 'flex',
                 border: isError ? '1.5px solid #ef4444' : '1.5px solid #cbd5e1',
                 borderRadius: '10px',
                 overflow: 'hidden',
-                marginTop: '6px',
+                marginTop: '4px',
                 background: '#ffffff'
               }}>
-                <span style={{ background: '#f1f5f9', color: '#0f172a', padding: '12px 14px', fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center' }}>+91</span>
+                <span style={{ background: '#f1f5f9', color: '#0f172a', padding: '11px 14px', fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center' }}>+91</span>
                 <input
                   autoFocus
                   required
-                  id="otp-phone-input"
+                  id="customer-login-phone"
                   name="customer_phone"
                   autoComplete="tel"
                   type="tel"
                   maxLength="10"
                   placeholder="98765 43210"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => { setPhone(e.target.value.replace(/\D/g, '')); setErrorMessage(''); }}
                   style={{
                     flex: 1,
                     border: 'none',
-                    padding: '12px 14px',
-                    fontSize: '16px',
+                    padding: '11px 14px',
+                    fontSize: '15px',
                     fontWeight: 700,
                     outline: 'none',
                     letterSpacing: '1px'
@@ -412,276 +495,68 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
               </div>
             </label>
 
-            <button
-              id="otp-check-phone-btn"
-              type="submit"
-              disabled={sendingOtp || loading}
-              className="button button-primary button-wide esevai-btn-glow"
-              style={{
-                width: '100%',
-                padding: '13px',
-                fontSize: '14px',
-                fontWeight: 800,
-                borderRadius: '10px',
+            {/* Password Field */}
+            <label htmlFor="customer-login-password" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '8px', textTransform: 'uppercase' }}>
+              PASSWORD / கடவுச்சொல் *
+              <div style={{
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                marginTop: '16px',
-                background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
-                color: '#ffffff',
-                border: 'none',
-                cursor: (sendingOtp || loading) ? 'wait' : 'pointer',
-                opacity: (sendingOtp || loading) ? 0.75 : 1,
-                boxShadow: '0 6px 18px rgba(0, 82, 204, 0.28)'
-              }}
-            >
-              {sendingOtp ? 'OTP அனுப்பப்படுகிறது... (Sending OTP...)' : <>அடுத்து செல்லவும் / Next Step <ArrowRight size={17} /></>}
-            </button>
-
-            <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-              <ShieldCheck size={14} color="#16a34a" /> 256-bit SSL & OTP பாதுகாக்கப்பட்ட வாடிக்கையாளர் நுழைவு
-            </div>
-          </form>
-        )}
-
-        {/* STEP 2: PASSWORD / OTP VERIFICATION & PROFILE SETUP */}
-        {step === 2 && (
-          <form onSubmit={handleFinalSubmit}>
-            <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0' }}>
-              <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>📱 +91 {phone}</span>
-              <button
-                type="button"
-                id="otp-change-phone-btn"
-                onClick={() => { setStep(1); setIsResetMode(false); setErrorMessage(''); }}
-                style={{ background: 'none', border: 'none', color: '#0052cc', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-              >
-                <ArrowLeft size={13} /> மாற்று (Change)
-              </button>
-            </div>
-
-            {/* If New User Registration, collect Name, DOB, Aadhaar */}
-            {!isExistingUser && (
-              <>
-                <label htmlFor="otp-reg-name" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '10px', textTransform: 'uppercase' }}>
-                  1. FULL NAME / முழு பெயர் *
-                  <input
-                    required
-                    id="otp-reg-name"
-                    name="customer_name"
-                    autoComplete="name"
-                    type="text"
-                    placeholder="உங்கள் பெயரை உள்ளிடவும்"
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: '1.5px solid #cbd5e1',
-                      borderRadius: '8px',
-                      padding: '10px 12px',
-                      fontSize: '13.5px',
-                      fontWeight: 700,
-                      marginTop: '4px',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </label>
-
-                <label htmlFor="otp-reg-dob" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '10px', textTransform: 'uppercase' }}>
-                  2. DATE OF BIRTH / பிறந்த தேதி *
-                  <input
-                    required
-                    id="otp-reg-dob"
-                    name="customer_dob"
-                    autoComplete="bday"
-                    type="date"
-                    value={regDob}
-                    onChange={(e) => setRegDob(e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: '1.5px solid #cbd5e1',
-                      borderRadius: '8px',
-                      padding: '9px 12px',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      marginTop: '4px',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </label>
-
-                <label htmlFor="otp-reg-aadhaar" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '12px', textTransform: 'uppercase' }}>
-                  3. 12-DIGIT AADHAAR / ஆதார் எண் *
-                  <input
-                    required
-                    id="otp-reg-aadhaar"
-                    name="customer_aadhaar"
-                    autoComplete="off"
-                    type="text"
-                    maxLength="14"
-                    placeholder="5678 9012 3456"
-                    value={regAadhaar}
-                    onChange={(e) => {
-                      const clean = e.target.value.replace(/\D/g, '').slice(0, 12);
-                      const formatted = clean.match(/.{1,4}/g)?.join(' ') || clean;
-                      setRegAadhaar(formatted);
-                    }}
-                    style={{
-                      width: '100%',
-                      border: '1.5px solid #cbd5e1',
-                      borderRadius: '8px',
-                      padding: '10px 12px',
-                      fontSize: '13.5px',
-                      fontWeight: 700,
-                      marginTop: '4px',
-                      boxSizing: 'border-box',
-                      letterSpacing: '1px'
-                    }}
-                  />
-                </label>
-              </>
-            )}
-
-            {/* Real SMS OTP Field for New User or Password Reset */}
-            {(!isExistingUser || isResetMode) && (
-              <div style={{ marginBottom: '14px', background: '#f0fdf4', padding: '12px', borderRadius: '10px', border: '1.5px solid #bbf7d0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label htmlFor="otp-reg-otp" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>
-                    📱 SMS OTP / ஒருமுறை கடவுச்சொல் *
-                  </label>
-                  <span style={{ fontSize: '10.5px', color: '#15803d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <Clock size={12} /> 5 நிமிடம் (5m valid)
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    required
-                    id="otp-reg-otp"
-                    name="customer_otp"
-                    type="tel"
-                    maxLength="6"
-                    autoComplete="one-time-code"
-                    value={otpInput}
-                    onChange={(e) => {
-                      setOtpInput(e.target.value.replace(/\D/g, ''));
-                      setErrorMessage('');
-                    }}
-                    placeholder="• • • • • •"
-                    style={{
-                      width: '130px',
-                      border: errorMessage ? '1.5px solid #ef4444' : '1.5px solid #86efac',
-                      borderRadius: '8px',
-                      padding: '10px 12px',
-                      fontSize: '17px',
-                      fontWeight: 800,
-                      textAlign: 'center',
-                      letterSpacing: '4px',
-                      background: '#ffffff'
-                    }}
-                  />
-
-                  {/* Resend Timer / Button */}
-                  <div style={{ flex: 1, textAlign: 'right' }}>
-                    {resendCountdown > 0 ? (
-                      <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
-                        மீண்டும் அனுப்ப: <strong style={{ color: '#0f172a' }}>00:{String(resendCountdown).padStart(2, '0')}</strong>
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        id="otp-resend-btn"
-                        onClick={handleResendOtp}
-                        disabled={sendingOtp}
-                        style={{
-                          background: '#ffffff',
-                          border: '1px solid #16a34a',
-                          color: '#15803d',
-                          padding: '7px 10px',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: sendingOtp ? 'wait' : 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <RefreshCw size={12} className={sendingOtp ? 'spin' : ''} />
-                        {sendingOtp ? 'அனுப்பப்படுகிறது...' : 'மீண்டும் OTP அனுப்ப'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {errorMessage && (
-                  <div id="otp-error-msg" style={{ marginTop: '6px', fontSize: '11px', color: '#dc2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <AlertTriangle size={13} /> {errorMessage}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Password Input */}
-            <label htmlFor="otp-password-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '14px', textTransform: 'uppercase' }}>
-              {isExistingUser && !isResetMode ? 'PASSWORD / கடவுச்சொல் *' : 'CREATE PASSWORD / புதிய கடவுச்சொல் *'}
-              <div style={{ position: 'relative', marginTop: '4px' }}>
+                border: isError ? '1.5px solid #ef4444' : '1.5px solid #cbd5e1',
+                borderRadius: '10px',
+                overflow: 'hidden',
+                marginTop: '4px',
+                background: '#ffffff',
+                alignItems: 'center'
+              }}>
                 <input
                   required
-                  id="otp-password-input"
+                  id="customer-login-password"
                   name="customer_password"
-                  autoComplete={isExistingUser && !isResetMode ? "current-password" : "new-password"}
-                  autoFocus={isExistingUser && !isResetMode}
+                  autoComplete="current-password"
                   type={showPassword ? 'text' : 'password'}
+                  placeholder="உங்கள் கடவுச்சொல்"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isExistingUser && !isResetMode ? 'கடவுச்சொல்லை உள்ளிடவும்' : 'புதிய கடவுச்சொல்லை உருவாக்கவும்'}
+                  onChange={(e) => { setPassword(e.target.value); setErrorMessage(''); }}
                   style={{
-                    width: '100%',
-                    border: isError ? '1.5px solid #ef4444' : '1.5px solid #cbd5e1',
-                    borderRadius: '8px',
-                    padding: '11px 40px 11px 12px',
-                    fontSize: '14px',
+                    flex: 1,
+                    border: 'none',
+                    padding: '11px 14px',
+                    fontSize: '15px',
                     fontWeight: 700,
-                    boxSizing: 'border-box'
+                    outline: 'none'
                   }}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: 'absolute',
-                    right: '10px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    color: '#64748b',
-                    cursor: 'pointer',
-                    padding: '4px'
-                  }}
+                  style={{ background: 'none', border: 'none', padding: '0 12px', color: '#64748b', cursor: 'pointer' }}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
             </label>
 
-            {/* Forgot Password Link for Existing Users */}
-            {isExistingUser && !isResetMode && (
-              <div style={{ textAlign: 'right', marginBottom: '14px', marginTop: '-6px' }}>
-                <button
-                  type="button"
-                  id="otp-forgot-pass-btn"
-                  onClick={handleStartPasswordReset}
-                  style={{ background: 'none', border: 'none', color: '#d97706', fontSize: '11px', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                  கடவுச்சொல் மறந்துவிட்டதா? (Reset Password via SMS OTP)
-                </button>
+            {/* Forgot Password Link */}
+            <div style={{ textAlign: 'right', marginBottom: '14px' }}>
+              <button
+                type="button"
+                id="customer-forgot-password-btn"
+                onClick={() => { setMode('forgot_password'); setStep(1); setErrorMessage(''); }}
+                style={{ background: 'none', border: 'none', color: '#0052cc', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', padding: 0 }}
+              >
+                கடவுச்சொல் மறந்துவிட்டதா? (Forgot Password?)
+              </button>
+            </div>
+
+            {errorMessage && (
+              <div id="customer-login-error-msg" style={{ marginBottom: '12px', fontSize: '11.5px', color: '#dc2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <AlertTriangle size={14} /> {errorMessage}
               </div>
             )}
 
+            {/* Login Submit Button */}
             <button
-              id="otp-final-submit-btn"
+              id="customer-password-login-btn"
               type="submit"
               disabled={loading}
               className="button button-primary button-wide esevai-btn-glow"
@@ -695,24 +570,439 @@ export default function OtpGate({ onVerified, notify, customerRecords, onClose }
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                background: isExistingUser && !isResetMode ? 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)' : 'linear-gradient(135deg, #16a34a 0%, #059669 100%)',
+                background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
                 color: '#ffffff',
                 border: 'none',
                 cursor: loading ? 'wait' : 'pointer',
                 boxShadow: '0 6px 18px rgba(0, 82, 204, 0.28)'
               }}
             >
-              {loading ? (
-                <span>சரிபார்க்கப்படுகிறது... (Verifying...)</span>
-              ) : isResetMode ? (
-                <>கடவுச்சொல் மாற்றி உள்நுழைக <KeyRound size={17} /></>
-              ) : isExistingUser ? (
-                <>உள்நுழைக / Customer Login <ArrowRight size={17} /></>
-              ) : (
-                <>கணக்கைத் தொடங்குக / Complete Registration <UserPlus size={17} /></>
-              )}
+              {loading ? 'உள்நுழைகிறது... (Logging in...)' : <>உள்நுழைக / Customer Login <ArrowRight size={17} /></>}
             </button>
+
+            {/* New Customer Account Creation Link */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #e2e8f0', textAlign: 'center' }}>
+              <button
+                type="button"
+                id="customer-goto-register-btn"
+                onClick={() => { setMode('register'); setStep(1); setErrorMessage(''); }}
+                style={{
+                  background: '#f0fdf4',
+                  border: '1.5px solid #bbf7d0',
+                  color: '#15803d',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  width: '100%',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+              >
+                <UserPlus size={16} /> புதிய வாடிக்கையாளரா? கணக்கைத் தொடங்குக
+              </button>
+            </div>
+
+            <div style={{ marginTop: '14px', textAlign: 'center', fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <ShieldCheck size={14} color="#16a34a" /> 256-bit SSL & PBKDF2 பாதுகாக்கப்பட்ட வாடிக்கையாளர் தளம்
+            </div>
           </form>
+        )}
+
+        {/* ========================================================================= */}
+        {/* MODE 2 / 3 / 4: OTP BASED (REGISTRATION, FORGOT PASSWORD, OR MIGRATION)  */}
+        {/* ========================================================================= */}
+        {mode !== 'login' && (
+          <div>
+            {/* STEP 1: ENTER MOBILE NUMBER FOR OTP */}
+            {step === 1 && (
+              <form onSubmit={handleStartOtpFlow}>
+                <label htmlFor="otp-step1-phone" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '12px', textTransform: 'uppercase' }}>
+                  MOBILE NUMBER / மொபைல் எண் *
+                  <div style={{
+                    display: 'flex',
+                    border: isError ? '1.5px solid #ef4444' : '1.5px solid #cbd5e1',
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    marginTop: '6px',
+                    background: '#ffffff'
+                  }}>
+                    <span style={{ background: '#f1f5f9', color: '#0f172a', padding: '12px 14px', fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center' }}>+91</span>
+                    <input
+                      autoFocus
+                      required
+                      id="otp-step1-phone"
+                      name="customer_phone"
+                      autoComplete="tel"
+                      type="tel"
+                      maxLength="10"
+                      placeholder="98765 43210"
+                      value={phone}
+                      onChange={(e) => { setPhone(e.target.value.replace(/\D/g, '')); setErrorMessage(''); }}
+                      style={{
+                        flex: 1,
+                        border: 'none',
+                        padding: '12px 14px',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        outline: 'none',
+                        letterSpacing: '1px'
+                      }}
+                    />
+                  </div>
+                </label>
+
+                {errorMessage && (
+                  <div style={{ marginBottom: '12px', fontSize: '11.5px', color: '#dc2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertTriangle size={14} /> {errorMessage}
+                  </div>
+                )}
+
+                <button
+                  id="otp-send-submit-btn"
+                  type="submit"
+                  disabled={sendingOtp || loading}
+                  className="button button-primary button-wide esevai-btn-glow"
+                  style={{
+                    width: '100%',
+                    padding: '13px',
+                    fontSize: '14px',
+                    fontWeight: 800,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: (sendingOtp || loading) ? 'wait' : 'pointer',
+                    boxShadow: '0 6px 18px rgba(0, 82, 204, 0.28)'
+                  }}
+                >
+                  {sendingOtp ? 'OTP அனுப்பப்படுகிறது... (Sending OTP...)' : <>SMS OTP பெறுக / Get SMS OTP <ArrowRight size={17} /></>}
+                </button>
+
+                <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setMode('login'); setStep(1); setErrorMessage(''); }}
+                    style={{ background: 'none', border: 'none', color: '#0052cc', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <ArrowLeft size={14} /> ஏற்கனவே கணக்கு உள்ளதா? உள்நுழைக (Back to Login)
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 2: ENTER SMS OTP */}
+            {step === 2 && (
+              <form onSubmit={handleVerifyOtp}>
+                <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '10px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #e2e8f0' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#1e293b' }}>📱 +91 {phone}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setStep(1); setErrorMessage(''); }}
+                    style={{ background: 'none', border: 'none', color: '#0052cc', fontSize: '11px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                  >
+                    <ArrowLeft size={13} /> மாற்று (Change)
+                  </button>
+                </div>
+
+                <div style={{ marginBottom: '14px', background: '#f0fdf4', padding: '12px', borderRadius: '10px', border: '1.5px solid #bbf7d0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label htmlFor="otp-verification-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>
+                      📱 6-DIGIT SMS OTP *
+                    </label>
+                    <span style={{ fontSize: '10.5px', color: '#15803d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <Clock size={12} /> 5 நிமிடம் (5m valid)
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      autoFocus
+                      required
+                      id="otp-verification-input"
+                      name="customer_otp"
+                      type="tel"
+                      maxLength="6"
+                      autoComplete="one-time-code"
+                      value={otpInput}
+                      onChange={(e) => {
+                        setOtpInput(e.target.value.replace(/\D/g, ''));
+                        setErrorMessage('');
+                      }}
+                      placeholder="• • • • • •"
+                      style={{
+                        width: '130px',
+                        border: errorMessage ? '1.5px solid #ef4444' : '1.5px solid #86efac',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        fontSize: '17px',
+                        fontWeight: 800,
+                        textAlign: 'center',
+                        letterSpacing: '4px',
+                        background: '#ffffff'
+                      }}
+                    />
+
+                    {/* Resend Timer / Button */}
+                    <div style={{ flex: 1, textAlign: 'right' }}>
+                      {resendCountdown > 0 ? (
+                        <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                          மீண்டும் அனுப்ப: <strong style={{ color: '#0f172a' }}>00:{String(resendCountdown).padStart(2, '0')}</strong>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          id="otp-resend-btn"
+                          onClick={() => triggerSendOtp(getCleanPhone(), mode === 'register' ? 'register' : 'reset_password')}
+                          disabled={sendingOtp}
+                          style={{
+                            background: '#ffffff',
+                            border: '1px solid #16a34a',
+                            color: '#15803d',
+                            padding: '7px 10px',
+                            borderRadius: '6px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: sendingOtp ? 'wait' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <RefreshCw size={12} className={sendingOtp ? 'spin' : ''} />
+                          {sendingOtp ? 'அனுப்பப்படுகிறது...' : 'மீண்டும் OTP அனுப்ப'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {errorMessage && (
+                    <div id="otp-error-msg" style={{ marginTop: '6px', fontSize: '11px', color: '#dc2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <AlertTriangle size={13} /> {errorMessage}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  id="otp-verify-submit-btn"
+                  type="submit"
+                  disabled={loading}
+                  className="button button-primary button-wide esevai-btn-glow"
+                  style={{
+                    width: '100%',
+                    padding: '13px',
+                    fontSize: '14px',
+                    fontWeight: 800,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: loading ? 'wait' : 'pointer',
+                    boxShadow: '0 6px 18px rgba(0, 82, 204, 0.28)'
+                  }}
+                >
+                  {loading ? 'சரிபார்க்கப்படுகிறது... (Verifying...)' : <>சரிபார்த்து தொடர்க / Verify OTP <CheckCircle2 size={17} /></>}
+                </button>
+              </form>
+            )}
+
+            {/* STEP 3A: NEW CUSTOMER REGISTRATION FORM (NAME + DOB + AADHAAR + CREATE PASSWORD) */}
+            {step === 3 && mode === 'register' && (
+              <form onSubmit={handleCompleteRegistration}>
+                <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '10px', marginBottom: '14px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#166534' }}>📱 +91 {phone} (OTP சரிபார்க்கப்பட்டது ✅)</span>
+                </div>
+
+                <label htmlFor="reg-name-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  1. FULL NAME / முழு பெயர் *
+                  <input
+                    autoFocus
+                    required
+                    id="reg-name-input"
+                    name="customer_name"
+                    type="text"
+                    placeholder="உங்கள் பெயர்"
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    style={{ width: '100%', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '9px 12px', fontSize: '13.5px', fontWeight: 700, marginTop: '4px', boxSizing: 'border-box' }}
+                  />
+                </label>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                  <label htmlFor="reg-dob-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', textTransform: 'uppercase' }}>
+                    2. BIRTH DATE *
+                    <input
+                      required
+                      id="reg-dob-input"
+                      name="customer_dob"
+                      type="date"
+                      value={regDob}
+                      onChange={(e) => setRegDob(e.target.value)}
+                      style={{ width: '100%', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12.5px', fontWeight: 700, marginTop: '4px', boxSizing: 'border-box' }}
+                    />
+                  </label>
+
+                  <label htmlFor="reg-aadhaar-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', textTransform: 'uppercase' }}>
+                    3. 12-DIGIT AADHAAR *
+                    <input
+                      required
+                      id="reg-aadhaar-input"
+                      name="customer_aadhaar"
+                      type="text"
+                      maxLength="14"
+                      placeholder="5678 9012 3456"
+                      value={regAadhaar}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/\D/g, '').slice(0, 12);
+                        const formatted = clean.match(/.{1,4}/g)?.join(' ') || clean;
+                        setRegAadhaar(formatted);
+                      }}
+                      style={{ width: '100%', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '8px 10px', fontSize: '12.5px', fontWeight: 700, marginTop: '4px', boxSizing: 'border-box', letterSpacing: '1px' }}
+                    />
+                  </label>
+                </div>
+
+                {/* Create Password */}
+                <label htmlFor="reg-password-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  4. CREATE PASSWORD / கடவுச்சொல் *
+                  <div style={{ display: 'flex', border: '1.5px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden', marginTop: '4px', alignItems: 'center' }}>
+                    <input
+                      required
+                      id="reg-password-input"
+                      name="create_password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="குறைந்தது 4 எழுத்துக்கள்"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      style={{ flex: 1, border: 'none', padding: '9px 12px', fontSize: '13.5px', fontWeight: 700, outline: 'none' }}
+                    />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ background: 'none', border: 'none', padding: '0 10px', color: '#64748b', cursor: 'pointer' }}>
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </label>
+
+                {/* Confirm Password */}
+                <label htmlFor="reg-confirm-password-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '14px', textTransform: 'uppercase' }}>
+                  5. CONFIRM PASSWORD / உறுதி செய்க *
+                  <input
+                    required
+                    id="reg-confirm-password-input"
+                    name="confirm_password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="மீண்டும் கடவுச்சொல்லை உள்ளிடவும்"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    style={{ width: '100%', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '9px 12px', fontSize: '13.5px', fontWeight: 700, marginTop: '4px', boxSizing: 'border-box' }}
+                  />
+                </label>
+
+                <button
+                  id="reg-final-submit-btn"
+                  type="submit"
+                  disabled={loading}
+                  className="button button-primary button-wide esevai-btn-glow"
+                  style={{
+                    width: '100%',
+                    padding: '13px',
+                    fontSize: '14px',
+                    fontWeight: 800,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    background: 'linear-gradient(135deg, #16a34a 0%, #059669 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: loading ? 'wait' : 'pointer',
+                    boxShadow: '0 6px 18px rgba(0, 82, 204, 0.28)'
+                  }}
+                >
+                  {loading ? 'கணக்கு தொடங்கப்படுகிறது...' : <>கணக்கைத் தொடங்குக / Complete Registration <UserPlus size={17} /></>}
+                </button>
+              </form>
+            )}
+
+            {/* STEP 3B: SET / RESET PASSWORD FORM (FOR FORGOT PASSWORD & MIGRATION) */}
+            {step === 3 && mode !== 'register' && (
+              <form onSubmit={handleSetPasswordSubmit}>
+                <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '10px', marginBottom: '14px', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#166534' }}>📱 +91 {phone} (OTP சரிபார்க்கப்பட்டது ✅)</span>
+                </div>
+
+                <label htmlFor="reset-new-password-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '10px', textTransform: 'uppercase' }}>
+                  NEW PASSWORD / புதிய கடவுச்சொல் *
+                  <div style={{ display: 'flex', border: '1.5px solid #cbd5e1', borderRadius: '8px', overflow: 'hidden', marginTop: '4px', alignItems: 'center' }}>
+                    <input
+                      autoFocus
+                      required
+                      id="reset-new-password-input"
+                      name="new_password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="புதிய கடவுச்சொல் (குறைந்தது 4 எழுத்துக்கள்)"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      style={{ flex: 1, border: 'none', padding: '10px 12px', fontSize: '14px', fontWeight: 700, outline: 'none' }}
+                    />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ background: 'none', border: 'none', padding: '0 10px', color: '#64748b', cursor: 'pointer' }}>
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </label>
+
+                <label htmlFor="reset-confirm-password-input" style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#334155', marginBottom: '14px', textTransform: 'uppercase' }}>
+                  CONFIRM PASSWORD / கடவுச்சொல்லை உறுதி செய்க *
+                  <input
+                    required
+                    id="reset-confirm-password-input"
+                    name="confirm_new_password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="மீண்டும் புதிய கடவுச்சொல்"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    style={{ width: '100%', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '10px 12px', fontSize: '14px', fontWeight: 700, marginTop: '4px', boxSizing: 'border-box' }}
+                  />
+                </label>
+
+                <button
+                  id="reset-password-submit-btn"
+                  type="submit"
+                  disabled={loading}
+                  className="button button-primary button-wide esevai-btn-glow"
+                  style={{
+                    width: '100%',
+                    padding: '13px',
+                    fontSize: '14px',
+                    fontWeight: 800,
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    cursor: loading ? 'wait' : 'pointer',
+                    boxShadow: '0 6px 18px rgba(0, 82, 204, 0.28)'
+                  }}
+                >
+                  {loading ? 'கடவுச்சொல் மாற்றப்படுகிறது...' : <>கடவுச்சொல்லை அமைத்து உள்நுழைக <KeyRound size={17} /></>}
+                </button>
+              </form>
+            )}
+          </div>
         )}
       </div>
     </div>
