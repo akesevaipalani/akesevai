@@ -97,6 +97,13 @@ import PremiumHomeAdShowcase from './components/PremiumHomeAdShowcase';
 import AkEsevaiOfficePhotoSlider from './components/AkEsevaiOfficePhotoSlider';
 import CustomerEasyGuide from './components/CustomerEasyGuide';
 import SEOHeadManager from './components/SEOHeadManager';
+import GovernmentServiceSelector from './components/GovernmentServiceSelector';
+import {
+  GOVERNMENT_SERVICES,
+  SERVICE_CATEGORIES,
+  findGovernmentService,
+  getRequiredDocumentsList
+} from './data/governmentServicesData';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './components/SocialIcons';
 import {
   ArrowRight, Award, BadgeCheck, Bell, Calendar, CalendarDays, Check, ChevronDown, ChevronUp, Clock, Clock3, CreditCard,
@@ -246,8 +253,23 @@ const serviceDocumentRequirements = {
   ]
 };
 
-function getRequiredDocuments(serviceTitle, group) {
-  if (!serviceTitle) return documentRequirements[group] || ['Aadhaar Card', 'Family Card', 'Address Proof', 'Photo', 'Supporting Document'];
+function getRequiredDocuments(serviceTitle, group, lang = 'ta') {
+  if (!serviceTitle) {
+    return lang === 'ta'
+      ? ['ஆதார் அட்டை', 'குடும்ப அட்டை / ஸ்மார்ட் ரேஷன் கார்டு', 'முகவரிச் சான்று', 'பாஸ்போர்ட் அளவு புகைப்படம்', 'துணை ஆவணம்']
+      : ['Aadhaar Card', 'Family Card / Smart Card', 'Address Proof', 'Passport Photo', 'Supporting Document'];
+  }
+
+  // 1. Dynamic lookup in Master Government Services Registry (97 Services)
+  const masterService = findGovernmentService(serviceTitle);
+  if (masterService) {
+    if (lang === 'ta' && Array.isArray(masterService.requiredDocumentsTa) && masterService.requiredDocumentsTa.length > 0) {
+      return masterService.requiredDocumentsTa;
+    }
+    if (Array.isArray(masterService.requiredDocuments) && masterService.requiredDocuments.length > 0) {
+      return masterService.requiredDocuments;
+    }
+  }
 
   const cleanTitle = String(serviceTitle).trim();
   if (serviceDocumentRequirements[cleanTitle]) return serviceDocumentRequirements[cleanTitle];
@@ -292,7 +314,7 @@ function getRequiredDocuments(serviceTitle, group) {
   }
 
   if (documentRequirements[group]) return documentRequirements[group];
-  return ['Aadhaar Card', 'Family Card / Ration Card', 'Current Address Proof', 'Applicant Passport Photo', 'Supporting Certificate / Proof'];
+  return getRequiredDocumentsList(serviceTitle, lang);
 }
 
 const appointmentSlots = APPOINTMENT_SLOTS_30MIN;
@@ -360,50 +382,12 @@ const notifications = [
   { icon: GraduationCap, title: 'கல்லூரி மற்றும் பல்கலைக்கழக விண்ணப்ப அறிவிப்புகள்', english: 'College & University Applications', text: 'Admissions, counselling dates, scholarships and application links.', href: 'https://www.tneaonline.org/' },
 ];
 
-const serviceCatalog = [
-  ['ஆதாரில் மொபைல் எண் இணைக்க', 'Aadhaar Mobile Number Update', 'Aadhaar'],
-  ['ஆதாரில் முகவரி மாற்றம் செய்ய', 'Aadhaar Address Change', 'Aadhaar'],
-  ['புதிய ஆதார் பதிவு / Photo & Biometric Update', 'New Aadhaar and biometric update', 'Aadhaar'],
-  ['வருமானச்சான்று', 'Income Certificate', 'Certificates'],
-  ['சாதிச்சான்று', 'Community Certificate', 'Certificates'],
-  ['பிறப்பிடச்சான்று', 'Nativity Certificate', 'Certificates'],
-  ['இருப்பிடச்சான்று', 'Residence Certificate', 'Certificates'],
-  ['முதல் பட்டதாரி சான்றிதழ்', 'First Graduate Certificate', 'Certificates'],
-  ['OBC சான்றிதழ்', 'OBC Certificate', 'Certificates'],
-  ['தமிழ்வழிச் சான்றிதழ்', 'PSTM Certificate', 'Certificates'],
-  ['வாரிசு சான்றிதழ்', 'Legal Heir Certificate', 'Certificates'],
-  ['விதவை / ஆதரவற்ற விதவை சான்றிதழ்', 'Widow and Destitute Widow Certificate', 'Certificates'],
-  ['கலப்புத் திருமணச் சான்றிதழ்', 'Inter Caste Marriage Certificate', 'Welfare Schemes'],
-  ['முதியோர் ஓய்வூதியம்', 'Old Age Pension', 'Welfare Schemes'],
-  ['விதவை ஓய்வூதியம்', 'Destitute Widow Pension', 'Welfare Schemes'],
-  ['மாற்றுத்திறனாளி ஓய்வூதியம்', 'Disability Pension', 'Welfare Schemes'],
-  ['விதவை மகள் திருமண நிதியுதவி', "Widow's Daughter Marriage Assistance", 'Welfare Schemes'],
-  ['மாற்றுத்திறனாளி கல்வி நிதியுதவி', 'Differently Abled Scholarship', 'Welfare Schemes'],
-  ['இலவச தையல் இயந்திரம்', 'Free Sewing Machine Scheme', 'Welfare Schemes'],
-  ['பாஸ்போர்ட்', 'Passport Application', 'Identity Documents'],
-  ['பான்கார்டு / PAN CARD', 'New PAN Card', 'Identity Documents'],
-  ['பான்கார்டு திருத்தம்', 'PAN Card Correction', 'Identity Documents'],
-  ['புதிய குடும்ப அட்டை / Smart Card', 'New Smart Card', 'Smart Card'],
-  ['குடும்ப அட்டை முகவரி மாற்றம்', 'Smart Card Address Change', 'Smart Card'],
-  ['குடும்ப அட்டையில் பெயர் சேர்த்தல் / நீக்குதல்', 'Smart Card Name Add or Remove', 'Smart Card'],
-  ['புதிய வாக்காளர் அட்டை', 'New Voter Card', 'Identity Documents'],
-  ['வாக்காளர் அட்டை திருத்தம்', 'Voter Card Correction', 'Identity Documents'],
-  ['சிறு தொழில் சான்று', 'MSME Certificate', 'Business'],
-  ['வேலைவாய்ப்பு புதிய பதிவு', 'Employment Exchange Registration', 'Employment'],
-  ['வேலைவாய்ப்பு கல்வி சேர்க்கை', 'Employment Qualification Update', 'Employment'],
-  ['வேலைவாய்ப்பு புதுப்பித்தல்', 'Employment Renewal', 'Employment'],
-  ['e-SHRAM CARD', 'e-Shram Card Registration', 'Employment'],
-  ['FSSAI REGISTRATION', 'FSSAI Food Business Registration', 'Business'],
-  ['TNPSC விண்ணப்பம்', 'TNPSC Application Support', 'Education & Exams'],
-  ['10, 12ஆம் வகுப்பு Duplicate Mark Sheet', 'Duplicate Mark Sheet Application', 'Education & Exams'],
-  ['நலவாரியம் புதிய பதிவு / புதுப்பித்தல்', 'Welfare Board Registration and Renewal', 'Welfare Schemes'],
-  ['கல்விக்கடன்', 'Education Loan Application', 'Financial Services'],
-  ['மாவட்ட தொழில் மையக்கடன் / PMEGP', 'DIC Loan and PMEGP Support', 'Business'],
-  ['EPFO Advance Claim / Full Claim', 'EPFO Claim Support', 'Financial Services'],
-  ['TN Police Self Verification', 'TN Police Verification Support', 'Verification'],
-  ['Typing / டைப்பிங் சேவை', 'Tamil and English Typing', 'General Services'],
-  ['விரிவான அரசு கடன் திட்டம்', 'Comprehensive Business & Industrial Loan Scheme', 'Business'],
-];
+// Dynamically populated from Master Government Services Registry (97 Services)
+const serviceCatalog = GOVERNMENT_SERVICES.map((s) => {
+  const cat = SERVICE_CATEGORIES.find((c) => c.id === s.category);
+  const catName = cat ? cat.nameEn : s.department;
+  return [s.nameTa, s.nameEn, catName, s.id];
+});
 
 
 
@@ -4640,6 +4624,7 @@ const getServiceVisual = (group, title = '') => {
     const activeTab = propTab || internalTab;
     const setActiveTab = setPropTab || setInternalTab;
     const [selectedService, setSelectedService] = useState('');
+    const [showServiceModal, setShowServiceModal] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
     const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
     const [dobInput, setDobInput] = useState(customer.profile.dob || customer.dob || '');
@@ -4767,34 +4752,54 @@ const getServiceVisual = (group, title = '') => {
       }
     });
     const applications = Array.from(applicationsMap.values());
-    const addApplication = (event) => {
-      event.preventDefault();
-      if (!selectedService) return;
+    const addApplication = (eventOrService) => {
+      if (eventOrService && typeof eventOrService.preventDefault === 'function') {
+        eventOrService.preventDefault();
+      }
+
+      let targetServiceName = '';
+      let masterService = null;
+
+      if (eventOrService && typeof eventOrService === 'object' && eventOrService.id && eventOrService.nameEn) {
+        masterService = eventOrService;
+        targetServiceName = lang === 'ta' ? eventOrService.nameTa : eventOrService.nameEn;
+      } else if (typeof eventOrService === 'string' && eventOrService.trim()) {
+        targetServiceName = eventOrService.trim();
+        masterService = findGovernmentService(targetServiceName);
+      } else if (selectedService) {
+        targetServiceName = selectedService.trim();
+        masterService = findGovernmentService(targetServiceName);
+      }
+
+      if (!targetServiceName) return;
       
       const existingApp = (customer.applications || []).find(
-        (a) => a && a.name && a.name.trim().toLowerCase() === selectedService.trim().toLowerCase()
+        (a) => a && a.name && (
+          a.name.trim().toLowerCase() === targetServiceName.trim().toLowerCase() ||
+          (masterService?.id && (a.serviceId === masterService.id || a.id?.includes(masterService.id)))
+        )
       );
       
       if (existingApp) {
         setSelectedService('');
+        setShowServiceModal(false);
         setActiveTab('documents');
-        notify(`ℹ️ "${selectedService}" சேவை ஏற்கனவே சேர்க்கப்பட்டுள்ளது! (${existingApp.id})`);
+        notify(`ℹ️ "${targetServiceName}" சேவை ஏற்கனவே சேர்க்கப்பட்டுள்ளது! (${existingApp.id})`);
         return;
       }
 
-      const service = serviceCatalog.find(([tamil, title]) =>
-        tamil === selectedService ||
-        title === selectedService ||
-        `${tamil} (${title})` === selectedService ||
-        selectedService.includes(tamil) ||
-        selectedService.includes(title)
-      );
-      const requirements = getRequiredDocuments(selectedService, service?.[2]);
+      const requirements = masterService
+        ? (lang === 'ta' && Array.isArray(masterService.requiredDocumentsTa) && masterService.requiredDocumentsTa.length > 0
+            ? masterService.requiredDocumentsTa
+            : masterService.requiredDocuments)
+        : getRequiredDocuments(targetServiceName, undefined, lang);
+
       const appId = `AK-${Math.floor(10000000 + Math.random() * 90000000)}`;
       const appDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       const application = {
         id: appId,
-        name: selectedService,
+        serviceId: masterService?.id || '',
+        name: targetServiceName,
         status: 'Submitted',
         date: appDate,
         progress: 22,
@@ -4813,10 +4818,11 @@ const getServiceVisual = (group, title = '') => {
       const appRecord = {
         id: appId,
         ackNo: appId,
+        serviceId: masterService?.id || '',
         phone: cleanPhone,
         applicantName: custName,
-        service: selectedService,
-        name: selectedService,
+        service: targetServiceName,
+        name: targetServiceName,
         status: 'Submitted',
         statusLabel: 'Step 1: Application Received (விண்ணப்பம் பெறப்பட்டது)',
         date: appDate,
@@ -4835,8 +4841,9 @@ const getServiceVisual = (group, title = '') => {
       }
 
       setSelectedService('');
+      setShowServiceModal(false);
       setActiveTab('documents');
-      notify('🎉 Service selected!');
+      notify(`🎉 "${targetServiceName}" சேர்க்கப்பட்டது! (Service selected)`);
     };
 
     const handleSaveSelfProfile = async () => {
@@ -5169,13 +5176,67 @@ const getServiceVisual = (group, title = '') => {
                 )) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
               </div>
               <div className="quick-panel">
-                <span className="section-kicker">SELECT A SERVICE</span><h2>Start your request</h2><p>We will show only the documents required for the service you choose.</p>
+                <span className="section-kicker">{lang === 'ta' ? 'அரசு சேவையைத் தேர்வு செய்க' : 'SELECT A SERVICE'}</span>
+                <h2>{lang === 'ta' ? 'விண்ணப்பத்தைத் தொடங்குக' : 'Start your request'}</h2>
+                <p>{lang === 'ta' ? '97 அதிகாரப்பூர்வ தமிழ்நாடு அரசு சேவைகளில் தேவையானதைத் தேர்வு செய்து தேவையான ஆவணங்களைப் பதிவேற்றவும்.' : 'Choose from 97 official Tamil Nadu government services to view required documents.'}</p>
+
+                <button
+                  type="button"
+                  onClick={() => setShowServiceModal(true)}
+                  style={{
+                    width: '100%',
+                    padding: '13px 16px',
+                    background: 'linear-gradient(135deg, #0052cc 0%, #003e99 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '13.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(0, 82, 204, 0.25)',
+                    marginBottom: '14px',
+                    transition: 'transform 0.15s ease'
+                  }}
+                >
+                  <span>🏛️ {lang === 'ta' ? 'அனைத்து அரசு சேவைகள் பட்டியல் (97 சேவைகள்)' : 'Browse Government Services (97 Services)'}</span>
+                  <ArrowRight size={16} />
+                </button>
+
                 <form onSubmit={addApplication}>
-                  <select value={selectedService} onChange={(event) => setSelectedService(event.target.value)} required>
-                    <option value="">Select a service</option>
-                    {serviceCatalog.map(([, title]) => <option key={title}>{title}</option>)}
+                  <select
+                    value={selectedService}
+                    onChange={(event) => setSelectedService(event.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '11px 12px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #cbd5e1',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#0f172a',
+                      marginBottom: '12px',
+                      background: '#ffffff'
+                    }}
+                  >
+                    <option value="">{lang === 'ta' ? '-- சேவையைத் தேர்ந்தெடுக்கவும் (97 சேவைகள்) --' : '-- Select a service (97 Services) --'}</option>
+                    {SERVICE_CATEGORIES.filter(cat => cat.id !== 'all').map(cat => (
+                      <optgroup key={cat.id} label={`${cat.icon} ${lang === 'ta' ? cat.nameTa : cat.nameEn}`}>
+                        {GOVERNMENT_SERVICES.filter(s => s.category === cat.id).map(s => (
+                          <option key={s.id} value={lang === 'ta' ? s.nameTa : s.nameEn}>
+                            {s.id} – {lang === 'ta' ? s.nameTa : s.nameEn}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
-                  <button className="button button-primary button-wide" type="submit">Continue to documents <ArrowRight size={16} /></button>
+                  <button className="button button-primary button-wide" type="submit">
+                    {lang === 'ta' ? 'ஆவணங்கள் பகுதிக்குச் செல்க' : 'Continue to documents'} <ArrowRight size={16} />
+                  </button>
                 </form>
               </div>
             </div>
@@ -5193,7 +5254,7 @@ const getServiceVisual = (group, title = '') => {
                   </p>
                 </div>
                 <button
-                  onClick={() => setActiveTab('overview')}
+                  onClick={() => setShowServiceModal(true)}
                   style={{ background: '#0284c7', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                 >
                   + புதிய சேவை சேர்க்க (Add Service)
@@ -5216,8 +5277,8 @@ const getServiceVisual = (group, title = '') => {
                   <p style={{ fontWeight: 700, color: '#334155' }}>இதுவரை விண்ணப்பங்கள் எதுவும் சேர்க்கப்படவில்லை.</p>
                   <small style={{ color: '#64748b' }}>முகப்பு பலகையில் இருந்து உங்களுக்குத் தேவையான சேவையைத் தேர்வு செய்யவும்.</small>
                   <div style={{ marginTop: '16px' }}>
-                    <button className="button button-primary" onClick={() => setActiveTab('overview')}>
-                      சேவையைத் தேர்வு செய்க ➔
+                    <button className="button button-primary" onClick={() => setShowServiceModal(true)}>
+                      {lang === 'ta' ? 'அரசு சேவையைத் தேர்வு செய்க ➔' : 'Choose Government Service ➔'}
                     </button>
                   </div>
                 </div>
@@ -5335,6 +5396,40 @@ const getServiceVisual = (group, title = '') => {
         <div style={{ padding: '0 0 8px' }}>
           <BrowserNotificationOptIn />
         </div>
+
+        {/* GOVERNMENT SERVICE SELECTOR MODAL */}
+        {showServiceModal && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(5px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px'
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowServiceModal(false);
+            }}
+          >
+            <div style={{ maxWidth: '1050px', width: '100%', maxHeight: '92vh', display: 'flex', borderRadius: '20px', overflow: 'hidden' }}>
+              <GovernmentServiceSelector
+                lang={lang}
+                isModal={true}
+                onClose={() => setShowServiceModal(false)}
+                onSelectService={(service) => {
+                  addApplication(service);
+                }}
+              />
+            </div>
+          </div>
+        )}
 
       </section>
     );
@@ -5782,6 +5877,39 @@ const getServiceVisual = (group, title = '') => {
             );
           })}
         </div>
+
+        {/* Master Service Notes & Optional Documents Helper */}
+        {(() => {
+          const master = findGovernmentService(application.name || application.service || application.serviceId);
+          if (!master) return null;
+          const hasNotes = Boolean(master.notesTa || master.notesEn);
+          const hasOptDocs = Boolean(master.optionalDocuments && master.optionalDocuments.length > 0);
+          if (!hasNotes && !hasOptDocs) return null;
+
+          return (
+            <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '16px', marginTop: '16px' }}>
+              {hasOptDocs && (
+                <div style={{ marginBottom: hasNotes ? '10px' : '0' }}>
+                  <strong style={{ fontSize: '13px', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📎 {lang === 'ta' ? 'கூடுதல் / விருப்ப ஆவணங்கள் (Optional / If applicable):' : 'Additional / Optional Documents:'}
+                  </strong>
+                  <ul style={{ margin: '6px 0 0 18px', padding: 0, fontSize: '12.5px', color: '#475569' }}>
+                    {master.optionalDocuments.map((opt, oIdx) => (
+                      <li key={oIdx}>{opt}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {hasNotes && (
+                <div style={{ borderTop: hasOptDocs ? '1px dashed #cbd5e1' : 'none', paddingTop: hasOptDocs ? '10px' : '0' }}>
+                  <small style={{ fontSize: '12px', color: '#64748b', display: 'block', lineHeight: 1.5 }}>
+                    📌 <strong>{lang === 'ta' ? 'குறிப்பு & செல்லுபடி காலம்:' : 'Note & Validity:'}</strong> {lang === 'ta' ? master.notesTa : master.notesEn}
+                  </small>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     );
   }

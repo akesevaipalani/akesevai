@@ -1,0 +1,829 @@
+/* =========================================================================
+   GOVERNMENT SERVICE SELECTOR & REQUIRED DOCUMENTS CHECKLIST STYLES
+   ========================================================================= */
+
+.gov-service-selector-root {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.08);
+  border: 1.5px solid #e2e8f0;
+  overflow: hidden;
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  color: #0f172a;
+}
+
+.gov-service-selector-root.is-modal-layout {
+  max-height: 90vh;
+  height: 850px;
+  width: 100%;
+}
+
+.gov-service-selector-root.is-embedded-layout {
+  margin: 16px 0 24px;
+}
+
+/* Toolbar & Header */
+.selector-toolbar {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 20px 24px 14px;
+  border-bottom: 1.5px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.selector-header-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gov-icon-badge {
+  font-size: 26px;
+  background: #ffffff;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid #cbd5e1;
+}
+
+.title-with-badge h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+}
+
+.title-with-badge p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.selector-close-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.selector-close-btn:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+  transform: scale(1.05);
+}
+
+/* Search Box */
+.selector-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0 14px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.selector-search-box:focus-within {
+  border-color: #0052cc;
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.15);
+}
+
+.search-icon {
+  color: #64748b;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.search-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 12px 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.search-input::placeholder {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.clear-search-btn {
+  background: #f1f5f9;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.clear-search-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.results-badge {
+  background: #eff6ff;
+  color: #0052cc;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* Category Chips */
+.selector-category-scroll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+
+.selector-category-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.selector-category-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  padding: 7px 13px;
+  border-radius: 30px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.category-chip .cat-icon {
+  font-size: 14px;
+}
+
+.category-chip:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.category-chip.active {
+  background: #0052cc;
+  color: #ffffff;
+  border-color: #0052cc;
+  box-shadow: 0 3px 10px rgba(0, 82, 204, 0.25);
+}
+
+/* Main Two-Column Grid */
+.selector-main-grid {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  flex: 1;
+  min-height: 520px;
+  max-height: 680px;
+  overflow: hidden;
+}
+
+/* Left: Service List Pane */
+.service-list-pane {
+  border-right: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.service-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.service-summary-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.service-summary-card:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.service-summary-card.selected {
+  background: #f0f7ff;
+  border-color: #0052cc;
+  box-shadow: 0 4px 14px rgba(0, 82, 204, 0.15);
+}
+
+.card-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dept-tag {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 210px;
+}
+
+.service-id-tag {
+  font-size: 10px;
+  font-family: monospace;
+  font-weight: 700;
+  color: #0284c7;
+  background: #e0f2fe;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.service-card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.service-sub-title {
+  margin: 0;
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.card-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.service-type-badge {
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+
+.service-type-badge.type-esevaiservice {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.service-type-badge.type-tangedcotnpdclonlineservice,
+.service-type-badge.type-departmentonlineservice {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.service-type-badge.type-customerassistanceapplicationguidance {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.doc-count-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0052cc;
+}
+
+.no-services-found {
+  text-align: center;
+  padding: 40px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.no-results-icon {
+  color: #94a3b8;
+}
+
+.no-services-found h4 {
+  margin: 0;
+  font-size: 15px;
+  color: #334155;
+}
+
+.no-services-found p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.reset-search-btn {
+  margin-top: 10px;
+  background: #0052cc;
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Right: Service Details Sheet */
+.service-details-pane {
+  background: #ffffff;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.service-detail-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sheet-header {
+  border-bottom: 1.5px solid #f1f5f9;
+  padding-bottom: 16px;
+}
+
+.sheet-dept-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.badge-dept {
+  background: #f1f5f9;
+  color: #1e293b;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.badge-id {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 11px;
+  font-family: monospace;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.badge-type {
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.badge-type.type-esevaiservice {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge-type.type-tangedcotnpdclonlineservice,
+.badge-type.type-departmentonlineservice {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.badge-type.type-customerassistanceapplicationguidance {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.sheet-title-group .sheet-main-title {
+  margin: 4px 0 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.sheet-title-group .sheet-sec-title {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.sheet-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.section-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.section-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+/* Variable Warning Banner */
+.variable-warning-banner {
+  background: #fffbeb;
+  border: 1.5px solid #fde68a;
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.variable-warning-banner .warn-icon {
+  color: #d97706;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.variable-warning-banner strong {
+  font-size: 12.5px;
+  color: #92400e;
+  display: block;
+}
+
+.variable-warning-banner p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #78350f;
+}
+
+/* Documents Checklist */
+.documents-section {
+  background: #f0fdf4;
+  border: 1.5px solid #bbf7d0;
+}
+
+.docs-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.copy-checklist-btn {
+  background: #ffffff;
+  border: 1px solid #86efac;
+  color: #15803d;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s ease;
+}
+
+.copy-checklist-btn:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+
+.docs-checklist-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.doc-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #dcfce7;
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.doc-check-item:hover {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+
+.doc-check-item.doc-is-checked {
+  background: #dcfce7;
+  border-color: #22c55e;
+}
+
+.doc-check-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+
+.doc-num {
+  font-size: 11px;
+  font-weight: 800;
+  color: #16a34a;
+}
+
+.doc-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  flex: 1;
+}
+
+.doc-check-item.doc-is-checked .doc-name {
+  color: #14532d;
+  font-weight: 700;
+}
+
+.check-indicator {
+  color: #16a34a;
+}
+
+.optional-docs-block {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #86efac;
+}
+
+.optional-docs-block h6 {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #15803d;
+}
+
+.optional-docs-block ul {
+  margin: 0;
+  padding-left: 12px;
+  list-style: none;
+}
+
+.optional-docs-block li {
+  font-size: 12px;
+  color: #166534;
+  margin-bottom: 2px;
+}
+
+/* Notes Section */
+.notes-section {
+  background: #fdf4ff;
+  border-color: #f5d0fe;
+}
+
+.notes-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: #701a75;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Official Source Box */
+.sheet-official-source-box {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.official-source-text {
+  font-size: 12px;
+  color: #334155;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.official-portal-link {
+  color: #0052cc;
+  text-decoration: underline;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.assistance-disclaimer {
+  font-size: 10.5px;
+  color: #64748b;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* Actions Bar */
+.sheet-actions-bar {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-select-continue {
+  background: linear-gradient(135deg, #0052cc 0%, #16a34a 100%);
+  color: #ffffff;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 15px rgba(0, 82, 204, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-select-continue:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 82, 204, 0.35);
+}
+
+/* Empty Placeholder */
+.empty-details-placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 380px;
+  text-align: center;
+  padding: 30px;
+}
+
+.placeholder-content {
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.placeholder-icon {
+  color: #cbd5e1;
+}
+
+.placeholder-content h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #334155;
+  font-weight: 800;
+}
+
+.placeholder-content p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* =========================================================================
+   RESPONSIVE DESIGN BREAKPOINTS (Desktop, Tablet, Mobile 375px, 390px, 412px)
+   ========================================================================= */
+
+@media (max-width: 960px) {
+  .selector-main-grid {
+    grid-template-columns: 1fr;
+    max-height: none;
+  }
+
+  .service-list-pane {
+    max-height: 320px;
+    border-right: none;
+    border-bottom: 1.5px solid #e2e8f0;
+  }
+
+  .gov-service-selector-root.is-modal-layout {
+    height: 95vh;
+  }
+}
+
+@media (max-width: 600px) {
+  .selector-toolbar {
+    padding: 14px 16px 10px;
+    gap: 10px;
+  }
+
+  .title-with-badge h3 {
+    font-size: 15.5px;
+  }
+
+  .title-with-badge p {
+    font-size: 11px;
+  }
+
+  .gov-icon-badge {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+  }
+
+  .search-input {
+    font-size: 13.5px;
+    padding: 10px 0;
+  }
+
+  .results-badge {
+    display: none;
+  }
+
+  .service-details-pane {
+    padding: 16px;
+  }
+
+  .sheet-title-group .sheet-main-title {
+    font-size: 18px;
+  }
+
+  .sheet-title-group .sheet-sec-title {
+    font-size: 12.5px;
+  }
+
+  .btn-select-continue {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+}
