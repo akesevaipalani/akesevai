@@ -60,9 +60,6 @@ import { allWebLinks } from './data/weblinksData';
 import PhotoMakerPage from './pages/PhotoMakerPage';
 import PhotoToolsHubPage from './pages/PhotoToolsHubPage';
 import PhotoToolPage from './pages/PhotoToolPage';
-import XeroxPrintingPage from './pages/XeroxPrintingPage';
-import TypingServicesPage from './pages/TypingServicesPage';
-import SpiralBindingPage from './pages/SpiralBindingPage';
 import { PHOTO_TOOLS_CATALOG } from './data/photoToolsData';
 import HeroDocumentShowcase from './components/HeroDocumentShowcase';
 import HeroBannerSlider from './components/HeroBannerSlider';
@@ -95,12 +92,6 @@ import PremiumHomeAdShowcase from './components/PremiumHomeAdShowcase';
 import AkEsevaiOfficePhotoSlider from './components/AkEsevaiOfficePhotoSlider';
 import CustomerEasyGuide from './components/CustomerEasyGuide';
 import SEOHeadManager from './components/SEOHeadManager';
-import GovernmentServiceSelector from './components/GovernmentServiceSelector';
-import {
-  GOVERNMENT_SERVICES,
-  SERVICE_CATEGORIES,
-  getRequiredDocumentsList
-} from './data/governmentServicesData';
 import { YoutubeIcon, InstagramIcon, FacebookIcon } from './components/SocialIcons';
 import {
   ArrowRight, Award, BadgeCheck, Bell, Calendar, CalendarDays, Check, ChevronDown, ChevronUp, Clock, Clock3, CreditCard,
@@ -254,13 +245,6 @@ function getRequiredDocuments(serviceTitle, group) {
   if (!serviceTitle) return documentRequirements[group] || ['Aadhaar Card', 'Family Card', 'Address Proof', 'Photo', 'Supporting Document'];
 
   const cleanTitle = String(serviceTitle).trim();
-
-  // 1. Check Master Government Services Registry
-  const masterReqs = getRequiredDocumentsList(cleanTitle, group);
-  if (masterReqs && masterReqs.length > 0 && (masterReqs[0] !== 'Aadhaar Card' || masterReqs.length >= 4)) {
-    return masterReqs;
-  }
-
   if (serviceDocumentRequirements[cleanTitle]) return serviceDocumentRequirements[cleanTitle];
 
   // Try matching by lowercase or substring
@@ -372,17 +356,48 @@ const notifications = [
 ];
 
 const serviceCatalog = [
-  ...GOVERNMENT_SERVICES.map((s) => [
-    s.nameTa,
-    s.nameEn,
-    s.departmentTa || s.department,
-    s.id,
-    s.category
-  ]),
-  ['ஆதாரில் மொபைல் எண் இணைக்க', 'Aadhaar Mobile Number Update', 'Aadhaar', 'AAD-01', 'identity_national'],
-  ['ஆதாரில் முகவரி மாற்றம் செய்ய', 'Aadhaar Address Change', 'Aadhaar', 'AAD-02', 'identity_national'],
-  ['புதிய ஆதார் பதிவு / Photo & Biometric Update', 'New Aadhaar and biometric update', 'Aadhaar', 'AAD-03', 'identity_national'],
-  ['Typing / டைப்பிங் சேவை', 'Tamil and English Typing', 'General Services', 'GEN-01', 'general_services'],
+  ['ஆதாரில் மொபைல் எண் இணைக்க', 'Aadhaar Mobile Number Update', 'Aadhaar'],
+  ['ஆதாரில் முகவரி மாற்றம் செய்ய', 'Aadhaar Address Change', 'Aadhaar'],
+  ['புதிய ஆதார் பதிவு / Photo & Biometric Update', 'New Aadhaar and biometric update', 'Aadhaar'],
+  ['வருமானச்சான்று', 'Income Certificate', 'Certificates'],
+  ['சாதிச்சான்று', 'Community Certificate', 'Certificates'],
+  ['பிறப்பிடச்சான்று', 'Nativity Certificate', 'Certificates'],
+  ['இருப்பிடச்சான்று', 'Residence Certificate', 'Certificates'],
+  ['முதல் பட்டதாரி சான்றிதழ்', 'First Graduate Certificate', 'Certificates'],
+  ['OBC சான்றிதழ்', 'OBC Certificate', 'Certificates'],
+  ['தமிழ்வழிச் சான்றிதழ்', 'PSTM Certificate', 'Certificates'],
+  ['வாரிசு சான்றிதழ்', 'Legal Heir Certificate', 'Certificates'],
+  ['விதவை / ஆதரவற்ற விதவை சான்றிதழ்', 'Widow and Destitute Widow Certificate', 'Certificates'],
+  ['கலப்புத் திருமணச் சான்றிதழ்', 'Inter Caste Marriage Certificate', 'Welfare Schemes'],
+  ['முதியோர் ஓய்வூதியம்', 'Old Age Pension', 'Welfare Schemes'],
+  ['விதவை ஓய்வூதியம்', 'Destitute Widow Pension', 'Welfare Schemes'],
+  ['மாற்றுத்திறனாளி ஓய்வூதியம்', 'Disability Pension', 'Welfare Schemes'],
+  ['விதவை மகள் திருமண நிதியுதவி', "Widow's Daughter Marriage Assistance", 'Welfare Schemes'],
+  ['மாற்றுத்திறனாளி கல்வி நிதியுதவி', 'Differently Abled Scholarship', 'Welfare Schemes'],
+  ['இலவச தையல் இயந்திரம்', 'Free Sewing Machine Scheme', 'Welfare Schemes'],
+  ['பாஸ்போர்ட்', 'Passport Application', 'Identity Documents'],
+  ['பான்கார்டு / PAN CARD', 'New PAN Card', 'Identity Documents'],
+  ['பான்கார்டு திருத்தம்', 'PAN Card Correction', 'Identity Documents'],
+  ['புதிய குடும்ப அட்டை / Smart Card', 'New Smart Card', 'Smart Card'],
+  ['குடும்ப அட்டை முகவரி மாற்றம்', 'Smart Card Address Change', 'Smart Card'],
+  ['குடும்ப அட்டையில் பெயர் சேர்த்தல் / நீக்குதல்', 'Smart Card Name Add or Remove', 'Smart Card'],
+  ['புதிய வாக்காளர் அட்டை', 'New Voter Card', 'Identity Documents'],
+  ['வாக்காளர் அட்டை திருத்தம்', 'Voter Card Correction', 'Identity Documents'],
+  ['சிறு தொழில் சான்று', 'MSME Certificate', 'Business'],
+  ['வேலைவாய்ப்பு புதிய பதிவு', 'Employment Exchange Registration', 'Employment'],
+  ['வேலைவாய்ப்பு கல்வி சேர்க்கை', 'Employment Qualification Update', 'Employment'],
+  ['வேலைவாய்ப்பு புதுப்பித்தல்', 'Employment Renewal', 'Employment'],
+  ['e-SHRAM CARD', 'e-Shram Card Registration', 'Employment'],
+  ['FSSAI REGISTRATION', 'FSSAI Food Business Registration', 'Business'],
+  ['TNPSC விண்ணப்பம்', 'TNPSC Application Support', 'Education & Exams'],
+  ['10, 12ஆம் வகுப்பு Duplicate Mark Sheet', 'Duplicate Mark Sheet Application', 'Education & Exams'],
+  ['நலவாரியம் புதிய பதிவு / புதுப்பித்தல்', 'Welfare Board Registration and Renewal', 'Welfare Schemes'],
+  ['கல்விக்கடன்', 'Education Loan Application', 'Financial Services'],
+  ['மாவட்ட தொழில் மையக்கடன் / PMEGP', 'DIC Loan and PMEGP Support', 'Business'],
+  ['EPFO Advance Claim / Full Claim', 'EPFO Claim Support', 'Financial Services'],
+  ['TN Police Self Verification', 'TN Police Verification Support', 'Verification'],
+  ['Typing / டைப்பிங் சேவை', 'Tamil and English Typing', 'General Services'],
+  ['விரிவான அரசு கடன் திட்டம்', 'Comprehensive Business & Industrial Loan Scheme', 'Business'],
 ];
 
 
@@ -1425,9 +1440,6 @@ function App() {
         <main>
           {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
           {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
-          {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
-          {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
-          {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
           {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
           {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
           {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
@@ -1733,10 +1745,9 @@ const getServiceVisual = (group, title = '') => {
 
   function ServicesPage({ navigate, lang }) {
     const t = translations[lang] || translations.en;
-    const isTa = lang === 'ta';
-    const [viewMode, setViewMode] = useState('catalog');
     const [query, setQuery] = useState('');
     const [category, setCategory] = useState('All Services');
+    const [selectedService, setSelectedService] = useState(null);
     const [expandedTitle, setExpandedTitle] = useState(null);
 
     const categories = ['All Services', ...new Set(serviceCatalog.map((service) => service[2]))];
@@ -1745,13 +1756,6 @@ const getServiceVisual = (group, title = '') => {
       const matchesCategory = category === 'All Services' || service[2] === category;
       return matchesQuery && matchesCategory;
     });
-
-    const handleSelectServiceFromCatalog = (serviceObj) => {
-      try {
-        sessionStorage.setItem('akesevai_pending_service', JSON.stringify(serviceObj));
-      } catch (e) {}
-      navigate('customer');
-    };
 
     return (
       <PageIntro
@@ -1773,209 +1777,153 @@ const getServiceVisual = (group, title = '') => {
           <span className="showcase-logo-text">{t.brandShowcaseText}</span>
         </div>
 
-        {/* View Mode Switcher */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 14px', flexWrap: 'wrap', gap: '10px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 800, color: '#334155' }}>
-            🏛️ {isTa ? 'அரசு சேவைகள் மற்றும் ஆவணப் பட்டியல்' : 'Official Government Services & Document Checklists'}
-          </span>
-          <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-            <button
-              type="button"
-              onClick={() => setViewMode('catalog')}
-              style={{
-                background: viewMode === 'catalog' ? '#0052cc' : 'transparent',
-                color: viewMode === 'catalog' ? '#ffffff' : '#475569',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: '7px',
-                fontSize: '12px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              📋 {isTa ? 'விரிவான பட்டியல் (Interactive)' : 'Interactive Catalog'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('grid')}
-              style={{
-                background: viewMode === 'grid' ? '#0052cc' : 'transparent',
-                color: viewMode === 'grid' ? '#ffffff' : '#475569',
-                border: 'none',
-                padding: '6px 14px',
-                borderRadius: '7px',
-                fontSize: '12px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              🎴 {isTa ? 'அட்டை வடிவம் (Cards Grid)' : 'Cards Grid'}
-            </button>
-          </div>
+        <div className="service-search">
+          <Search size={18} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />
+          <span>{filteredServices.length} {t.resultsCount}</span>
         </div>
 
-        {viewMode === 'catalog' ? (
-          <GovernmentServiceSelector
-            lang={lang}
-            onSelectService={handleSelectServiceFromCatalog}
-          />
-        ) : (
-          <>
-            <div className="service-search">
-              <Search size={18} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.searchPlaceholder} />
-              <span>{filteredServices.length} {t.resultsCount}</span>
-            </div>
+        <div className="category-tabs">
+          {categories.map((item) => (
+            <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>
+              {item === 'All Services' ? t.allCategories : item}
+            </button>
+          ))}
+        </div>
 
-            <div className="category-tabs">
-              {categories.map((item) => (
-                <button className={category === item ? 'category-active' : ''} key={item} onClick={() => setCategory(item)}>
-                  {item === 'All Services' ? t.allCategories : item}
-                </button>
-              ))}
-            </div>
+        <div className="catalog-grid">
+          {filteredServices.map(([tamil, title, group]) => {
+            const visual = getServiceVisual(group, title);
+            const isExpanded = expandedTitle === title;
+            const docs = getRequiredDocuments(title, group);
 
-            <div className="catalog-grid">
-              {filteredServices.map(([tamil, title, group]) => {
-                const visual = getServiceVisual(group, title);
-                const isExpanded = expandedTitle === title;
-                const docs = getRequiredDocuments(title, group);
-
-                return (
-                  <article
-                    className={`catalog-card ${isExpanded ? 'catalog-card-expanded' : ''}`}
-                    key={title}
-                    style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            return (
+              <article
+                className={`catalog-card ${isExpanded ? 'catalog-card-expanded' : ''}`}
+                key={title}
+                style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+              >
+                <div
+                  className="service-card-image-header"
+                  style={{
+                    position: 'relative',
+                    height: '120px',
+                    background: visual.bgGradient,
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    padding: '12px',
+                    backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.75)), url(${visual.bannerImage})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                >
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: '10px',
+                      left: '10px',
+                      background: 'rgba(255, 255, 255, 0.95)',
+                      color: '#0f172a',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
                   >
-                    <div
-                      className="service-card-image-header"
+                    <span>{visual.icon}</span> {group}
+                  </span>
+                </div>
+
+                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                  <h3 style={{ font: '800 15px Manrope', margin: 0, color: 'var(--ink)', lineHeight: 1.3 }}>
+                    {lang === 'ta' ? tamil : title}
+                  </h3>
+                  <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0, fontWeight: 500 }}>
+                    {lang === 'ta' ? title : tamil}
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px', alignItems: 'center' }}>
+                    <button
+                      className="card-link"
                       style={{
-                        position: 'relative',
-                        height: '120px',
-                        background: visual.bgGradient,
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        padding: '12px',
-                        backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.75)), url(${visual.bannerImage})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
+                        background: isExpanded ? '#f1f5f9' : '#e0f2fe',
+                        color: isExpanded ? '#334155' : '#0052cc',
+                        padding: '7px 12px',
+                        borderRadius: '7px',
+                        fontWeight: 800,
+                        fontSize: '11px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}
+                      onClick={() => setExpandedTitle(isExpanded ? null : title)}
+                    >
+                      {isExpanded ? '✕ Hide (மறை)' : `📄 ${t.viewDetails}`}
+                    </button>
+
+                    <button
+                      style={{
+                        background: '#16a34a',
+                        color: 'white',
+                        padding: '7px 14px',
+                        borderRadius: '7px',
+                        fontWeight: 800,
+                        fontSize: '11px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginLeft: 'auto'
+                      }}
+                      onClick={() => navigate('customer')}
+                    >
+                      Apply <ArrowRight size={13} />
+                    </button>
+                  </div>
+
+                  {isExpanded && (
+                    <div
+                      className="inline-service-detail"
+                      style={{
+                        marginTop: '12px',
+                        paddingTop: '12px',
+                        borderTop: '1px dashed #cbd5e1',
+                        animation: 'fadeIn 0.2s ease'
                       }}
                     >
-                      <span
-                        style={{
-                          position: 'absolute',
-                          top: '10px',
-                          left: '10px',
-                          background: 'rgba(255, 255, 255, 0.95)',
-                          color: '#0f172a',
-                          padding: '4px 10px',
-                          borderRadius: '20px',
-                          fontSize: '10px',
-                          fontWeight: 800,
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <span>{visual.icon}</span> {group}
-                      </span>
-                    </div>
-
-                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                      <h3 style={{ font: '800 15px Manrope', margin: 0, color: 'var(--ink)', lineHeight: 1.3 }}>
-                        {lang === 'ta' ? tamil : title}
-                      </h3>
-                      <p style={{ fontSize: '11px', color: 'var(--muted)', margin: 0, fontWeight: 500 }}>
-                        {lang === 'ta' ? title : tamil}
-                      </p>
-
-                      <div style={{ display: 'flex', gap: '8px', marginTop: 'auto', paddingTop: '10px', alignItems: 'center' }}>
-                        <button
-                          className="card-link"
-                          style={{
-                            background: isExpanded ? '#f1f5f9' : '#e0f2fe',
-                            color: isExpanded ? '#334155' : '#0052cc',
-                            padding: '7px 12px',
-                            borderRadius: '7px',
-                            fontWeight: 800,
-                            fontSize: '11px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '5px'
-                          }}
-                          onClick={() => setExpandedTitle(isExpanded ? null : title)}
-                        >
-                          {isExpanded ? '✕ Hide (மறை)' : `📄 ${t.viewDetails}`}
-                        </button>
-
-                        <button
-                          style={{
-                            background: '#16a34a',
-                            color: 'white',
-                            padding: '7px 14px',
-                            borderRadius: '7px',
-                            fontWeight: 800,
-                            fontSize: '11px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            marginLeft: 'auto'
-                          }}
-                          onClick={() => navigate('customer')}
-                        >
-                          Apply <ArrowRight size={13} />
-                        </button>
+                      <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        📋 தேவைப்படும் ஆவணங்கள் (Required Documents):
+                      </h4>
+                      <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
+                        {docs.map((doc) => (
+                          <span key={doc} style={{ fontSize: '11px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                            <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} /> {doc}
+                          </span>
+                        ))}
                       </div>
-
-                      {isExpanded && (
-                        <div
-                          className="inline-service-detail"
-                          style={{
-                            marginTop: '12px',
-                            paddingTop: '12px',
-                            borderTop: '1px dashed #cbd5e1',
-                            animation: 'fadeIn 0.2s ease'
-                          }}
-                        >
-                          <h4 style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            📋 தேவைப்படும் ஆவணங்கள் (Required Documents):
-                          </h4>
-                          <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
-                            {docs.map((doc) => (
-                              <span key={doc} style={{ fontSize: '11px', color: '#334155', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                                <Check size={14} style={{ color: '#16a34a', flexShrink: 0 }} /> {doc}
-                              </span>
-                            ))}
-                          </div>
-                          <button
-                            className="button button-primary"
-                            style={{ width: '100%', fontSize: '11px', padding: '8px', justifyContent: 'center' }}
-                            onClick={() => navigate('customer')}
-                          >
-                            Start this application <ArrowRight size={14} />
-                          </button>
-                        </div>
-                      )}
+                      <button
+                        className="button button-primary"
+                        style={{ width: '100%', fontSize: '11px', padding: '8px', justifyContent: 'center' }}
+                        onClick={() => navigate('customer')}
+                      >
+                        Start this application <ArrowRight size={14} />
+                      </button>
                     </div>
-                  </article>
-                );
-              })}
-            </div>
-          </>
-        )}
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
 
-        {viewMode === 'grid' && filteredServices.length === 0 && <div className="empty-search">{t.noServiceFound}</div>}
+        {filteredServices.length === 0 && <div className="empty-search">{t.noServiceFound}</div>}
         <div className="service-callout">
           <div className="service-callout-icon"><Phone /></div>
           <div>
@@ -4680,7 +4628,6 @@ const getServiceVisual = (group, title = '') => {
     const setActiveTab = setPropTab || setInternalTab;
     const [selectedService, setSelectedService] = useState('');
     const [showNotifications, setShowNotifications] = useState(false);
-    const [showGovServiceModal, setShowGovServiceModal] = useState(false);
     const [name, setName] = useState(customer.profile.name?.startsWith('Customer ') ? '' : (customer.profile.name || ''));
     const [dobInput, setDobInput] = useState(customer.profile.dob || customer.dob || '');
     const [aadhaarInput, setAadhaarInput] = useState(customer.profile.aadhaarNo || customer.profile.aadhar || customer.aadhaarNo || customer.aadhar || '');
@@ -4689,20 +4636,6 @@ const getServiceVisual = (group, title = '') => {
     const [editName, setEditName] = useState(customer.profile.name || '');
     const [editDob, setEditDob] = useState(customer.profile.dob || customer.dob || '');
     const [editAadhaar, setEditAadhaar] = useState(customer.profile.aadhaarNo || customer.profile.aadhar || customer.aadhaarNo || customer.aadhar || '');
-
-    // Auto-check for pre-selected service from catalog
-    useEffect(() => {
-      try {
-        const pending = sessionStorage.getItem('akesevai_pending_service');
-        if (pending) {
-          sessionStorage.removeItem('akesevai_pending_service');
-          const serviceObj = JSON.parse(pending);
-          if (serviceObj && typeof addApplication === 'function') {
-            addApplication(null, serviceObj);
-          }
-        }
-      } catch (e) {}
-    }, []);
 
     // FIRST TIME PROFILE COMPLETION SCREEN: Name, DOB, Aadhaar Number
     if (!customer.profile.complete) {
@@ -4821,36 +4754,32 @@ const getServiceVisual = (group, title = '') => {
       }
     });
     const applications = Array.from(applicationsMap.values());
-    const addApplication = (event, customServiceObj = null) => {
-      if (event && event.preventDefault) event.preventDefault();
-      const serviceToApply = customServiceObj
-        ? (lang === 'ta' ? customServiceObj.nameTa : customServiceObj.nameEn)
-        : selectedService;
-      if (!serviceToApply) return;
+    const addApplication = (event) => {
+      event.preventDefault();
+      if (!selectedService) return;
       
       const existingApp = (customer.applications || []).find(
-        (a) => a && a.name && (
-          a.name.trim().toLowerCase() === serviceToApply.trim().toLowerCase() ||
-          (customServiceObj && (a.name === customServiceObj.nameTa || a.name === customServiceObj.nameEn || a.id === `AK-${customServiceObj.id}`))
-        )
+        (a) => a && a.name && a.name.trim().toLowerCase() === selectedService.trim().toLowerCase()
       );
       
       if (existingApp) {
         setSelectedService('');
         setActiveTab('documents');
-        notify(`ℹ️ "${serviceToApply}" சேவை ஏற்கனவே சேர்க்கப்பட்டுள்ளது! (${existingApp.id})`);
+        notify(`ℹ️ "${selectedService}" சேவை ஏற்கனவே சேர்க்கப்பட்டுள்ளது! (${existingApp.id})`);
         return;
       }
 
-      const requirements = customServiceObj && Array.isArray(customServiceObj.requiredDocuments)
-        ? (lang === 'ta' && customServiceObj.requiredDocumentsTa?.length ? customServiceObj.requiredDocumentsTa : customServiceObj.requiredDocuments)
-        : getRequiredDocuments(serviceToApply);
-
+      const service = serviceCatalog.find(([tamil, title]) =>
+        tamil === selectedService ||
+        title === selectedService ||
+        `${tamil} (${title})` === selectedService ||
+        selectedService.includes(tamil) ||
+        selectedService.includes(title)
+      );
+      const requirements = getRequiredDocuments(selectedService, service?.[2]);
       const application = {
-        id: customServiceObj?.id ? `AK-${customServiceObj.id}-${Math.floor(1000 + Math.random() * 9000)}` : `AK-${Math.floor(10000000 + Math.random() * 90000000)}`,
-        name: serviceToApply,
-        serviceId: customServiceObj?.id,
-        department: customServiceObj?.department,
+        id: `AK-${Math.floor(10000000 + Math.random() * 90000000)}`,
+        name: selectedService,
         status: 'Submitted',
         date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
         progress: 22,
@@ -4863,7 +4792,7 @@ const getServiceVisual = (group, title = '') => {
       }));
       setSelectedService('');
       setActiveTab('documents');
-      notify(`🎉 "${serviceToApply}" சேவை சேர்க்கப்பட்டது!`);
+      notify('🎉 Service selected!');
     };
 
     const handleSaveSelfProfile = async () => {
@@ -5196,102 +5125,16 @@ const getServiceVisual = (group, title = '') => {
                 )) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
               </div>
               <div className="quick-panel">
-                <span className="section-kicker">SELECT A SERVICE</span>
-                <h2>Start your request</h2>
-                <p>Choose an official service to view its requirements and upload documents.</p>
-
-                <button
-                  type="button"
-                  className="btn-open-catalog-modal"
-                  onClick={() => setShowGovServiceModal(true)}
-                  style={{
-                    background: 'linear-gradient(135deg, #0052cc 0%, #16a34a 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '12px 16px',
-                    borderRadius: '10px',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    marginBottom: '12px',
-                    boxShadow: '0 4px 14px rgba(0, 82, 204, 0.2)'
-                  }}
-                >
-                  <Sparkles size={16} /> 🏛️ {lang === 'ta' ? 'அரசு சேவை பட்டியல் (Explore 97+ Services)' : 'Browse Government Services (97+)'}
-                </button>
-
-                <div style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8', margin: '4px 0 8px', fontWeight: 700 }}>
-                  — {lang === 'ta' ? 'அல்லது விரைவு தேர்வு' : 'OR QUICK SELECT'} —
-                </div>
-
-                <form onSubmit={(e) => addApplication(e)}>
+                <span className="section-kicker">SELECT A SERVICE</span><h2>Start your request</h2><p>We will show only the documents required for the service you choose.</p>
+                <form onSubmit={addApplication}>
                   <select value={selectedService} onChange={(event) => setSelectedService(event.target.value)} required>
                     <option value="">Select a service</option>
-                    {SERVICE_CATEGORIES.filter(c => c.id !== 'all').map(cat => {
-                      const catServices = GOVERNMENT_SERVICES.filter(s => s.category === cat.id);
-                      if (!catServices.length) return null;
-                      return (
-                        <optgroup key={cat.id} label={`${cat.icon} ${lang === 'ta' ? cat.nameTa : cat.nameEn}`}>
-                          {catServices.map(s => (
-                            <option key={s.id} value={lang === 'ta' ? s.nameTa : s.nameEn}>
-                              {lang === 'ta' ? `${s.nameTa} (${s.id})` : `${s.nameEn} (${s.id})`}
-                            </option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
+                    {serviceCatalog.map(([, title]) => <option key={title}>{title}</option>)}
                   </select>
                   <button className="button button-primary button-wide" type="submit">Continue to documents <ArrowRight size={16} /></button>
                 </form>
               </div>
             </div>
-
-            {/* GOVERNMENT SERVICES CATALOG MODAL */}
-            {showGovServiceModal && (
-              <div
-                style={{
-                  position: 'fixed',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  background: 'rgba(15, 23, 42, 0.65)',
-                  backdropFilter: 'blur(5px)',
-                  zIndex: 99999,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '16px'
-                }}
-                onClick={() => setShowGovServiceModal(false)}
-              >
-                <div
-                  style={{
-                    maxWidth: '1100px',
-                    width: '100%',
-                    maxHeight: '92vh',
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <GovernmentServiceSelector
-                    lang={lang}
-                    isModal={true}
-                    onClose={() => setShowGovServiceModal(false)}
-                    onSelectService={(serviceObj) => {
-                      setShowGovServiceModal(false);
-                      addApplication(null, serviceObj);
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </>
         )}
         {activeTab === 'applications' && (
