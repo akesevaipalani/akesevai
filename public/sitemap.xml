@@ -7,279 +7,303 @@
   <!-- Main Website Core Pages -->
   <url>
     <loc>https://www.akesevai.com/</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/services</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.95</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/photo-tools</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.95</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/status-track</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>always</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/token-generator</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/notifications</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/about</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.80</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/contact</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://www.akesevai.com/xerox-printing</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://www.akesevai.com/typing-services</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://www.akesevai.com/spiral-binding</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
   </url>
 
   <!-- Dedicated SEO Photo & Document Tool Pages & Search Intent URLs -->
   <url>
     <loc>https://www.akesevai.com/tools/passport-size-photo</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://www.akesevai.com/tools/signature-resize</loc>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/passport-size-photo-maker</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/passport-photo-maker</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/passport-photo-online</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/passport-photo-crop</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/passport-photo-resize</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-crop</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-compress</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-compressor</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/image-compressor</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-compress-20kb</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/compress-image-to-20kb</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-compress-50kb</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/compress-image-to-50kb</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-compress-100kb</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/compress-image-to-100kb</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/image-compressor-100kb</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/100kb-photo-compressor</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-resizer</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-resize</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-editor</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/online-photo-editor</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-background-change</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/passport-photo-background-change</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-background-editor</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-to-jpg</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/webp-to-jpg</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-format-converter</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/photo-to-png</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/jpg-to-png</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/png-to-jpg</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/jpg-to-pdf</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/png-to-pdf</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/image-to-pdf</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/pdf-maker</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/pdf-to-jpg</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.85</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/pdf-compress</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>
   <url>
     <loc>https://www.akesevai.com/tools/pdf-compressor</loc>
-    <lastmod>2026-08-25</lastmod>
+    <lastmod>2026-09-02</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.90</priority>
   </url>

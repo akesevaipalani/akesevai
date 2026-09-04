@@ -5,58 +5,76 @@ const BASE_URL = 'https://www.akesevai.com';
 
 const PAGE_SEO_MAP = {
   home: {
-    title: 'AkEsevai Palani | Best e-Sevai Centre in Palani | Aadhaar, PAN, Income & Community Certificate',
-    description: 'Top #1 Official AkEsevai Digital Service Centre in Palani (பழனி இ-சேவை மையம்). Fast online applications for Aadhaar Card, PAN Card, Income Certificate, Community Certificate, Smart Ration Card, Patta Chitta & Token Booking. Visit opposite Palani Bus Stand or www.akesevai.com. Call 93423 18844.',
-    keywords: 'best esevai maiyam in palani, esevai maiyam in palani, palani esevai maiyam, aadhaar card service in palani, pan card apply palani, income certificate apply palani, community certificate apply palani, smart ration card palani, akesevai palani, www.akesevai.com',
+    title: 'AK E-SEVAI Palani | e-Sevai, Xerox, Printing & Online Services',
+    description: 'AK E-SEVAI Palani (பழனி இ-சேவை மையம்) - e-Sevai application assistance, Aadhaar & PAN support, Xerox, Colour Printing, Typing & online citizen services. Call 93423 18844.',
+    keywords: 'AK E-SEVAI, akesevai palani, esevai maiyam in palani, palani esevai centre, xerox shop palani, printing palani, typing centre palani, aadhaar card service palani, pan card apply palani, income certificate palani, community certificate palani, smart ration card palani, patta chitta palani',
     canonical: 'https://www.akesevai.com/'
   },
   services: {
-    title: 'All e-Sevai Services in Palani | Aadhaar, PAN, Certificates, Ration Card, Patta Chitta | AkEsevai',
-    description: 'Explore 30+ Government e-Sevai services at AkEsevai Palani. Apply online for Income, Community, Nativity, First Graduate, Legal Heir certificates, Smart Ration Card, Voter ID & Patta Chitta.',
+    title: 'All e-Sevai Services in Palani | Aadhaar, PAN, Certificates, Ration Card, Patta Chitta | AK E-SEVAI',
+    description: 'Explore 30+ Government e-Sevai application services at AK E-SEVAI Palani. Apply with assistance for Income, Community, Nativity, First Graduate, Legal Heir certificates, Smart Ration Card, Voter ID & Patta Chitta.',
     keywords: 'palani esevai services, income certificate palani, community certificate palani, nativity certificate palani, first graduate certificate palani, patta chitta palani, ration card apply palani',
     canonical: 'https://www.akesevai.com/services'
   },
   'photo-tools': {
-    title: 'Free Online Photo & Document Tools – AK e-Sevai Palani',
-    description: '100% Free & private photo and document tools by AK e-Sevai: Passport photo maker, photo compressor (20KB, 50KB, 100KB), resizer, cropper, JPG to PDF, PNG to JPG converter.',
+    title: 'Free Online Photo & Document Tools – AK E-SEVAI Palani',
+    description: '100% Free & private photo and document tools by AK E-SEVAI: Passport photo maker, photo compressor (20KB, 50KB, 100KB), resizer, cropper, JPG to PDF, PNG to JPG converter.',
     keywords: 'photo tools, document tools, passport photo maker online, photo compressor, jpg to pdf, akesevai photo tools, புகைப்படம் & ஆவணக் கருவிகள், free online photo tools',
     canonical: 'https://www.akesevai.com/photo-tools'
   },
   'status-track': {
-    title: 'Track e-Sevai Application Status Palani | AkEsevai Live Status Tracker (TN-AK-2026)',
-    description: 'Check live status of your Tamil Nadu e-Sevai application (TN-AK-2026), certificate approvals, and Government processing stage at AkEsevai Palani.',
+    title: 'Track e-Sevai Application Status Palani | AK E-SEVAI Live Status Tracker',
+    description: 'Check live status of your Tamil Nadu e-Sevai application (TN-AK-2026), certificate approvals, and Government processing stage at AK E-SEVAI Palani.',
     keywords: 'esevai status track palani, akesevai status check, tn esevai application status palani, certificate status palani',
     canonical: 'https://www.akesevai.com/status-track'
   },
   'token-generator': {
-    title: 'Online Token Generator Palani | Live Counter Queue Slot Booking | AkEsevai',
-    description: 'Book live queue token online for AkEsevai Digital Centre Palani. Skip the line and get instant token slip on your mobile.',
+    title: 'Online Token Generator Palani | Live Counter Queue Slot Booking | AK E-SEVAI',
+    description: 'Book live queue token online for AK E-SEVAI Digital Centre Palani. Skip the line and get instant token slip on your mobile.',
     keywords: 'esevai token generator palani, akesevai live token, palani esevai queue booking, token booking palani',
     canonical: 'https://www.akesevai.com/token-generator'
   },
   notifications: {
-    title: 'Latest Tamil Nadu Govt Notifications & Exam Updates | AkEsevai Palani',
+    title: 'Latest Tamil Nadu Govt Notifications & Exam Updates | AK E-SEVAI Palani',
     description: 'Get real-time updates on TNPSC, TNUSRB, SSC, Railway exams, welfare schemes, college admissions, and government job application deadlines.',
     keywords: 'tamil nadu govt exam updates, tnpsc notifications, esevai notifications palani, govt scheme updates',
     canonical: 'https://www.akesevai.com/notifications'
   },
   about: {
-    title: 'About AkEsevai Palani | Trusted e-Sevai & Digital Citizen Services',
-    description: 'Learn about AkEsevai Palani digital service center mission, history, authentic certification assistance, and customer support standards in Palani.',
+    title: 'About AK E-SEVAI Palani | Trusted e-Sevai & Digital Citizen Services',
+    description: 'Learn about AK E-SEVAI Palani digital service center mission, authentic certification assistance, Xerox, typing and customer support standards.',
     keywords: 'about akesevai palani, esevai centre info, palani citizen services',
     canonical: 'https://www.akesevai.com/about'
   },
   contact: {
-    title: 'Contact AkEsevai Digital Centre Palani | Bus Stand Opposite & Mill Road | Phone 93423 18844',
-    description: 'Location, phone number, WhatsApp contact and Google Maps address of AkEsevai Digital Service Centre opposite Palani Bus Stand. Call 93423 18844.',
+    title: 'Contact AK E-SEVAI Digital Centre Palani | Mill Road | Phone 93423 18844',
+    description: 'Location, phone number, WhatsApp contact and Google Maps address of AK E-SEVAI Digital Service Centre on Mill Road, Palani. Call 93423 18844.',
     keywords: 'akesevai palani phone number, esevai maiyam near palani bus stand, akesevai contact palani, palani esevai address',
     canonical: 'https://www.akesevai.com/contact'
   },
   weblink: {
-    title: 'முக்கியமான அரசு & கல்வி இணையதளங்கள் | 100% Official Govt Links Directory – AkEsevai',
+    title: 'முக்கியமான அரசு & கல்வி இணையதளங்கள் | 100% Official Govt Links Directory – AK E-SEVAI',
     description: '100% Verified Official Government & Institutional Websites for College Admission (TNEA, NEET, JEE), Govt Jobs (NCS, TN Velaivaaippu), Scholarships (NSP), Documents (Aadhaar, PAN, Voter) & Services.',
     keywords: 'official govt websites tamil nadu, tnea admission portal, nsp scholarship 2026, tn velaivaaippu ncs, uidai aadhaar, official government links, முக்கிய அரசு இணையதளங்கள்',
     canonical: 'https://www.akesevai.com/weblink'
+  },
+  'xerox-printing': {
+    title: 'Xerox & Printing Services in Palani | AK E-SEVAI',
+    description: 'High-speed B/W Xerox, laser colour printing, A4 & Legal document copies, and HD scanning at AK E-SEVAI Palani (Mill Road near Bus Stand). Direct WhatsApp print available.',
+    keywords: 'palani xerox, xerox shop in palani, colour printing palani, document printing palani, palani scanning centre, whatsapp document print palani, akesevai xerox',
+    canonical: 'https://www.akesevai.com/xerox-printing'
+  },
+  'typing-services': {
+    title: 'Tamil & English Typing Centre in Palani | AK E-SEVAI',
+    description: 'Professional Tamil (Unicode/Bamini) and English typing in Palani for government petitions, Tahsildar applications, project reports, and resumes. Fast & accurate.',
+    keywords: 'palani typing centre, tamil typing palani, english typing palani, govt petition typing palani, resume typing palani, பழனி தமிழ் டைப்பிங், akesevai typing',
+    canonical: 'https://www.akesevai.com/typing-services'
+  },
+  'spiral-binding': {
+    title: 'Spiral Binding & Lamination in Palani | AK E-SEVAI',
+    description: 'High-quality plastic coil spiral binding and 125/250 micron hot pouch lamination for college projects, certificates, marksheets, and records in Palani.',
+    keywords: 'palani spiral binding, project binding palani, lamination in palani, certificate lamination palani, பழனி ஸ்பைரல் பைண்டிங், akesevai binding',
+    canonical: 'https://www.akesevai.com/spiral-binding'
   }
 };
 
@@ -129,7 +147,7 @@ export default function SEOHeadManager({ activeTab = 'home', currentToolId = '' 
     setOgTag('og:description', seoData.description);
     setOgTag('og:url', canonicalTag.href);
     setOgTag('og:type', toolData ? 'article' : 'website');
-    setOgTag('og:site_name', 'AK e-Sevai');
+    setOgTag('og:site_name', 'AK E-SEVAI Palani');
     setOgTag('og:image', `${BASE_URL}/logo.png`);
 
     // 7. Update Twitter Card Tags
@@ -242,22 +260,23 @@ export default function SEOHeadManager({ activeTab = 'home', currentToolId = '' 
         ]
       };
     } else {
-      // General AK e-Sevai LocalBusiness / GovernmentOffice Schema
+      // General AK E-SEVAI LocalBusiness / ProfessionalService Schema
       schemaObject = {
         '@context': 'https://schema.org',
         '@graph': [
           {
-            '@type': 'LocalBusiness',
+            '@type': ['LocalBusiness', 'ProfessionalService'],
             '@id': `${BASE_URL}/#organization`,
-            'name': 'AK e-Sevai Palani',
-            'alternateName': 'AkEsevai Digital Service Centre',
+            'name': 'AK E-SEVAI Digital Service Centre Palani',
+            'alternateName': 'பழனி அக் எ-சேவை டிஜிட்டல் மையம்',
             'url': BASE_URL,
             'logo': `${BASE_URL}/logo.png`,
             'telephone': '+919342318844',
+            'email': 'akesevaipalani@gmail.com',
             'priceRange': '₹',
             'address': {
               '@type': 'PostalAddress',
-              'streetAddress': 'Opposite Bus Stand, Mill Road',
+              'streetAddress': 'Mill Rd, Sanmugapuram, Anna Nagar',
               'addressLocality': 'Palani',
               'addressRegion': 'Tamil Nadu',
               'postalCode': '624601',
@@ -265,8 +284,8 @@ export default function SEOHeadManager({ activeTab = 'home', currentToolId = '' 
             },
             'geo': {
               '@type': 'GeoCoordinates',
-              'latitude': '10.4500',
-              'longitude': '77.5167'
+              'latitude': 10.4503,
+              'longitude': 77.5186
             },
             'openingHoursSpecification': {
               '@type': 'OpeningHoursSpecification',
