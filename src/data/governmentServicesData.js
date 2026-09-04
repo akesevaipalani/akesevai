@@ -1763,9 +1763,12 @@ export const GOVERNMENT_SERVICES = [
       'தற்போதைய மீட்டர் ரீடிங் புகைப்படம் (kWh யூனிட் தெரியுமாறு)',
       'கடந்த 6 மாத கட்டண ரசீதுகள்'
     ],
-    optionalDocuments: ['Bank Transaction Reference (if payment failed online)'],
-    notesEn: 'Escalated to Assistant Accounts Officer (AAO) / Revenue Branch for revised bill calculation.',
-    notesTa: 'வருவாய் கிளை கணக்கு அலுவலரால் ஆய்வு செய்யப்பட்டு திருத்தப்பட்ட பில் வழங்கப்படும்.',
+    optionalDocuments: [
+      'Bank Transaction Reference (if payment failed online)',
+      'Prior Meter Test / Defective Assessment Slip (if applicable)'
+    ],
+    notesEn: 'Note & Facilitation: This is an administrative grievance escalation. Document verification and revised assessment are conducted by the Assistant Accounts Officer (AAO) or Section AE based on the specific billing discrepancy (e.g., door-lock estimated unit, defective meter average, or tariff slab mismatch).',
+    notesTa: 'குறிப்பு & வழிகாட்டுதல்: இது மின்வாரிய கணக்கு பிரிவுக்கான வழிகாட்டுதல் மனுவாகும். மீட்டர் ரீடிங் தவறு, கதவு பூட்டியிருந்ததால் ஏற்பட்ட கூடுதல் கணக்கீடு அல்லது முந்தைய மாத சராசரி பில் போன்றவற்றிற்கு ஏற்ப உதவி கணக்கு அலுவலர் (AAO) அல்லது பிரிவு பொறியாளர் (AE) கள ஆய்வு செய்து திருத்தப்பட்ட பில் உத்தரவை வழங்குவர்.',
     variableRequirements: false,
     serviceType: 'Customer Assistance / Application Guidance',
     officialSource: 'TANGEDCO Consumer Grievance (tangedco.org)',
@@ -1793,9 +1796,11 @@ export const GOVERNMENT_SERVICES = [
       'சேதமடைந்த மின் கம்பியின் புகைப்படம்',
       'தொடர்புக்கான மொபைல் எண்'
     ],
-    optionalDocuments: [],
-    notesEn: 'Executed by local distribution operation & maintenance staff.',
-    notesTa: 'மின்வாரிய களப்பணியாளர்களால் நேரில் ஆய்வு செய்யப்பட்டு கேபிள் மாற்றப்படும்.',
+    optionalDocuments: [
+      'Property Tax / Ownership Proof (if meter board relocation is involved)'
+    ],
+    notesEn: 'Note & Facilitation: Replacement of damaged service cables from the distribution pole to the meter board is undertaken by TANGEDCO under routine O&M. If damage is within the consumer\'s private property boundary or meter outlet, replacement material/labor is assessed as per consumer premises norms.',
+    notesTa: 'குறிப்பு & வழிகாட்டுதல்: மின் கம்பத்திலிருந்து மீட்டர் வரை உள்ள பொது விநியோகக் கேபிள் பழுதடைந்தால் மின்வாரிய பராமரிப்பின் கீழ் இலவசமாக மாற்றப்படும். நுகர்வோரின் தனிப்பட்ட வளாகத்திற்குள் உள்ள உள்வயரிங் கேபிள் பழுதடைந்தால் மதிப்பீட்டுக் கட்டணம் நுகர்வோரால் செலுத்தப்பட வேண்டும்.',
     variableRequirements: false,
     serviceType: 'Customer Assistance / Application Guidance',
     officialSource: 'TANGEDCO O&M (tangedco.org)',
@@ -3086,9 +3091,12 @@ export const GOVERNMENT_SERVICES = [
       'பிரிட்ஜ் (Refrigerator) வாங்கியதற்கான அசல் பில்',
       'விண்ணப்பதாரர் அடையாளச் சான்று'
     ],
-    optionalDocuments: [],
-    notesEn: 'Drug Inspector conducts shop physical verification before granting licence.',
-    notesTa: 'மருந்து ஆய்வாளர் கடையை நேரில் ஆய்வு செய்த பின் உரிமம் வழங்கப்படும்.',
+    optionalDocuments: [
+      'Partnership Deed / GST Certificate (for wholesale / partnership firms)',
+      'Local Body Trade NOC (if requested by Drugs Inspector)'
+    ],
+    notesEn: 'Guidance & Statutory Disclaimer: AK E-SEVAI provides application preparation and documentation assistance. Grant of pharmacy retail/wholesale licence (Form 20/21) is subject to physical inspection of storage cold-chain facilities by the Drugs Inspector and compliance with the Drugs and Cosmetics Act, 1940.',
+    notesTa: 'வழிகாட்டுதல் & சட்டப்பூர்வ அறிவிப்பு: AK E-SEVAI என்பது ஆவண தயாரிப்பு மற்றும் இணையதள விண்ணப்ப வழிகாட்டுதல் மையமாகும். மருந்தக உரிமம் (Form 20/21) வழங்குவது தமிழ்நாடு மருந்து கட்டுப்பாட்டுத்துறை ஆய்வாளர் (Drug Inspector) நடத்தும் நேரடி கடை ஆய்வு, குளிர்பதன வசதி மற்றும் பார்மசி கவுன்சில் சரிபார்ப்புக்கு உட்பட்டது.',
     variableRequirements: false,
     serviceType: 'Customer Assistance / Application Guidance',
     officialSource: 'Drugs Control Administration TN (drugcontrol.tn.gov.in)',
@@ -3124,9 +3132,12 @@ export const GOVERNMENT_SERVICES = [
       'பாஸ்போர்ட் அளவு புகைப்படங்கள் மற்றும் கையொப்பம்',
       'அரசு தேர்வுக் கட்டண ரசீது'
     ],
-    optionalDocuments: [],
-    notesEn: 'Licensing board conducts practical/oral examination twice a year.',
-    notesTa: 'மின் உரிம வாரியம் நடத்தும் தேர்விற்குப் பின் உரிமம் வழங்கப்படும்.',
+    optionalDocuments: [
+      'Bank Solvency Certificate (for Class EA/EB Contractor Licence)',
+      'Testing Instrument Calibration Certificates (Megger / Earth Tester)'
+    ],
+    notesEn: 'Guidance & Statutory Disclaimer: AK E-SEVAI provides document compilation and online portal submission assistance. Issuance of Electrical Contractor / Competency Licence (Class EA/EB/ESB) is subject to instrument verification and examination by the Tamil Nadu Electrical Licensing Board (TNELB).',
+    notesTa: 'வழிகாட்டுதல் & சட்டப்பூர்வ அறிவிப்பு: AK E-SEVAI என்பது விண்ணப்பப் படிவங்கள் மற்றும் ஆவணங்களை தயார் செய்வதற்கான வழிகாட்டுதல் சேவையாகும். தமிழ்நாடு மின் உரிம வாரியம் (TNELB) நடத்தும் செய்முறை/நேர்முகத் தேர்வு மற்றும் பரிசோதனை உபகரணங்கள் ஆய்வுக்குப் பின்பே தகுதிச் சான்றிதழ் / உரிமம் வழங்கப்படும்.',
     variableRequirements: false,
     serviceType: 'Customer Assistance / Application Guidance',
     officialSource: 'Tamil Nadu Electrical Licensing Board (tnealb.gov.in)',
