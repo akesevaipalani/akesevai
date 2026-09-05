@@ -185,21 +185,21 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
               if (stampDate) ctx.fillText(stampDate, targetW / 2, targetH - stampH + 52);
             }
           } else if (sheetType === '4x6') {
-            // 4x6 inch sheet at 300 DPI = 1200 x 1800 px (8 photos: 2 cols x 4 rows)
-            canvas.width = 1200;
-            canvas.height = 1800;
+            // 4x6 inch sheet at 300 DPI (Landscape) = 1800 x 1200 px (8 photos: 4 cols x 2 rows)
+            canvas.width = 1800;
+            canvas.height = 1200;
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             const pw = 413;
             const ph = 531;
-            const gapX = 120;
-            const gapY = 80;
-            const startX = (1200 - (pw * 2 + gapX)) / 2;
-            const startY = (1800 - (ph * 3 + gapY * 2)) / 2;
+            const gapX = 30;
+            const gapY = 40;
+            const startX = 29;
+            const startY = 49;
 
-            for (let r = 0; r < 3; r++) {
-              for (let c = 0; c < 2; c++) {
+            for (let r = 0; r < 2; r++) {
+              for (let c = 0; c < 4; c++) {
                 const x = startX + c * (pw + gapX);
                 const y = startY + r * (ph + gapY);
                 drawImageAspectCover(ctx, img, x, y, pw, ph);
@@ -215,17 +215,17 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            const pw = 413;
-            const ph = 531;
-            const startX = 140;
-            const startY = 150;
-            const stepX = 550;
-            const stepY = 620;
+            const pw = 531;
+            const ph = 413;
+            const gapX = 40;
+            const gapY = 24;
+            const startX = 118;
+            const startY = 68;
 
-            for (let r = 0; r < 5; r++) {
+            for (let r = 0; r < 8; r++) {
               for (let c = 0; c < 4; c++) {
-                const x = startX + c * stepX;
-                const y = startY + r * stepY;
+                const x = startX + c * (pw + gapX);
+                const y = startY + r * (ph + gapY);
                 drawImageAspectCover(ctx, img, x, y, pw, ph);
                 ctx.strokeStyle = '#cbd5e1';
                 ctx.lineWidth = 2;
