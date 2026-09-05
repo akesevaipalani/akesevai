@@ -2016,6 +2016,65 @@ const getServiceVisual = (group, title = '') => {
 
   function ContactPage({ notify, lang }) {
     const t = translations[lang] || translations.en;
+    const isTa = lang === 'ta';
+    const [name, setName] = useState('');
+    const [phone, setPhone] = useState('');
+    const [message, setMessage] = useState('');
+    const [status, setStatus] = useState('idle'); // 'idle' | 'submitting' | 'ready'
+    const [errorMessage, setErrorMessage] = useState('');
+
+    const generateWhatsAppUrl = (cleanName, cleanPhone, cleanMsg) => {
+      const waText = encodeURIComponent(
+        `🙏 *${isTa ? 'வணக்கம் AkEsevai' : 'Hello AkEsevai'}*,\n\n` +
+        `*${isTa ? 'AK E-SEVAI தொடர்பு தகவல்' : 'AK E-SEVAI Contact Enquiry'}:*\n` +
+        `👤 *${isTa ? 'பெயர்' : 'Name'}:* ${cleanName}\n` +
+        `📞 *${isTa ? 'மொபைல்' : 'Phone'}:* +91 ${cleanPhone}\n` +
+        `📝 *${isTa ? 'தேவை / தகவல்' : 'Requirement'}:*\n${cleanMsg}\n\n` +
+        `_${isTa ? 'AkEsevai இணையதளம் (akesevai.com) மூலம் அனுப்பப்பட்டது.' : 'Sent via AkEsevai Portal (akesevai.com).'}_`
+      );
+      return `https://wa.me/919342318844?text=${waText}`;
+    };
+
+    const handleSubmit = (event) => {
+      event.preventDefault();
+      const cleanName = name.trim();
+      const cleanDigits = phone.replace(/\D/g, '');
+      const cleanMsg = message.trim();
+
+      if (!cleanName) {
+        setErrorMessage(isTa ? '⚠️ தயவுசெய்து உங்கள் பெயரை உள்ளிடவும்.' : '⚠️ Please enter your name.');
+        return;
+      }
+
+      if (!cleanDigits || cleanDigits.length !== 10) {
+        setErrorMessage(isTa ? '⚠️ தயவுசெய்து சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.' : '⚠️ Please enter a valid 10-digit mobile number.');
+        return;
+      }
+
+      if (!cleanMsg) {
+        setErrorMessage(isTa ? '⚠️ உங்களுக்கு தேவையான சேவை பற்றி சுருக்கமாக குறிப்பிடவும்.' : '⚠️ Please tell us about your service need.');
+        return;
+      }
+
+      setErrorMessage('');
+      setStatus('submitting');
+
+      const targetUrl = generateWhatsAppUrl(cleanName, cleanDigits, cleanMsg);
+
+      setTimeout(() => {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+        setStatus('ready');
+      }, 200);
+    };
+
+    const handleReset = () => {
+      setName('');
+      setPhone('');
+      setMessage('');
+      setStatus('idle');
+      setErrorMessage('');
+    };
+
     return (
       <PageIntro kicker={t.contactKicker} title={t.contactTitle} text={t.contactText}>
         <div className="contact-grid">
@@ -2028,12 +2087,133 @@ const getServiceVisual = (group, title = '') => {
             <div className="contact-item"><span><InstagramIcon size={20} color="#E1306C" /></span><div><small>INSTAGRAM PAGE</small><a href={siteConfig.instagram} target="_blank" rel="noreferrer"><strong>@akesevai</strong></a><p>{lang === 'ta' ? 'தினசரி அறிவிப்புகள் மற்றும் செய்திகள்' : 'Follow us for daily posts & news'}</p></div></div>
             <div className="contact-item"><span><FacebookIcon size={20} color="#1877F2" /></span><div><small>FACEBOOK PAGE</small><a href={siteConfig.facebook} target="_blank" rel="noreferrer"><strong>AkEsevai Facebook</strong></a><p>{lang === 'ta' ? 'எங்கள் முகநூல் பக்கத்தில் இணையுங்கள்' : 'Connect on our Facebook page'}</p></div></div>
           </div>
-          <form className="contact-form" onSubmit={(event) => { event.preventDefault(); notify(lang === 'ta' ? 'செய்தி பெறப்பட்டது. AkEsevai விரைவில் உங்களை அழைக்கும்.' : 'Message received. AkEsevai will call you shortly.'); event.currentTarget.reset(); }}>
-            <label>{t.yourName}<input required placeholder={lang === 'ta' ? 'உங்கள் பெயரை உள்ளிடவும்' : 'Enter your name'} /></label>
-            <label>{t.phoneNumber}<input required type="tel" placeholder={lang === 'ta' ? '10 இலக்க மொபைல் எண்' : '10-digit mobile number'} /></label>
-            <label>{t.howCanWeHelp}<textarea required placeholder={lang === 'ta' ? 'உங்களுக்கு தேவையான சேவை பற்றி சுருக்கமாக குறிப்பிடவும்' : 'Tell us a little about your service need'} rows="4" /></label>
-            <button className="button button-primary" type="submit">{t.sendMessage} <Send size={16} /></button>
-          </form>
+
+          {status === 'ready' ? (
+            <div className="contact-form" style={{ textAlign: 'left' }}>
+              <div style={{
+                background: '#f0fdf4',
+                border: '1.5px solid #86efac',
+                borderRadius: '10px',
+                padding: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <CheckCircle2 size={24} color="#16a34a" />
+                  <strong style={{ fontSize: '15px', color: '#166534' }}>
+                    {isTa ? 'உங்கள் செய்தி தயாராக உள்ளது!' : 'Your message is ready!'}
+                  </strong>
+                </div>
+                <p style={{ margin: 0, fontSize: '13px', color: '#374151', lineHeight: 1.5 }}>
+                  {isTa
+                    ? '✅ உங்கள் செய்தி தயாராக உள்ளது. WhatsApp திறக்கப்பட்டதும் Send அழுத்தி அனுப்பவும்.'
+                    : '✅ Your message is ready. Press Send in WhatsApp to submit your enquiry.'}
+                </p>
+                <div style={{
+                  background: 'white',
+                  border: '1px solid #dcfce7',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  fontSize: '12px',
+                  color: '#475569'
+                }}>
+                  <div><strong>{isTa ? 'பெயர்:' : 'Name:'}</strong> {name}</div>
+                  <div><strong>{isTa ? 'மொபைல்:' : 'Mobile:'}</strong> +91 {phone.replace(/\D/g, '')}</div>
+                  <div style={{ marginTop: '4px' }}><strong>{isTa ? 'செய்தி:' : 'Requirement:'}</strong> {message}</div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={() => {
+                      const url = generateWhatsAppUrl(name.trim(), phone.replace(/\D/g, ''), message.trim());
+                      window.open(url, '_blank', 'noopener,noreferrer');
+                    }}
+                    style={{ padding: '10px 16px', fontSize: '13px' }}
+                  >
+                    <MessageCircle size={16} /> {isTa ? 'மீண்டும் WhatsApp திறக்க' : 'Re-open WhatsApp'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    onClick={handleReset}
+                    style={{ padding: '10px 16px', fontSize: '13px' }}
+                  >
+                    {isTa ? 'வேறு செய்தி அனுப்ப (New Message)' : 'Send another message'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <form className="contact-form" onSubmit={handleSubmit} noValidate>
+              {errorMessage && (
+                <div style={{
+                  background: '#fef2f2',
+                  border: '1.5px solid #fca5a5',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#991b1b',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <AlertCircle size={16} color="#dc2626" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+              <label htmlFor="contact-form-name">
+                {t.yourName}
+                <input
+                  id="contact-form-name"
+                  name="name"
+                  autoComplete="name"
+                  required
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); if (errorMessage) setErrorMessage(''); }}
+                  placeholder={isTa ? 'உங்கள் பெயரை உள்ளிடவும்' : 'Enter your name'}
+                />
+              </label>
+              <label htmlFor="contact-form-phone">
+                {t.phoneNumber}
+                <input
+                  id="contact-form-phone"
+                  name="phone"
+                  autoComplete="tel"
+                  required
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => { setPhone(e.target.value); if (errorMessage) setErrorMessage(''); }}
+                  placeholder={isTa ? '10 இலக்க மொபைல் எண்' : '10-digit mobile number'}
+                  maxLength={14}
+                />
+              </label>
+              <label htmlFor="contact-form-message">
+                {t.howCanWeHelp}
+                <textarea
+                  id="contact-form-message"
+                  name="message"
+                  required
+                  value={message}
+                  onChange={(e) => { setMessage(e.target.value); if (errorMessage) setErrorMessage(''); }}
+                  placeholder={isTa ? 'உங்களுக்கு தேவையான சேவை பற்றி சுருக்கமாக குறிப்பிடவும்' : 'Tell us a little about your service need'}
+                  rows="4"
+                />
+              </label>
+              <button
+                className="button button-primary"
+                type="submit"
+                disabled={status === 'submitting'}
+              >
+                {status === 'submitting'
+                  ? (isTa ? 'தயாராகிறது...' : 'Preparing...')
+                  : (t.sendMessage)}
+                <Send size={16} />
+              </button>
+            </form>
+          )}
         </div>
 
         {/* SOCIAL MEDIA FOLLOW WIDGET */}
