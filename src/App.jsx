@@ -5286,7 +5286,7 @@ const getServiceVisual = (group, title = '') => {
             </div>
           </div>
         )}
-        {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} cloudExpiryDocs={cloudExpiryDocs} />}
+        {activeTab === 'documents' && <DocumentsTab customer={customer} updateCustomer={updateCustomer} notify={notify} cloudExpiryDocs={cloudExpiryDocs} lang={lang} />}
         {activeTab === 'compressor' && (
           <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
             <GovernmentPhotoCropperTool />
@@ -5523,7 +5523,7 @@ const getServiceVisual = (group, title = '') => {
       </div>
     );
   }
-  function DocumentsTab({ customer, updateCustomer, notify, cloudExpiryDocs = [] }) {
+  function DocumentsTab({ customer, updateCustomer, notify, cloudExpiryDocs = [], lang = 'ta' }) {
     const activeApps = customer.applications && customer.applications.length > 0 ? customer.applications : [{
       id: `AK-${Date.now().toString().slice(-8)}`,
       name: 'Income Certificate',
