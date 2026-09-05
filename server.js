@@ -243,6 +243,17 @@ const notificationSchema = new mongoose.Schema({
   source: { type: String, default: 'Official Govt Portal' },
   isNew: { type: Boolean, default: true },
   status: { type: String, default: 'active' }, // 'active' | 'expired' | 'upcoming'
+
+  // Phase 1 Automatic Ingestion Foundation Metadata
+  ingestionStatus: { type: String, default: 'published', index: true }, // 'published' | 'pending_review'
+  sourceUrl: { type: String, default: '' },
+  notificationNo: { type: String, default: '' },
+  sourcePublishedAt: { type: String, default: '' },
+  firstDetectedAt: { type: Date, default: null },
+  lastScrapedAt: { type: Date, default: null },
+  ingestionSource: { type: String, default: 'manual_admin' }, // 'manual_admin' | 'verified_master_feed' | 'scraper_tnpsc' | etc.
+  ingestionError: { type: String, default: '' },
+
   updatedAt: { type: Date, default: Date.now }
 }, { suppressReservedKeysWarning: true });
 
@@ -1215,7 +1226,14 @@ const syncAllVerifiedNotificationsFeed = async () => {
     const ops = VERIFIED_ALL_EXAM_NOTIFICATIONS.map((notif) => ({
       updateOne: {
         filter: { id: notif.id },
-        update: { $set: { ...notif, updatedAt: new Date() } },
+        update: {
+          $set: {
+            ...notif,
+            ingestionStatus: notif.ingestionStatus || 'published',
+            ingestionSource: notif.ingestionSource || 'verified_master_feed',
+            updatedAt: new Date()
+          }
+        },
         upsert: true
       }
     }));
@@ -3514,8 +3532,9 @@ const normalizeCategoryStr = (cat) => {
 
 // GET all notifications with auto-expiry calculation, search & auto-seed
 app.get('/api/notifications', async (req, res) => {
-  const { category, status, search } = req.query;
+  const { category, status, search, includePending } = req.query;
   const today = getKolkataToday();
+  const auth = resolveAuthContext(req);
 
   let rawList = [];
   try {
@@ -3525,6 +3544,28 @@ app.get('/api/notifications', async (req, res) => {
         const norm = normalizeCategoryStr(category);
         filter.$or = [{ category }, { category: norm }];
       }
+
+      // Ingestion filter: Public requests see ONLY published or legacy notifications
+      // Admin requests with includePending=true can view pending_review records
+      if (!auth.isAdmin || includePending !== 'true') {
+        const publishedCondition = {
+          $or: [
+            { ingestionStatus: 'published' },
+            { ingestionStatus: { $exists: false } },
+            { ingestionStatus: null },
+            { ingestionStatus: '' }
+          ]
+        };
+        if (filter.$or) {
+          filter.$and = [{ $or: filter.$or }, publishedCondition];
+          delete filter.$or;
+        } else {
+          filter.$or = publishedCondition.$or;
+        }
+      } else if (req.query.ingestionStatus && req.query.ingestionStatus !== 'all') {
+        filter.ingestionStatus = req.query.ingestionStatus;
+      }
+
       rawList = await Notification.find(filter).sort({ updatedAt: -1, _id: -1 }).maxTimeMS(4000).lean();
     }
   } catch (dbErr) {
@@ -3537,6 +3578,10 @@ app.get('/api/notifications', async (req, res) => {
       if (!category || category === 'all') return true;
       return normalizeCategoryStr(item.category) === normalizeCategoryStr(category);
     });
+    // Public fallback filtering for in-memory records
+    if (!auth.isAdmin || includePending !== 'true') {
+      rawList = rawList.filter(item => !item.ingestionStatus || item.ingestionStatus === 'published');
+    }
   }
 
   let processedList = rawList.map((item) => enrichNotificationWithDateStatus(item, today));
@@ -3631,9 +3676,17 @@ app.post('/api/notifications', async (req, res) => {
       ? { id: data.id }
       : { service: data.service, organization: data.organization || '' };
 
+    const updatePayload = {
+      ...data,
+      id,
+      ingestionStatus: data.ingestionStatus || 'published',
+      ingestionSource: data.ingestionSource || 'manual_admin',
+      updatedAt: new Date()
+    };
+
     const result = await Notification.findOneAndUpdate(
       keyFilter,
-      { $set: { ...data, id, updatedAt: new Date() } },
+      { $set: updatePayload },
       { upsert: true, new: true }
     );
     const obj = result.toObject ? result.toObject() : result;

@@ -207,7 +207,9 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       applyLink: formData.applyLink || 'https://www.india.gov.in/',
       isVerified: true,
       source: 'Verified Admin Entry',
-      isNew: true
+      isNew: true,
+      ingestionStatus: 'published',
+      ingestionSource: 'manual_admin'
     };
 
     await saveNotificationCloud(notifPayload);
