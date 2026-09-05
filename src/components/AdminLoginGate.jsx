@@ -11,15 +11,15 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
   const [isError, setIsError] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     if (e) e.preventDefault();
 
     if (isResetMode) {
       if (typeof resetAdminPassword === 'function') {
-        const resetOk = resetAdminPassword(masterPhone, password || 'admin123');
+        const resetOk = await resetAdminPassword(masterPhone, password);
         if (resetOk) {
           setIsResetMode(false);
-          login(password || 'admin123');
+          await login(password);
         } else {
           setIsError(true);
           setTimeout(() => setIsError(false), 1200);
@@ -38,18 +38,20 @@ export default function AdminLoginGate({ login, notify, navigate, resetAdminPass
     setIsAuthenticating(true);
     setIsError(false);
 
-    setTimeout(() => {
-      const success = login(password);
+    try {
+      const success = await login(password);
       setIsAuthenticating(false);
       if (success) {
         setIsSuccess(true);
-        notify('✅ அங்கீகாரம் வெற்றிகரமாக முடிந்தது! அட்மின் டாஷ்போர்டு திறக்கிறது... (Admin login verified!)');
       } else {
         setIsError(true);
-        notify('❌ தவறான கடவுச்சொல்! (Incorrect admin password)');
         setTimeout(() => setIsError(false), 1200);
       }
-    }, 450);
+    } catch (err) {
+      setIsAuthenticating(false);
+      setIsError(true);
+      setTimeout(() => setIsError(false), 1200);
+    }
   };
 
   const handleQuickDemoLogin = () => {
