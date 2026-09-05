@@ -43,7 +43,9 @@ import {
   deleteAdvertisementMongo,
   fetchLiveQueueMongo,
   saveLiveQueueMongo,
-  subscribeLiveQueueMongo
+  subscribeLiveQueueMongo,
+  fetchPublicAppStatusMongo,
+  fetchTrackByMobileMongo
 } from './mongoService';
 import {
   saveDocBinary,
@@ -393,6 +395,16 @@ export const subscribeApplications = (callback) => {
       if (callback) callback(mongoApps || {});
     }
   });
+};
+
+// --- PUBLIC STATUS TRACKING CLOUD HELPERS ---
+
+export const fetchPublicAppStatusCloud = async (appId) => {
+  return await fetchPublicAppStatusMongo(appId);
+};
+
+export const fetchTrackByMobileCloud = async (phone, trackingToken = '') => {
+  return await fetchTrackByMobileMongo(phone, trackingToken);
 };
 
 // --- TOKENS & PRIORITY PAYMENT VERIFICATION (MONGODB DATABASE) ---

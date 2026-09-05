@@ -134,6 +134,7 @@ setInterval(() => {
 const otpSendLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 8, message: 'Too many OTP requests. Please wait a few minutes before trying again.' });
 const otpVerifyLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 15, message: 'Too many verification attempts. Please request a new OTP.' });
 const tokenRequestLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 20, message: 'Too many token requests. Please slow down.' });
+const publicTrackerLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30, message: 'Too many tracking requests. Please slow down.' });
 const apiGeneralLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 400, message: 'Request limit reached. Please try again in a moment.' });
 
 // URL Safety Validator
@@ -1645,6 +1646,47 @@ function verifyCustomerToken(tokenStr) {
   }
 }
 
+// --- EPHEMERAL TRACKING-ONLY TOKEN ENGINE (CRYPTOGRAPHICALLY ISOLATED FROM CUSTOMER LOGIN) ---
+const TRACKING_TOKEN_EXPIRY_MS = 15 * 60 * 1000; // 15 Minutes TTL
+
+function signTrackingToken(phone) {
+  if (!CUSTOMER_AUTH_SECRET) {
+    throw new Error('CUSTOMER_AUTH_SECRET is required to sign tracking tokens in production.');
+  }
+  const cleanPhone = cleanPhoneDigits(phone);
+  const timestamp = Date.now();
+  const payload = `track:${cleanPhone}:${timestamp}`;
+  const signature = crypto.createHmac('sha256', CUSTOMER_AUTH_SECRET).update(payload).digest('hex');
+  return `trktok_${cleanPhone}_${timestamp}_${signature}`;
+}
+
+function verifyTrackingToken(tokenStr) {
+  if (!tokenStr || typeof tokenStr !== 'string' || !tokenStr.startsWith('trktok_') || !CUSTOMER_AUTH_SECRET) {
+    return null;
+  }
+  try {
+    const parts = tokenStr.split('_');
+    if (parts.length !== 4) return null;
+    const phone = parts[1];
+    const timestamp = parseInt(parts[2], 10);
+    const signature = parts[3];
+
+    if (isNaN(timestamp) || Date.now() - timestamp > TRACKING_TOKEN_EXPIRY_MS) {
+      return null; // Expired
+    }
+
+    const expectedPayload = `track:${phone}:${timestamp}`;
+    const expectedSignature = crypto.createHmac('sha256', CUSTOMER_AUTH_SECRET).update(expectedPayload).digest('hex');
+
+    if (crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSignature, 'hex'))) {
+      return cleanPhoneDigits(phone);
+    }
+    return null;
+  } catch (err) {
+    return null;
+  }
+}
+
 // --- APPLICATION-LEVEL DOCUMENT ENCRYPTION ENGINE (AES-256-GCM) ---
 const DOC_ENCRYPTION_SECRET = process.env.DOCUMENT_ENCRYPTION_SECRET || (!isProd ? 'dev_only_local_doc_encryption_secret_key' : null);
 // Derive 32-byte key using SHA-256
@@ -1946,9 +1988,10 @@ app.post('/api/otp/verify', otpVerifyLimiter, async (req, res) => {
       });
     }
 
-    // Success: Generate single-use verification token & cryptographically signed customerToken
+    // Success: Generate single-use verification token, customerToken, and ephemeral trackingToken
     const verifiedToken = crypto.randomBytes(24).toString('hex');
     const customerToken = signCustomerToken(cleanPhone);
+    const trackingToken = signTrackingToken(cleanPhone);
     await OtpSession.deleteOne({ _id: session._id });
 
     // Post-OTP Customer State Resolution (Accessible ONLY with valid OTP verification)
@@ -1974,6 +2017,7 @@ app.post('/api/otp/verify', otpVerifyLimiter, async (req, res) => {
       message: '✅ OTP வெற்றிகரமாக சரிபார்க்கப்பட்டது! (OTP verified successfully)',
       verifiedToken,
       customerToken,
+      trackingToken,
       phone: cleanPhone,
       isExistingUser,
       customer: existingCustomer || null
@@ -2700,6 +2744,252 @@ app.delete('/api/applications/:id', async (req, res) => {
     res.json({ success: true, deletedId: targetId });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// --- PUBLIC STATUS TRACKING APIS (RATE-LIMITED, AGGREGATED & SANITIZED) ---
+
+const sanitizeTrackingTimeline = (stageNum, dateStr) => {
+  const num = Number(stageNum || 1);
+  return [
+    { step: 1, title: 'Registered', tamil: 'விண்ணப்பம் பெறப்பட்டது', date: dateStr || 'Recently', done: num >= 1, active: num === 1 },
+    { step: 2, title: 'Document Verified', tamil: 'ஆவணங்கள் சரிபார்க்கப்பட்டது', date: num >= 2 ? 'Completed' : 'Pending', done: num >= 2, active: num === 2 },
+    { step: 3, title: 'Fee Confirmed', tamil: 'கட்டணம் பெறப்பட்டது', date: num >= 3 ? 'Completed' : 'Pending', done: num >= 3, active: num === 3 },
+    { step: 4, title: 'Submitted to Govt Portal', tamil: 'அரசு தளத்தில் விண்ணப்பிக்கப்பட்டது', date: num >= 4 ? (num === 6 ? 'Completed' : 'Just Now') : 'Pending', done: num >= 4, active: num === 4 },
+    { step: 5, title: 'Officer Verification', tamil: 'அதிகாரி பரிசீலனை', date: num >= 5 ? (num === 6 ? 'Completed' : 'In Progress') : 'Pending', done: num >= 5, active: num === 5 },
+    { step: 6, title: 'Approved & Completed', tamil: 'சான்றிதழ் வழங்கப்பட்டது', date: num >= 6 ? 'Completed' : 'Pending', done: num >= 6, active: num === 6 }
+  ];
+};
+
+const getTrackingStageInfo = (stageNum) => {
+  const num = Number(stageNum || 1);
+  const stageInfoMap = {
+    1: { statusLabel: 'Application Submitted (விண்ணப்பம் பெறப்பட்டது)', statusColor: '#3b82f6', remarks: 'AkEsevai மையத்தில் விண்ணப்பம் பதிவு செய்யப்பட்டு பெறப்பட்டுள்ளது.' },
+    2: { statusLabel: 'Document Verification (ஆவணங்கள் சரிபார்க்கப்படுகிறது)', statusColor: '#0284c7', remarks: 'வாடிக்கையாளர் பதிவேற்றிய ஆவணங்கள் சரிபார்க்கப்பட்டு வருகின்றன.' },
+    3: { statusLabel: 'Document Pending (கூடுதல் ஆவணம் தேவை)', statusColor: '#d97706', remarks: 'விண்ணப்பத்தை தொடர வாடிக்கையாளரிடமிருந்து கூடுதல் ஆவணம் தேவைப்படுகிறது.' },
+    4: { statusLabel: 'Under Process / Fee Paid (செயலாக்கத்தில் உள்ளது)', statusColor: '#0052cc', remarks: 'அரசு கட்டணம் செலுத்தப்பட்டு இணையதளத்தில் தாக்கல் செய்யப்பட்டுள்ளது.' },
+    5: { statusLabel: 'Officer Review (அதிகாரி பரிசீலனையில் உள்ளது)', statusColor: '#8b5cf6', remarks: 'அரசு அதிகாரி / VAO / RI கள ஆய்வு மற்றும் பரிசீலனையில் உள்ளது.' },
+    6: { statusLabel: 'Approved & Completed (சான்றிதழ் தயார் / நிறைவடைந்தது)', statusColor: '#16a34a', remarks: 'விண்ணப்பம் வெற்றிகரமாக ஒப்புதல் பெறப்பட்டு சான்றிதழ் தயாராக உள்ளது.' },
+    7: { statusLabel: 'Rejected (விண்ணப்பம் நிராகரிக்கப்பட்டது)', statusColor: '#ef4444', remarks: 'அரசு விதிமுறைகளுக்கு உட்படாததால் விண்ணப்பம் நிராகரிக்கப்பட்டது.' }
+  };
+  return stageInfoMap[num] || stageInfoMap[1];
+};
+
+const maskApplicantName = (name) => {
+  if (!name || typeof name !== 'string') return 'வாடிக்கையாளர்';
+  const parts = name.trim().split(/\s+/);
+  return parts.map(p => {
+    if (p.length <= 2) return p[0] + '*';
+    return p[0] + '*'.repeat(Math.min(p.length - 2, 6)) + p[p.length - 1];
+  }).join(' ');
+};
+
+const maskPhoneNumber = (phone) => {
+  const d = cleanPhoneDigits(phone);
+  if (d.length >= 10) {
+    return `******${d.slice(-4)}`;
+  }
+  return '******';
+};
+
+// 1. Public Single Application Tracking (by Application ID)
+app.get('/api/public/track/application/:id', publicTrackerLimiter, async (req, res) => {
+  try {
+    const rawId = String(req.params.id || '').trim();
+    const cleanId = rawId.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (!cleanId || cleanId.length < 6 || cleanId.length > 50) {
+      return res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'விண்ணப்ப எண் கண்டறியப்படவில்லை. (Application ID not found)'
+      });
+    }
+
+    // 1. Search in standalone Application collection
+    let foundApp = await Application.findOne({ $or: [{ id: cleanId }, { ackNo: cleanId }] }).maxTimeMS(5000).lean();
+    let applicantName = foundApp?.applicantName || '';
+    let applicantPhone = foundApp?.phone || '';
+
+    // 2. If not found in standalone collection, search in Customer embedded applications[]
+    if (!foundApp) {
+      const cust = await Customer.findOne(
+        { 'applications.id': cleanId },
+        { 'applications.$': 1, name: 1, phone: 1, profile: 1 }
+      ).maxTimeMS(5000).lean();
+
+      if (cust && Array.isArray(cust.applications) && cust.applications[0]) {
+        foundApp = cust.applications[0];
+        applicantName = cust.profile?.name || cust.name || 'Applicant';
+        applicantPhone = cust.phone || '';
+      }
+    }
+
+    if (!foundApp) {
+      return res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'இந்த விண்ணப்ப எண் கண்டறியப்படவில்லை. தயவுசெய்து சரியான விண்ணப்ப எண்ணை உள்ளிடவும். (Application ID not found)'
+      });
+    }
+
+    const stageNum = Number(foundApp.currentStage || foundApp.stage || (foundApp.status === 'Completed' ? 6 : 1));
+    const stageInfo = getTrackingStageInfo(stageNum);
+    const dateStr = foundApp.submittedDate || foundApp.date || foundApp.appliedDate || (foundApp.createdAt ? new Date(foundApp.createdAt).toLocaleDateString('en-IN') : 'Recently');
+    const serviceName = foundApp.service || foundApp.serviceName || foundApp.name || 'e-Sevai Service';
+
+    return res.json({
+      success: true,
+      type: 'APPLICATION',
+      id: cleanId,
+      service: serviceName,
+      currentStage: stageNum,
+      stage: stageNum,
+      statusLabel: foundApp.statusLabel || stageInfo.statusLabel,
+      statusColor: foundApp.statusColor || stageInfo.statusColor,
+      remarks: foundApp.remarks || stageInfo.remarks,
+      submittedDate: dateStr,
+      applicantName: maskApplicantName(applicantName),
+      phone: maskPhoneNumber(applicantPhone),
+      timeline: sanitizeTrackingTimeline(stageNum, dateStr)
+    });
+  } catch (err) {
+    console.error('Public app tracking error:', err);
+    res.status(500).json({ success: false, error: 'Failed to retrieve application status.' });
+  }
+});
+
+// 2. Verified Mobile Tracking (Requires Tracking Token or Active Customer Session)
+app.get('/api/public/track/mobile/:phone', publicTrackerLimiter, async (req, res) => {
+  try {
+    const rawPhone = req.params.phone;
+    const cleanPhone = cleanPhoneDigits(rawPhone);
+    if (!cleanPhone || cleanPhone.length !== 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_PHONE',
+        message: 'தயவுசெய்து சரியான 10-இலக்க மொபைல் எண்ணை உள்ளிடவும்.'
+      });
+    }
+
+    // Security Verification: Must present a valid tracking token OR active customer/admin session
+    const trackingToken = req.headers['x-tracking-token'];
+    let isTrackingAuthorized = false;
+
+    if (trackingToken) {
+      const verifiedTokenPhone = verifyTrackingToken(trackingToken);
+      if (verifiedTokenPhone && verifiedTokenPhone === cleanPhone) {
+        isTrackingAuthorized = true;
+      }
+    }
+
+    if (!isTrackingAuthorized) {
+      const auth = resolveAuthContext(req);
+      if (auth.isAdmin || (auth.customerPhone && auth.customerPhone === cleanPhone)) {
+        isTrackingAuthorized = true;
+      }
+    }
+
+    if (!isTrackingAuthorized) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'பாதுகாப்பு கருதி உங்கள் மொபைல் எண்ணை OTP மூலம் சரிபார்க்கவும். (OTP verification required to view applications for this mobile number)'
+      });
+    }
+
+    // Fetch from Customer collection (strictly omitting all sensitive PII)
+    const phoneFilter = { $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }] };
+    const cust = await Customer.findOne(phoneFilter, { passwordHash: 0, passwordSalt: 0, activeSessionTokens: 0, 'documents.data': 0, 'documents.url': 0, 'profile.aadhaarNo': 0, 'profile.aadhar': 0 }).maxTimeMS(5000).lean();
+
+    // Fetch standalone applications
+    const standaloneApps = await Application.find(phoneFilter).sort({ updatedAt: -1 }).maxTimeMS(5000).lean();
+
+    // Fetch active tokens
+    const tokens = await Token.find(phoneFilter).sort({ createdAt: -1 }).maxTimeMS(5000).lean();
+
+    const custName = cust?.profile?.name || cust?.name || 'வாடிக்கையாளர்';
+    const embeddedApps = Array.isArray(cust?.applications) ? cust.applications : [];
+
+    // Merge & Deduplicate Applications
+    const appsMap = new Map();
+
+    // 1. Add standalone applications
+    standaloneApps.forEach((app) => {
+      if (!app || !app.id) return;
+      const targetId = String(app.id).trim().toUpperCase();
+      const stageNum = Number(app.currentStage || app.stage || 1);
+      const stageInfo = getTrackingStageInfo(stageNum);
+      const dateStr = app.submittedDate || app.date || (app.createdAt ? new Date(app.createdAt).toLocaleDateString('en-IN') : 'Recently');
+      const serviceName = app.service || app.serviceName || app.name || 'General e-Sevai Service';
+
+      appsMap.set(targetId, {
+        id: targetId,
+        service: serviceName,
+        currentStage: stageNum,
+        stage: stageNum,
+        statusLabel: app.statusLabel || stageInfo.statusLabel,
+        statusColor: app.statusColor || stageInfo.statusColor,
+        remarks: app.remarks || stageInfo.remarks,
+        submittedDate: dateStr,
+        applicantName: app.applicantName || custName,
+        phone: cleanPhone,
+        timeline: sanitizeTrackingTimeline(stageNum, dateStr)
+      });
+    });
+
+    // 2. Add embedded applications (merge or fill missing)
+    embeddedApps.forEach((app) => {
+      if (!app) return;
+      const targetId = String(app.id || app.ackNo || '').trim().toUpperCase();
+      if (!targetId) return;
+
+      const existing = appsMap.get(targetId);
+      const stageNum = Number(existing?.currentStage || existing?.stage || app.currentStage || app.stage || (app.status === 'Completed' ? 6 : 1));
+      const stageInfo = getTrackingStageInfo(stageNum);
+      const dateStr = existing?.submittedDate || app.submittedDate || app.date || 'Recently';
+      const serviceName = existing?.service || app.service || app.name || 'General e-Sevai Service';
+
+      appsMap.set(targetId, {
+        id: targetId,
+        service: serviceName,
+        currentStage: stageNum,
+        stage: stageNum,
+        statusLabel: existing?.statusLabel || app.statusLabel || stageInfo.statusLabel,
+        statusColor: existing?.statusColor || app.statusColor || stageInfo.statusColor,
+        remarks: existing?.remarks || app.remarks || stageInfo.remarks,
+        submittedDate: dateStr,
+        applicantName: existing?.applicantName || custName,
+        phone: cleanPhone,
+        timeline: sanitizeTrackingTimeline(stageNum, dateStr)
+      });
+    });
+
+    // Format Tokens
+    const sanitizedTokens = (tokens || []).map((t) => ({
+      id: t.id || t.tokenNo || 'TOK-101',
+      tokenNo: t.tokenNo || t.tokenId || t.id,
+      customerName: t.customerName || custName,
+      phone: cleanPhone,
+      service: t.service || 'Counter Visit',
+      date: t.date || 'Today',
+      slot: t.slot || 'Standard Counter',
+      status: t.status || 'CHECKED-IN / VERIFIED',
+      paymentStatus: t.paymentStatus || 'VERIFIED'
+    }));
+
+    const finalAppsList = Array.from(appsMap.values());
+
+    return res.json({
+      success: true,
+      type: 'MOBILE_TRACK',
+      phone: cleanPhone,
+      applicantName: custName,
+      applications: finalAppsList,
+      tokens: sanitizedTokens
+    });
+  } catch (err) {
+    console.error('Public mobile tracking error:', err);
+    res.status(500).json({ success: false, error: 'Failed to retrieve tracking data.' });
   }
 });
 

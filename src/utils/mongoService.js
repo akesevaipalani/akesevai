@@ -165,6 +165,24 @@ export const deleteApplicationMongo = async (id) => {
   return Boolean(res?.success);
 };
 
+// --- PUBLIC STATUS TRACKING APIS ---
+
+export const fetchPublicAppStatusMongo = async (appId) => {
+  const cleanId = String(appId || '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  if (!cleanId) return null;
+  return await fetchJson(`${API_BASE_URL}/public/track/application/${encodeURIComponent(cleanId)}`);
+};
+
+export const fetchTrackByMobileMongo = async (phone, trackingToken = '') => {
+  const cleanPhone = cleanDigits(phone);
+  if (!cleanPhone) return null;
+  const headers = {};
+  if (trackingToken) {
+    headers['x-tracking-token'] = trackingToken;
+  }
+  return await fetchJson(`${API_BASE_URL}/public/track/mobile/${cleanPhone}`, { headers });
+};
+
 // --- EXPIRY DOCUMENTS ---
 
 export const saveExpiryDocumentMongo = async (docData) => {
