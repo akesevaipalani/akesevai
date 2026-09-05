@@ -2715,6 +2715,7 @@ const getServiceVisual = (group, title = '') => {
     const [editDob, setEditDob] = useState('');
     const [editAadhaar, setEditAadhaar] = useState('');
     const [activeDocPreview, setActiveDocPreview] = useState(null);
+    const [smartDeskTargetTab, setSmartDeskTargetTab] = useState('all');
 
     // Visitor Logs & New Customer Registration state
     const [visitorLogs, setVisitorLogs] = useState([]);
@@ -2865,18 +2866,21 @@ const getServiceVisual = (group, title = '') => {
       const docs = Array.isArray(cust.documents) ? cust.documents : [];
 
       apps.forEach((app) => {
-        if (!app || !app.id) return;
-        const storeRecord = applicationRecords && (applicationRecords[app.id] || applicationRecords[app.ackNo]);
+        if (!app) return;
+        const targetId = String(app.id || app.ackNo || app.applicationId || '').trim();
+        if (!targetId) return;
+
+        const storeRecord = applicationRecords && (applicationRecords[targetId] || applicationRecords[app.id] || applicationRecords[app.ackNo]);
         const stageNum = storeRecord?.currentStage || app.currentStage || app.stage || (app.status === 'Completed' ? 6 : 3);
         const isCompleted = stageNum === 6;
 
         customerAppsList.push({
-          id: app.id,
-          ackNo: app.id,
+          id: targetId,
+          ackNo: targetId,
           applicantName: custName,
           phone: custPhone,
-          service: app.name || 'e-Sevai Application',
-          submittedDate: app.date || new Date().toLocaleDateString('en-IN'),
+          service: app.name || app.service || 'e-Sevai Application',
+          submittedDate: app.date || app.submittedDate || new Date().toLocaleDateString('en-IN'),
           currentStage: stageNum,
           statusLabel: storeRecord?.statusLabel || app.statusLabel || (isCompleted ? 'Approved & Completed (சான்றிதழ் தயாராக உள்ளது)' : (app.status || 'Submitted & In Progress')),
           statusColor: storeRecord?.statusColor || app.statusColor || (isCompleted ? '#16a34a' : '#0052cc'),
@@ -2895,39 +2899,86 @@ const getServiceVisual = (group, title = '') => {
     });
 
     Object.values(applicationRecords || {}).forEach((app) => {
-      if (app && (app.id || app.ackNo)) {
-        const key = app.id || app.ackNo;
-        allAppsMap[key] = {
-          ...(allAppsMap[key] || {}),
-          ...app
-        };
+      if (app) {
+        const key = String(app.id || app.ackNo || app.applicationId || '').trim();
+        if (key) {
+          allAppsMap[key] = {
+            id: key,
+            ackNo: key,
+            applicantName: app.applicantName || allAppsMap[key]?.applicantName || 'Applicant',
+            phone: app.phone || allAppsMap[key]?.phone || '',
+            service: app.service || app.name || allAppsMap[key]?.service || 'e-Sevai Application',
+            submittedDate: app.submittedDate || app.date || allAppsMap[key]?.submittedDate || 'Recently',
+            currentStage: app.currentStage || allAppsMap[key]?.currentStage || 1,
+            statusLabel: app.statusLabel || allAppsMap[key]?.statusLabel || 'In Progress',
+            statusColor: app.statusColor || allAppsMap[key]?.statusColor || '#0052cc',
+            documentsCount: app.documentsCount || allAppsMap[key]?.documentsCount || 0,
+            customerRef: allAppsMap[key]?.customerRef || null,
+            ...(allAppsMap[key] || {}),
+            ...app
+          };
+        }
       }
     });
 
     const delAppsSet = getDeletedAppsSet();
     const allAppsList = Object.values(allAppsMap).filter((app) => {
       if (!app) return false;
-      const appIdKey = String(app.id || app.ackNo || '').trim();
+      const appIdKey = String(app.id || app.ackNo || app.applicationId || '').trim();
       return appIdKey && !delAppsSet.has(appIdKey);
     });
 
     const totalApplications = allAppsList.length;
 
     const uniqueDocsCounterMap = new Map();
+    const deletedDocsSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-docs') || '[]'));
+
+    const isDocValidAndActive = (d) => {
+      if (!d) return false;
+      // Must have actual file payload or valid URL reference (skip empty checklist slots & placeholders)
+      const hasContent = Boolean(
+        d.url || d.data || d.storagePath || d.fileData || d.binaryId ||
+        (typeof d.dataUrl === 'string' && d.dataUrl.length > 50)
+      );
+      if (!hasContent) return false;
+
+      // Check deleted docs blacklist
+      const docPhone = String(d.customerPhone || d.phone || '').replace(/\D/g, '');
+      const docName = String(d.name || d.requirement || d.title || '');
+      const keys = [
+        String(d.id || ''),
+        String(d.url || ''),
+        String(d.storagePath || ''),
+        docName,
+        (docPhone && docName) ? `${docPhone}_${docName}` : ''
+      ];
+      if (keys.some(k => k && deletedDocsSet.has(k))) return false;
+
+      return true;
+    };
+
+    // 1. Cloud / Local verified uploaded documents
     (cloudExpiryDocs || []).forEach((d) => {
-      if (!d) return;
-      const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+      if (!isDocValidAndActive(d)) return;
+      const phoneNo = String(d.customerPhone || d.phone || '').replace(/\D/g, '');
+      if (phoneNo && deletedCustSet.has(phoneNo)) return;
+      const k = String(d.id || d.url || d.storagePath || `${phoneNo}_${d.name || d.requirement}`).trim();
       if (k) uniqueDocsCounterMap.set(k, d);
     });
+
+    // 2. Active Customer records documents
     customers.forEach((c) => {
       if (c && Array.isArray(c.documents)) {
+        const custPhone = String(c.phone || '').replace(/\D/g, '');
+        if (custPhone && deletedCustSet.has(custPhone)) return;
         c.documents.forEach((d) => {
-          if (!d) return;
-          const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+          if (!isDocValidAndActive(d)) return;
+          const k = String(d.id || d.url || d.storagePath || `${custPhone}_${d.name || d.requirement}`).trim();
           if (k) uniqueDocsCounterMap.set(k, d);
         });
       }
     });
+
     const totalDocuments = uniqueDocsCounterMap.size;
 
     const deletedTokensSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-tokens') || '[]'));
@@ -3388,7 +3439,14 @@ const getServiceVisual = (group, title = '') => {
 
           <div
             id="admin-stat-documents"
-            onClick={() => setAdminTab('smartdesk')}
+            onClick={() => {
+              setSmartDeskTargetTab('documents');
+              setAdminTab('smartdesk');
+              setTimeout(() => {
+                const el = document.getElementById('admin-smartdesk-documents-vault') || document.getElementById('admin-smartdesk-console');
+                el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }, 80);
+            }}
             style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
             title="Click to view Uploaded Documents in Smart Desk (ஆவணங்கள்)"
           >
@@ -3568,7 +3626,7 @@ const getServiceVisual = (group, title = '') => {
 
         {adminTab === 'smartdesk' && (
           <div style={{ marginTop: '10px' }}>
-            <AdminSevaiSmartDesk notify={notify} changeAdminPassword={changeAdminPassword} />
+            <AdminSevaiSmartDesk notify={notify} changeAdminPassword={changeAdminPassword} initialVaultTab={smartDeskTargetTab} />
           </div>
         )}
         {adminTab === 'notifications' && (
