@@ -11,16 +11,16 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'passport',
     categoryTitle: 'Passport & Identity Photos',
     categoryTitleTa: 'பாஸ்போர்ட் & அடையாளப் படங்கள்',
-    title: 'Passport Size Photo Maker Online (3.5x4.5 cm) – Free Photo Studio | AK e-Sevai',
-    titleTa: 'பாஸ்போர்ட் சைஸ் போட்டோ மேக்கர் ஆன்லைன் (3.5x4.5 cm) | AK e-Sevai',
-    description: 'Create official 3.5 x 4.5 cm (35 x 45 mm) passport size photos online. Generate 4x6 (8 copies) and A4 (30+ copies) printable sheets with borders, name & date stamps. Free & 100% private.',
-    descriptionTa: 'அரசு அங்கீகரிக்கப்பட்ட 3.5 x 4.5 cm பாஸ்போர்ட் சைஸ் போட்டோக்களை ஆன்லைனில் உருவாக்குங்கள். 4x6 (8 போட்டோ) மற்றும் A4 (30+ போட்டோ) அச்சிடும் தாள்கள், பார்டர் மற்றும் பெயர்/தேதி முத்திரையுடன் இலவசமாக தயார் செய்யுங்கள்.',
-    keywords: 'passport size photo maker, passport size photo online, passport size photo 35x45, passport photo 3.5 x 4.5 cm, passport size photo செய்ய, passport size photo online maker, passport sheet maker, akesevai passport photo',
+    title: 'Passport Size Photo Maker Online (3.5x4.5 cm) – Studio Quality | AK E-SEVAI Palani',
+    titleTa: 'பாஸ்போர்ட் சைஸ் போட்டோ மேக்கர் ஆன்லைன் (3.5x4.5 cm) | AK E-SEVAI பழனி',
+    description: 'Create official 3.5 x 4.5 cm (35 x 45 mm) passport size photos online. Generate 4x6 (8 copies) and A4 (32+ copies) printable sheets with borders, name & date stamps. Need physical photo prints in Palani? Visit AK E-SEVAI near Palani Bus Stand.',
+    descriptionTa: 'அரசு அங்கீகரிக்கப்பட்ட 3.5 x 4.5 cm பாஸ்போர்ட் சைஸ் போட்டோக்களை ஆன்லைனில் உருவாக்குங்கள். 4x6 (8 போட்டோ) மற்றும் A4 (32+ போட்டோ) அச்சிடும் தாள்கள், பார்டர் மற்றும் பெயர்/தேதி முத்திரையுடன் தயார் செய்யுங்கள். பழனியில் உடனே அச்சிட AK E-SEVAI மையத்திற்கு வரவும்.',
+    keywords: 'passport size photo maker, passport size photo online, passport size photo 35x45, passport photo 3.5 x 4.5 cm, passport size photo செய்ய, passport size photo online maker, passport sheet maker, akesevai passport photo, palani passport photo studio',
     mode: 'passport',
     icon: 'Camera',
     badge: 'Official 3.5 × 4.5 cm',
     badgeTa: 'அரசு 3.5 × 4.5 செ.மீ',
-    shortDesc: 'Create single passport photos or 4x6 / A4 printable multi-photo sheets with border and name stamp.',
+    shortDesc: 'Create single passport photos or 4x6 / A4 printable multi-photo sheets with border, name stamp, and instant print support.',
     shortDescTa: 'பாஸ்போர்ட் போட்டோ அல்லது 4x6 / A4 அச்சிடும் தாள்களை பார்டர் மற்றும் பெயர்/தேதியுடன் உருவாக்குங்கள்.',
     defaultTargetKb: 50,
     presetSizes: [
@@ -33,14 +33,20 @@ export const PHOTO_TOOLS_CATALOG = [
       {
         q: 'What is the standard passport size photo dimension in India?',
         qTa: 'இந்தியாவில் அதிகாரப்பூர்வ பாஸ்போர்ட் போட்டோவின் அளவு என்ன?',
-        a: 'The standard passport size photo dimension in India is 3.5 cm (width) x 4.5 cm (height) or 35 mm x 45 mm, corresponding to 413 x 531 pixels at 300 DPI.',
-        aTa: 'இந்தியாவில் வழக்கமான பாஸ்போர்ட் போட்டோவின் அளவு 3.5 செ.மீ (அகலம்) x 4.5 செ.மீ (உயரம்) அல்லது 35 மி.மீ x 45 மி.மீ (413 x 531 பிக்சல்கள், 300 DPI) ஆகும்.'
+        a: 'The standard passport size photo dimension in India is 3.5 cm (width) x 4.5 cm (height) or 35 mm x 45 mm, corresponding to 350 x 450 pixels (or 413 x 531 pixels at 300 DPI).',
+        aTa: 'இந்தியாவில் வழக்கமான பாஸ்போர்ட் போட்டோவின் அளவு 3.5 செ.மீ (அகலம்) x 4.5 செ.மீ (உயரம்) அல்லது 35 மி.மீ x 45 மி.மீ (350 x 450 பிக்சல்கள்) ஆகும்.'
       },
       {
         q: 'How many photos can I print on a 4x6 or A4 photo sheet?',
         qTa: '4x6 அல்லது A4 தாளில் எத்தனை பாஸ்போர்ட் போட்டோக்களை அச்சிடலாம்?',
-        a: 'Our tool automatically arranges 8 photos on a 4x6 inch (Maxi) sheet, and up to 32–36 photos on an A4 sheet with proper cutting guidelines and borders.',
+        a: 'Our tool automatically arranges 8 photos on a standard 4x6 inch sheet, and up to 32–36 photos on an A4 sheet with proper cutting guidelines and borders.',
         aTa: 'எங்கள் கருவி மூலம் 4x6 தாளில் 8 போட்டோக்களையும், A4 தாளில் 32 முதல் 36 போட்டோக்களையும் வெட்டுவதற்கான பார்டருடன் எளிதாக அச்சிடலாம்.'
+      },
+      {
+        q: 'Can I get physical photo printouts in Palani?',
+        qTa: 'பழனியில் நேரடியாக போட்டோ பிரிண்ட் அவுட் பெற முடியுமா?',
+        a: 'Yes! After creating your sheet, you can visit our physical centre at AK E-SEVAI, Mill Road (opposite Palani Bus Stand) for instant glossy photo printing on 200+ GSM paper.',
+        aTa: 'ஆம்! உங்கள் போட்டோ ஷீட்டை தயார் செய்த பிறகு, பழனி பஸ் ஸ்டாண்ட் எதிரில் உள்ள மில் ரோடு AK E-SEVAI மையத்தில் உடனே உயர்தர போட்டோ பேப்பரில் பிரிண்ட் அவுட் பெற்றுக்கொள்ளலாம்.'
       },
       {
         q: 'Is my photo uploaded to any external server?',
@@ -54,7 +60,61 @@ export const PHOTO_TOOLS_CATALOG = [
       { step: 2, title: 'Adjust & Position', titleTa: 'அளவை சரிசெய்யவும்', text: 'Zoom, center face, select paper type (Single / 4x6 / A4), and add border or name/date stamp.', textTa: 'முகத்தை மையப்படுத்தி, தாளின் வகையைத் தேர்வு செய்து, பெயர்/தேதி முத்திரை சேர்க்கவும்.' },
       { step: 3, title: 'Download & Print', titleTa: 'பதிவிறக்கி அச்சிடவும்', text: 'Click Download to save ultra-high resolution JPG ready for studio printing or online upload.', textTa: 'பதிவிறக்கு பட்டனை அழுத்தி உடனே ஸ்டுடியோவில் அச்சிடவோ இணையத்தில் சமர்ப்பிக்கவோ சேமிக்கவும்.' }
     ],
-    relatedTools: ['passport-photo-resize', 'photo-crop', 'photo-compress-50kb', 'photo-background-change', 'jpg-to-pdf']
+    relatedTools: ['signature-resize', 'passport-photo-resize', 'photo-crop', 'photo-compress-50kb', 'photo-background-change', 'jpg-to-pdf']
+  },
+
+  // 1B. SIGNATURE RESIZE & COMPRESSOR (GOVERNMENT EXAMS)
+  {
+    id: 'signature-resize',
+    path: '/tools/signature-resize',
+    category: 'crop-resize',
+    categoryTitle: 'Crop & Resize Tools',
+    categoryTitleTa: 'க்ராப் & ரீசைஸ் கருவிகள்',
+    title: 'Signature Resize & Compressor Online (Under 20 KB / 2:1 Ratio) | AK E-SEVAI Palani',
+    titleTa: 'கையொப்பம் ரீசைஸ் & கம்ப்ரஸர் ஆன்லைன் (20 KB-க்குள்) | AK E-SEVAI பழனி',
+    description: 'Crop, resize, and compress signature photos online to under 20 KB (200x100 px / 2:1 aspect ratio) for TNPSC, SSC, UPSC, IBPS, Police, and government exam applications. Free & 100% client-side privacy.',
+    descriptionTa: 'கையொப்பப் படத்தை 20 KB-க்குள் (200x100 பிக்சல் / 2:1 விகிதம்) துல்லியமாக க்ராப் செய்து சுருக்குங்கள். TNPSC, SSC, UPSC, காவலர் மற்றும் அரசுத் தேர்வு விண்ணப்பங்களுக்கு ஏற்றது. 100% இலவசம் & பிரைவேட்.',
+    keywords: 'signature resize, signature resize online, signature compress 20kb, crop signature online, tnpsc signature resize, signature resize செய்ய, ssc signature 20kb, akesevai signature tool',
+    mode: 'crop',
+    icon: 'PenTool',
+    badge: 'Govt Exam 2:1 Ratio (20 KB)',
+    badgeTa: 'அரசு தேர்வு 2:1 அளவு (20 KB)',
+    shortDesc: 'Crop & compress signatures to exact 2:1 ratio (200x100 px) under 20 KB for TNPSC, SSC, and govt exams.',
+    shortDescTa: 'கையொப்பங்களை 2:1 விகிதத்தில் 20 KB-க்குள் சுருக்கி அரசுத் தேர்வுகளுக்குத் தயார் செய்யுங்கள்.',
+    defaultTargetKb: 20,
+    defaultAspect: 2 / 1,
+    presetSizes: [
+      { label: 'Government Exam Signature (200 × 100 px / 2:1 ratio)', w: 200, h: 100, targetKb: 20, name: 'Signature 2:1', aspect: 2 },
+      { label: 'TNPSC Signature (200 × 100 px, 10–20 KB)', w: 200, h: 100, targetKb: 20, name: 'TNPSC Sig', aspect: 2 },
+      { label: 'SSC Signature (140 × 60 px, 10–20 KB)', w: 140, h: 60, targetKb: 20, name: 'SSC Sig', aspect: 2.33 },
+      { label: 'Bank / IBPS Signature (140 × 60 px, 10–20 KB)', w: 140, h: 60, targetKb: 20, name: 'IBPS Sig', aspect: 2.33 }
+    ],
+    faqs: [
+      {
+        q: 'What is the standard signature size for government online applications?',
+        qTa: 'அரசு ஆன்லைன் விண்ணப்பங்களுக்கான வழக்கமான கையொப்ப அளவு என்ன?',
+        a: 'Most government portals including TNPSC and SSC require a signature image with a 2:1 or 2.3:1 aspect ratio (typically 200 x 100 pixels or 140 x 60 pixels) and a file size strictly between 10 KB and 20 KB.',
+        aTa: 'TNPSC மற்றும் SSC உள்ளிட்ட பெரும்பாலான அரசு இணையதளங்களில் கையொப்ப படம் 2:1 அல்லது 2.3:1 விகிதத்தில் (200x100 பிக்சல் அல்லது 140x60 பிக்சல்) மற்றும் 10 KB முதல் 20 KB அளவுக்குள் இருக்க வேண்டும்.'
+      },
+      {
+        q: 'How can I get a clear signature image on plain paper?',
+        qTa: 'வெள்ளை காகிதத்தில் தெளிவான கையொப்ப படம் எடுப்பது எப்படி?',
+        a: 'Sign with a dark blue or black ballpoint/gel pen on unruled plain white paper. Take a photo in bright daylight without shadows, then upload it here to crop and compress.',
+        aTa: 'கோடிடாத வெள்ளை காகிதத்தில் கருப்பு அல்லது நீல பேனாவால் கையொப்பமிடுங்கள். நிழல் விழாதவாறு வெளிச்சத்தில் படம் எடுத்து இங்கு பதிவேற்றி எளிதாக க்ராப் செய்யுங்கள்.'
+      },
+      {
+        q: 'Is this signature tool safe and private?',
+        qTa: 'இந்த கையொப்ப கருவி பாதுகாப்பானதா?',
+        a: 'Yes, 100%. Your signature is cropped and compressed strictly inside your browser using HTML5 Canvas. It is never transmitted to any external server or saved anywhere.',
+        aTa: 'முற்றிலும் பாதுகாப்பானது! உங்கள் கையொப்பம் உங்கள் பிரவுசரிலேயே HTML5 Canvas மூலம் சுருக்கப்படுகிறது. எந்த வெளி சர்வர்க்கும் அனுப்பப்படாது.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Upload Signature Photo', titleTa: 'கையொப்பப் படத்தை பதிவேற்றவும்', text: 'Select your signature photo taken on plain white paper.', textTa: 'வெள்ளை தாளில் கையொப்பமிட்டு எடுத்த படத்தை பதிவேற்றவும்.' },
+      { step: 2, title: 'Crop to 2:1 Box', titleTa: '2:1 பெட்டிக்குள் சரிசெய்யவும்', text: 'Adjust the rectangular crop handles to frame your signature neatly.', textTa: 'கையொப்பம் தெளிவாக தெரியும்படி செவ்வக பெட்டியை நகர்த்தி சரிசெய்யவும்.' },
+      { step: 3, title: 'Download Under 20 KB', titleTa: '20 KB-க்குள் பதிவிறக்கவும்', text: 'Click Download to instantly get the optimized JPG under 20 KB ready for portal upload.', textTa: 'பதிவிறக்கு பட்டனை அழுத்தி 20 KB-க்குள் தயாரான JPG கோப்பை உடனே சேமிக்கவும்.' }
+    ],
+    relatedTools: ['passport-size-photo', 'photo-compress-20kb', 'photo-crop', 'passport-photo-resize', 'jpg-to-pdf']
   },
 
   // 2. PASSPORT PHOTO RESIZE
@@ -182,32 +242,38 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'compression',
     categoryTitle: 'Compression Tools',
     categoryTitleTa: 'கம்ப்ரஷன் கருவிகள்',
-    title: 'Compress Photo to 20 KB Online – Signature & Photo Reducer | AK e-Sevai',
-    titleTa: 'போட்டோவை 20 KB-க்கு குறைக்க – ஆன்லைன் இமேஜ் கம்ப்ரஸர் | AK e-Sevai',
-    description: 'Compress photos and signatures to exact 20 KB or under 20 KB online for online exam forms, TNPSC, UPSC, SSC, IBPS and government job portals.',
-    descriptionTa: 'கையொப்பம் மற்றும் புகைப்படங்களை சரியாக 20 KB அல்லது 20 KB-க்குள் இருக்கும்படி ஆன்லைனில் சுருக்குங்கள். TNPSC, SSC, வங்கித் தேர்வு விண்ணப்பங்களுக்கு ஏற்றது.',
-    keywords: 'compress photo to 20kb, photo compress to 20 kb, signature compress 20kb, reduce photo size to 20kb, photo 20 KB க்கு குறைக்க, signature resize 20kb',
+    title: 'Compress Photo to 20 KB Online – Free Signature & Photo Reducer | AK E-SEVAI Palani',
+    titleTa: 'போட்டோவை 20 KB-க்கு குறைக்க – ஆன்லைன் இமேஜ் கம்ப்ரஸர் | AK E-SEVAI பழனி',
+    description: 'Compress signature and photo files to under 20 KB (10–20 KB) online for online job applications, entrance exams, and portal uploads. Free, fast & 100% private on-device compression.',
+    descriptionTa: 'கையொப்பம் மற்றும் புகைப்படங்களை 20 KB-க்குள் (10–20 KB) இருக்கும்படி ஆன்லைனில் சுருக்குங்கள். அரசுத் தேர்வுகள் மற்றும் ஆன்லைன் விண்ணப்பங்களுக்கு ஏற்றது. 100% இலவசம் & பிரைவேட்.',
+    keywords: 'compress photo to 20kb, photo compress to 20 kb, signature compress 20kb, reduce photo size to 20kb, photo 20 KB க்கு குறைக்க, signature resize 20kb, akesevai compress 20kb',
     mode: 'compress-target',
     icon: 'FileDigit',
     badge: 'Target: ≤ 20 KB',
     badgeTa: 'இலக்கு: ≤ 20 KB',
-    shortDesc: 'Specialized compressor targeting exactly under 20 KB for signatures and exam thumbnails.',
-    shortDescTa: 'அரசு தேர்வு கையொப்பம் மற்றும் சிறு புகைப்படங்களை 20 KB-க்குள் சரியாக சுருக்க உதவும் கருவி.',
+    shortDesc: 'Specialized compressor targeting under 20 KB for signatures and small photo uploads.',
+    shortDescTa: 'விண்ணப்ப கையொப்பம் மற்றும் சிறு புகைப்படங்களை 20 KB-க்குள் சரியாக சுருக்கும் சிறப்புக் கருவி.',
     defaultTargetKb: 20,
     faqs: [
       {
-        q: 'Why do exams require signatures under 20 KB?',
-        qTa: 'அரசுத் தேர்வுகளில் கையொப்பத்தை 20 KB-க்குள் ஏன் கேட்கிறார்கள்?',
-        a: 'Government servers restrict signature file sizes to 10 KB–20 KB to ensure fast hall ticket generation. Check the official exam notification before uploading.',
-        aTa: 'ஹால் டிக்கெட் தயாரிப்பை விரைவுபடுத்த அரசு இணையதளங்கள் கையொப்பத்தை 10 KB முதல் 20 KB வரை மட்டுமே ஏற்கின்றன. விண்ணப்பிக்கும் முன் அதிகாரப்பூர்வ அறிவிப்பை சரிபார்க்கவும்.'
+        q: 'When should I compress photos or signatures to under 20 KB?',
+        qTa: 'புகைப்படம் அல்லது கையொப்பத்தை 20 KB-க்குள் எப்போது சுருக்க வேண்டும்?',
+        a: 'Many online application forms, job portals, and entrance exams specify a 20 KB maximum upload limit for signatures or small photos. Always check your specific application notification for exact requirements.',
+        aTa: 'பல ஆன்லைன் விண்ணப்பங்கள் மற்றும் தேர்வு இணையதளங்கள் கையொப்பம் அல்லது சிறிய புகைப்படங்களுக்கு 20 KB அதிகபட்ச வரம்பை நிர்ணயிக்கின்றன. விண்ணப்பிக்கும் முன் அதிகாரப்பூர்வ வழிகாட்டுதலை சரிபார்க்கவும்.'
+      },
+      {
+        q: 'Is my uploaded photo or signature saved on any server?',
+        qTa: 'எனது படம் அல்லது கையொப்பம் சர்வரில் சேமிக்கப்படுகிறதா?',
+        a: 'No. All image processing and compression runs 100% locally inside your web browser via HTML5 Canvas. Your personal files never leave your device.',
+        aTa: 'இல்லை. அனைத்து கம்ப்ரஷனும் உங்கள் பிரவுசரிலேயே HTML5 Canvas மூலம் நடைபெறுகிறது. உங்கள் தனிப்பட்ட கோப்புகள் உங்கள் சாதனத்தை விட்டு வெளியேறாது.'
       }
     ],
     howTo: [
-      { step: 1, title: 'Upload Signature / Photo', titleTa: 'கையொப்பம் / போட்டோவை பதிவேற்றவும்', text: 'Upload your photo or cropped signature image.', textTa: 'உங்கள் கையொப்பம் அல்லது புகைப்படத்தை பதிவேற்றவும்.' },
-      { step: 2, title: 'Auto 20 KB Optimize', titleTa: 'தானாக 20 KB-க்கு மாறும்', text: 'Our engine automatically compresses the image strictly under 20 KB.', textTa: 'எங்கள் கருவி தானாகவே படத்தை 20 KB வரம்பிற்குள் கொண்டு வரும்.' },
-      { step: 3, title: 'Instant Download', titleTa: 'உடனடி பதிவிறக்கம்', text: 'Save your optimized file ready for portal upload.', textTa: 'விண்ணப்பத்தில் பதிவேற்ற தயாரான படத்தை சேமிக்கவும்.' }
+      { step: 1, title: 'Upload Signature / Photo', titleTa: 'கையொப்பம் / போட்டோவை பதிவேற்றவும்', text: 'Select your photo or cropped signature image.', textTa: 'உங்கள் கையொப்பம் அல்லது புகைப்படத்தை பதிவேற்றவும்.' },
+      { step: 2, title: 'Auto 20 KB Optimization', titleTa: '20 KB-க்குள் சுருக்குதல்', text: 'Engine automatically balances quality to ensure file size is strictly under 20 KB.', textTa: 'எங்கள் கருவி தானாகவே தெளிவு மாறாமல் 20 KB-க்குள் கோப்பை சுருக்கும்.' },
+      { step: 3, title: 'Instant Download', titleTa: 'உடனடி பதிவிறக்கம்', text: 'Download the compressed file ready for portal upload.', textTa: 'விண்ணப்பத்தில் பதிவேற்ற தயாரான படத்தை சேமிக்கவும்.' }
     ],
-    relatedTools: ['photo-compress', 'photo-compress-50kb', 'photo-compress-100kb', 'photo-crop', 'photo-to-jpg']
+    relatedTools: ['signature-resize', 'photo-compress-50kb', 'photo-compress-100kb', 'photo-crop', 'image-to-pdf']
   },
 
   // 6. PHOTO COMPRESS 50KB
@@ -217,32 +283,38 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'compression',
     categoryTitle: 'Compression Tools',
     categoryTitleTa: 'கம்ப்ரஷன் கருவிகள்',
-    title: 'Compress Photo to 50 KB Online – Free Photo Size Reducer | AK e-Sevai',
-    titleTa: 'போட்டோவை 50 KB-க்கு குறைக்க – பாஸ்போர்ட் போட்டோ கம்ப்ரஸர் | AK e-Sevai',
-    description: 'Compress JPG and PNG photos to under 50 KB online. Perfect for TNPSC, SSC, Railway RRB, NEET, JEE, CTET and Tamil Nadu e-Sevai online applications.',
-    descriptionTa: 'புகைப்படங்களை சரியாக 50 KB-க்குள் இருக்கும்படி ஆன்லைனில் கம்ப்ரஸ் செய்யுங்கள். TNPSC, SSC, ரயில்வே, NEET மற்றும் கல்லூரி சேர்க்கை விண்ணப்பங்களுக்கு ஏற்றது.',
-    keywords: 'compress photo to 50kb, reduce photo to 50kb, image compressor 50kb, photo 50 kb size online, photo 50 KB க்கு குறைக்க, tnpsc photo compress 50kb',
+    title: 'Compress Photo to 50 KB Online – Passport Photo Reducer | AK E-SEVAI Palani',
+    titleTa: 'போட்டோவை 50 KB-க்கு குறைக்க – பாஸ்போர்ட் போட்டோ கம்ப்ரஸர் | AK E-SEVAI பழனி',
+    description: 'Compress passport photos to under 50 KB online when application forms specify a 50 KB file size limit. Keeps facial features sharp with zero server upload.',
+    descriptionTa: 'விண்ணப்ப படிவங்கள் 50 KB வரம்பைக் கோரும் போது புகைப்படங்களை 50 KB-க்குள் தரமாக சுருக்குங்கள். முகத்தின் தெளிவு மாறாமல் பிரவுசரிலேயே பாதுகாப்பாக நடைபெறுகிறது.',
+    keywords: 'compress photo to 50kb, reduce photo to 50kb, image compressor 50kb, photo 50 kb size online, photo 50 KB க்கு குறைக்க, passport photo compress 50kb',
     mode: 'compress-target',
     icon: 'FileCheck',
     badge: 'Target: ≤ 50 KB',
     badgeTa: 'இலக்கு: ≤ 50 KB',
-    shortDesc: 'Auto-compress passport photos under 50 KB for TNPSC, SSC, and TN e-Sevai portals.',
-    shortDescTa: 'TNPSC, SSC மற்றும் அரசு சான்றிதழ் விண்ணப்பங்களுக்கு போட்டோவை 50 KB-க்குள் மாற்றவும்.',
+    shortDesc: 'Auto-compress passport photos under 50 KB with crisp facial clarity.',
+    shortDescTa: 'பாஸ்போர்ட் புகைப்படங்களை முகம் தெளிவாக இருக்கும்படி 50 KB-க்குள் விரைவாக சுருக்கவும்.',
     defaultTargetKb: 50,
     faqs: [
       {
-        q: 'Is 50 KB the standard limit for TNPSC Group 4 and SSC exams?',
-        qTa: 'TNPSC குரூப் 4 மற்றும் SSC தேர்வுகளுக்கு 50 KB போதுமானதா?',
-        a: 'Yes, most TNPSC and SSC online applications require applicant photos between 20 KB and 50 KB. Check the current official notification before uploading.',
-        aTa: 'ஆம், பெரும்பாலான TNPSC மற்றும் SSC தேர்வுகளில் போட்டோ 20 KB முதல் 50 KB வரை இருக்க வேண்டும். விண்ணப்பிக்கும் முன் அதிகாரப்பூர்வ அறிவிப்பை சரிபார்க்கவும்.'
+        q: 'Why do application portals specify a 50 KB limit for passport photos?',
+        qTa: 'விண்ணப்பங்களில் பாஸ்போர்ட் போட்டோவிற்கு 50 KB வரம்பு ஏன் கேட்கப்படுகிறது?',
+        a: 'Online portals often set a 50 KB ceiling to balance clear facial identification with fast upload speeds and efficient server storage. Always consult the official notification for exact form requirements.',
+        aTa: 'இணையதளங்கள் வேகமான பரிசீலனை மற்றும் முகத் தெளிவிற்காக 50 KB வரம்பை வைக்கின்றன. விண்ணப்பிக்கும் முன் உங்கள் படிவத்தின் வழிகாட்டுதலை சரிபார்க்கவும்.'
+      },
+      {
+        q: 'Will facial clarity remain sharp after compressing to 50 KB?',
+        qTa: '50 KB-க்குள் சுருக்கும் போது முகம் தெளிவாக இருக்குமா?',
+        a: 'Yes. Our smart client-side algorithm optimizes file binary data while preserving facial features and edge sharpness.',
+        aTa: 'ஆம். எங்கள் கருவி புகைப்படத்தின் தரத்தை தக்கவைத்து அளவை மட்டுமே 50 KB-க்குள் குறைக்கிறது.'
       }
     ],
     howTo: [
-      { step: 1, title: 'Upload Photo', titleTa: 'புகைப்படத்தை பதிவேற்றவும்', text: 'Select your passport photo.', textTa: 'உங்கள் பாஸ்போர்ட் படத்தை தேர்ந்தெடுக்கவும்.' },
-      { step: 2, title: 'Smart 50 KB Fit', titleTa: '50 KB வரம்பிற்குள் சுருக்குதல்', text: 'Engine balances sharpness and brings size under 50 KB.', textTa: 'தெளிவு மாறாமல் கோப்பு அளவு 50 KB-க்குள் சுருக்கப்படுகிறது.' },
-      { step: 3, title: 'Download & Upload', titleTa: 'பதிவிறக்கி பதிவேற்றவும்', text: 'Download the verified image and upload to the exam portal.', textTa: 'பதிவிறக்கம் செய்து தேர்வு இணையதளத்தில் பதிவேற்றவும்.' }
+      { step: 1, title: 'Upload Photo', titleTa: 'புகைப்படத்தை பதிவேற்றவும்', text: 'Select your passport photo from your mobile or PC.', textTa: 'உங்கள் பாஸ்போர்ட் படத்தை தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Smart 50 KB Compression', titleTa: '50 KB வரம்பிற்குள் சுருக்குதல்', text: 'Engine automatically reduces file size under 50 KB while preserving sharpness.', textTa: 'தெளிவு மாறாமல் கோப்பு அளவு 50 KB-க்குள் சுருக்கப்படுகிறது.' },
+      { step: 3, title: 'Download & Apply', titleTa: 'பதிவிறக்கி பதிவேற்றவும்', text: 'Download the verified image and upload to your application portal.', textTa: 'பதிவிறக்கம் செய்து தேர்வு இணையதளத்தில் பதிவேற்றவும்.' }
     ],
-    relatedTools: ['passport-size-photo', 'photo-compress', 'photo-compress-20kb', 'photo-compress-100kb', 'photo-to-jpg']
+    relatedTools: ['passport-size-photo', 'photo-compress-20kb', 'photo-compress-100kb', 'photo-crop', 'image-to-pdf']
   },
 
   // 7. PHOTO COMPRESS 100KB
@@ -252,32 +324,38 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'compression',
     categoryTitle: 'Compression Tools',
     categoryTitleTa: 'கம்ப்ரஷன் கருவிகள்',
-    title: 'Compress Photo to 100 KB Online – Free Image Compressor | AK e-Sevai',
-    titleTa: 'போட்டோவை 100 KB-க்கு குறைக்க – இலவச இமேஜ் கம்ப்ரஸர் | AK e-Sevai',
-    description: 'Compress JPG, PNG and WEBP photos to 100 KB online. Resize, compress and download high quality photos for government certificate and e-Sevai portals.',
-    descriptionTa: 'JPG, PNG மற்றும் WEBP புகைப்படங்களை 100 KB அளவிற்கு சுருக்கி பதிவிறக்கம் செய்யுங்கள். அரசு இ-சேவை சான்றிதழ்கள் மற்றும் அடையாள அட்டை பதிவேற்றங்களுக்கு ஏற்றது.',
+    title: 'Compress Photo to 100 KB Online – Document & Photo Compressor | AK E-SEVAI Palani',
+    titleTa: 'போட்டோவை 100 KB-க்கு குறைக்க – ஆவண & இமேஜ் கம்ப்ரஸர் | AK E-SEVAI பழனி',
+    description: 'Compress scanned documents, certificates, and photos to under 100 KB online. Reduce file size quickly while keeping text legible for online form attachments.',
+    descriptionTa: 'சான்றிதழ்கள், ஸ்கேன் செய்த ஆவணங்கள் மற்றும் புகைப்படங்களை 100 KB-க்குள் சுருக்குங்கள். எழுத்துக்கள் தெளிவாக இருக்கும்படி ஆன்லைன் விண்ணப்பங்களுக்கு ஏற்றவாறு மாற்றவும்.',
     keywords: 'compress photo to 100kb, compress image to 100kb, photo compressor under 100kb, reduce photo size under 100kb, photo 100 KB க்கு குறைக்க, image size 100kb',
     mode: 'compress-target',
     icon: 'FileSpreadsheet',
     badge: 'Target: ≤ 100 KB',
     badgeTa: 'இலக்கு: ≤ 100 KB',
-    shortDesc: 'Compress photos & scanned document images strictly under 100 KB for e-Sevai document vaults.',
-    shortDescTa: 'இ-சேவை ஆவண பெட்டகத்திற்காக படங்களை 100 KB-க்குள் சரியாக சுருக்கும் சிறப்புக் கருவி.',
+    shortDesc: 'Compress photos & scanned document images strictly under 100 KB for form attachments.',
+    shortDescTa: 'விண்ணப்ப ஆவண இணைப்புகளுக்காக படங்களை 100 KB-க்குள் சரியாக சுருக்கும் சிறப்புக் கருவி.',
     defaultTargetKb: 100,
     faqs: [
       {
-        q: 'Why does AK e-Sevai vault require documents under 100 KB?',
-        qTa: 'AK e-Sevai ஆவணப் பெட்டகத்தில் 100 KB வரம்பு ஏன் உள்ளது?',
-        a: 'The Tamil Nadu e-District portal sets a strict 100 KB limit for certificate and revenue attachments (Aadhaar, Ration Card, Salary Certificate). Keeping files under 100 KB ensures 100% upload success.',
-        aTa: 'தமிழ்நாடு அரசு இ-மாவட்ட இணையதளம் சான்றிதழ் இணைப்புகளுக்கு 100 KB வரம்பை விதித்துள்ளது. இதனால் 100 KB-க்குள் வைப்பது தடையின்றி பதிவேற்ற உதவுகிறது.'
+        q: 'When should I compress documents or photos to under 100 KB?',
+        qTa: 'ஆவணங்கள் அல்லது படங்களை 100 KB-க்குள் எப்போது சுருக்க வேண்டும்?',
+        a: 'Use this tool when an online portal or form specifies a 100 KB file upload ceiling for supporting certificates, ID cards, or document attachments.',
+        aTa: 'சான்றிதழ்கள், அடையாள அட்டைகள் அல்லது ஆவண இணைப்புகளுக்கு இணையதளங்கள் 100 KB வரம்பு நிர்ணயிக்கும் போது இந்த கருவியைப் பயன்படுத்தலாம்.'
+      },
+      {
+        q: 'Is this document compressor private and secure?',
+        qTa: 'இந்த ஆவண கம்ப்ரஸர் பாதுகாப்பானதா?',
+        a: 'Yes, 100%. All processing is performed locally on your device via HTML5 Canvas. Your sensitive certificates and documents are never uploaded to any remote server.',
+        aTa: 'முற்றிலும் பாதுகாப்பானது. உங்கள் சாதனத்திலேயே பிரவுசர் மூலம் ஆவணங்கள் சுருக்கப்படுகின்றன. எங்கும் பதிவேற்றப்படாது.'
       }
     ],
     howTo: [
-      { step: 1, title: 'Upload Scanned Photo/Doc', titleTa: 'ஆவணப் படத்தை பதிவேற்றவும்', text: 'Select your photo or scanned document image.', textTa: 'உங்கள் புகைப்படம் அல்லது ஸ்கேன் செய்த ஆவணத்தை தேர்ந்தெடுக்கவும்.' },
-      { step: 2, title: 'Auto 100 KB Reduction', titleTa: '100 KB-க்குள் குறைத்தல்', text: 'Optimizes file binary to stay between 70 KB and 98 KB.', textTa: '70 KB முதல் 98 KB-க்குள் மிகச் சரியாக அமுக்கப்படுகிறது.' },
-      { step: 3, title: 'Download File', titleTa: 'கோப்பை பதிவிறக்கவும்', text: 'Download the certificate-ready image.', textTa: 'இணையதளத்தில் பதிவேற்ற தயாரான படத்தை சேமிக்கவும்.' }
+      { step: 1, title: 'Upload Scanned Photo / Doc', titleTa: 'ஆவணப் படத்தை பதிவேற்றவும்', text: 'Select your photo or scanned document image.', textTa: 'உங்கள் புகைப்படம் அல்லது ஸ்கேன் செய்த ஆவணத்தை தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Auto 100 KB Reduction', titleTa: '100 KB-க்குள் குறைத்தல்', text: 'Optimizes file binary to stay strictly under 100 KB while keeping text readable.', textTa: 'எழுத்துக்கள் தெளிவாக இருக்கும்படி 100 KB-க்குள் கோப்பு அளவு சுருக்கப்படுகிறது.' },
+      { step: 3, title: 'Download File', titleTa: 'கோப்பை பதிவிறக்கவும்', text: 'Download the optimized image ready for submission.', textTa: 'இணையதளத்தில் பதிவேற்ற தயாரான படத்தை சேமிக்கவும்.' }
     ],
-    relatedTools: ['photo-compress', 'photo-compress-50kb', 'photo-compress-20kb', 'jpg-to-pdf', 'photo-to-jpg']
+    relatedTools: ['photo-compress-50kb', 'photo-compress-20kb', 'image-to-pdf', 'photo-crop', 'passport-size-photo']
   },
 
   // 8. PHOTO RESIZER
@@ -614,32 +692,38 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'pdf',
     categoryTitle: 'PDF & Document Tools',
     categoryTitleTa: 'PDF & ஆவணக் கருவிகள்',
-    title: 'Image to PDF Converter Online – Merge Multiple Photos into PDF | AK e-Sevai',
-    titleTa: 'இமேஜ் to PDF கன்வெர்ட்டர் – பல படங்களை ஒரே PDF-ஆக இணைக்க | AK e-Sevai',
-    description: 'Combine and merge multiple images (JPG, PNG, WEBP) into a single high-quality PDF document. Rearrange pages, set margins, compress and download instantly.',
-    descriptionTa: 'பல புகைப்படங்கள் மற்றும் ஆவணப் படங்களை (JPG, PNG, WEBP) ஒரே PDF ஆவணமாக இணைத்து ஆன்லைனில் உடனடியாக பதிவிறக்கம் செய்யுங்கள்.',
-    keywords: 'image to pdf, photo to pdf, merge images to pdf, convert multiple photos to pdf, images to pdf online, photo pdf மாற்ற, image to pdf converter',
+    title: 'Image to PDF Converter Online – Merge Multiple Photos into PDF | AK E-SEVAI Palani',
+    titleTa: 'இமேஜ் to PDF கன்வெர்ட்டர் – பல படங்களை ஒரே PDF-ஆக இணைக்க | AK E-SEVAI பழனி',
+    description: 'Convert and merge JPG, PNG, and scanned photos into a clean A4 PDF document online. Select portrait or landscape layout, reorder pages, and download instantly.',
+    descriptionTa: 'JPG, PNG மற்றும் ஸ்கேன் செய்த படங்களை A4 PDF ஆவணமாக இணைத்து பதிவிறக்குங்கள். போர்ட்ரெய்ட் / லேண்ட்ஸ்கேப் அமைத்து ஒரே PDF கோப்பாக சேமிக்கவும்.',
+    keywords: 'image to pdf, photo to pdf, merge images to pdf, convert multiple photos to pdf, images to pdf online, photo pdf மாற்ற, image to pdf converter, akesevai image to pdf',
     mode: 'multi-image-to-pdf',
     icon: 'Combine',
-    badge: 'Multi-Page PDF Merger',
-    badgeTa: 'பல பக்க PDF இணைப்பான்',
-    shortDesc: 'Merge multiple JPG, PNG and scanned pages into a single multi-page PDF document.',
+    badge: 'Multi-Page A4 PDF',
+    badgeTa: 'பல பக்க A4 PDF',
+    shortDesc: 'Merge multiple JPG, PNG and scanned pages into a single printable A4 PDF document.',
     shortDescTa: 'பல படங்களை வரிசைப்படுத்தி ஒரே PDF கோப்பாக இணைத்து பதிவிறக்குங்கள்.',
     defaultTargetKb: 200,
     faqs: [
       {
-        q: 'Can I rearrange the order of pages before creating the PDF?',
-        qTa: 'PDF உருவாக்கும் முன் படங்களின் வரிசையை மாற்ற முடியுமா?',
-        a: 'Yes, you can easily reorder images, delete specific pages, and adjust each page orientation before exporting.',
-        aTa: 'ஆம், பக்கங்களின் வரிசையை மாற்றவும், தேவையற்ற பக்கங்களை நீக்கவும் எளிதான வசதிகள் உள்ளன.'
+        q: 'Can I combine multiple JPG and PNG images into a single PDF?',
+        qTa: 'பல JPG மற்றும் PNG படங்களை ஒரே PDF-ஆக இணைக்க முடியுமா?',
+        a: 'Yes. You can upload multiple JPG or PNG images, reorder the pages as needed, and export them into a single organized A4 PDF document.',
+        aTa: 'ஆம். பல JPG மற்றும் PNG படங்களை பதிவேற்றி, பக்கங்களை வரிசைப்படுத்தி ஒரே A4 PDF ஆவணமாக எளிதாக இணைக்கலாம்.'
+      },
+      {
+        q: 'Does Image to PDF upload files to any cloud server?',
+        qTa: 'இந்த PDF கருவி கோப்புகளை சர்வரில் பதிவேற்றுகிறதா?',
+        a: 'No. The PDF is assembled directly on your device using client-side jsPDF. Your images and documents remain 100% private.',
+        aTa: 'இல்லை. உங்கள் பிரவுசரிலேயே jsPDF மூலம் PDF உருவாக்கப்படுகிறது. உங்கள் படங்கள் எங்கும் பகிரப்படாது.'
       }
     ],
     howTo: [
-      { step: 1, title: 'Upload Multiple Images', titleTa: 'பல படங்களை பதிவேற்றவும்', text: 'Select multiple photos or scanned documents.', textTa: 'இணைக்க வேண்டிய பல புகைப்படங்களை தேர்வு செய்யவும்.' },
-      { step: 2, title: 'Organize Pages', titleTa: 'வரிசைப்படுத்தவும்', text: 'Reorder pages and choose A4 layout options.', textTa: 'பக்கங்களை வரிசைப்படுத்தி A4 அமைப்பை தேர்வு செய்யவும்.' },
-      { step: 3, title: 'Download Combined PDF', titleTa: 'இணைந்த PDF-ஐ பதிவிறக்கவும்', text: 'Download single merged PDF file ready for submission.', textTa: 'இணைக்கப்பட்ட புதிய PDF ஆவணத்தை உடனடியாக சேமிக்கவும்.' }
+      { step: 1, title: 'Upload Images', titleTa: 'படங்களை பதிவேற்றவும்', text: 'Select one or more JPG, PNG or WEBP images from your device.', textTa: 'ஒன்று அல்லது அதற்கு மேற்பட்ட படங்களை தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Set Orientation & Margins', titleTa: 'அமைப்புகளை தேர்வு செய்யவும்', text: 'Choose A4 Portrait or Landscape and margin spacing.', textTa: 'A4 போர்ட்ரெய்ட் / லேண்ட்ஸ்கேப் மற்றும் மார்ஜின் அளவை தேர்வு செய்யவும்.' },
+      { step: 3, title: 'Download Merged PDF', titleTa: 'இணைந்த PDF-ஐ பதிவிறக்கவும்', text: 'Click Generate & Download PDF to save your combined document.', textTa: 'PDF உருவாக்கு பட்டனை அழுத்தி உடனே ஆவணத்தை பதிவிறக்கவும்.' }
     ],
-    relatedTools: ['jpg-to-pdf', 'png-to-pdf', 'pdf-to-jpg', 'pdf-compress', 'photo-compress-100kb']
+    relatedTools: ['jpg-to-pdf', 'png-to-pdf', 'photo-compress-100kb', 'photo-compress-50kb', 'passport-size-photo']
   },
 
   // 18. PDF TO JPG
