@@ -4,7 +4,7 @@ import { getStoredApplications } from '../utils/statusStore';
 import { printElement } from '../utils/printHelper';
 import { subscribeCustomerProfiles, subscribeTokens, subscribeApplications, fetchAllCloudRecords } from '../utils/dataService';
 
-export default function StatusTracker({ initialQuery = '' }) {
+export default function StatusTracker({ initialQuery = '', lang = 'ta' }) {
   const [query, setQuery] = useState(initialQuery);
   const [searchedApps, setSearchedApps] = useState([]);
   const [searchedTokens, setSearchedTokens] = useState([]);
@@ -259,11 +259,11 @@ export default function StatusTracker({ initialQuery = '' }) {
                   setErrorMsg('');
                 }
               }}
-              placeholder="🔍 Enter Application ID or Mobile Number..."
+              placeholder={lang === 'ta' ? "🔍 அப்ளிகேஷன் எண் (AK-...) அல்லது 10 இலக்க மொபைல் எண்..." : "🔍 Enter Application ID (AK-...) or 10-digit Mobile Number..."}
             />
           </div>
           <button type="submit" className="button button-primary">
-            Track Status <ArrowRight size={18} />
+            {lang === 'ta' ? 'நிலை அறிய' : 'Track Status'} <ArrowRight size={18} />
           </button>
         </form>
       </div>
