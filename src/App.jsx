@@ -1276,6 +1276,7 @@ function App() {
           <FirstTimeLoginModal
             isOpen={showFirstLoginModal}
             customerName={customer?.profile?.name || customer?.name || 'Customer'}
+            isFirstTime={isFirstTimeLogin}
             onClose={() => setShowFirstLoginModal(false)}
           />
         </Suspense>
@@ -5045,6 +5046,41 @@ const getServiceVisual = (group, title = '') => {
       }
     });
     const applications = Array.from(applicationsMap.values());
+    const [appPendingRemoval, setAppPendingRemoval] = useState(null);
+
+    const handleConfirmRemoveApp = async () => {
+      if (!appPendingRemoval) return;
+      const target = appPendingRemoval;
+      const targetId = String(target.id || target.ackNo || target.tokenId || '').trim();
+
+      // 1. Delete from standalone applications collection & MongoDB via existing cloud helper
+      if (targetId) {
+        await deleteApplicationCloud(targetId);
+      }
+
+      // 2. Remove from embedded customer.applications array
+      updateCustomer((curr) => {
+        if (!curr) return curr;
+        const currentApps = curr.applications || [];
+        const remaining = currentApps.filter((a) => {
+          if (!a) return false;
+          const aId = String(a.id || a.ackNo || a.tokenId || '').trim();
+          const matchId = targetId && aId === targetId;
+          const matchName = a.name && target.name && (a.name.trim().toLowerCase() === target.name.trim().toLowerCase());
+          return !(matchId || matchName);
+        });
+        return {
+          ...curr,
+          applications: remaining
+        };
+      });
+
+      setAppPendingRemoval(null);
+      notify(lang === 'ta'
+        ? `விண்ணப்பம் "${target.name}" வெற்றிகரமாக நீக்கப்பட்டது.`
+        : `Application "${target.name}" removed successfully.`);
+    };
+
     const addApplication = (eventOrService) => {
       if (eventOrService && typeof eventOrService.preventDefault === 'function') {
         eventOrService.preventDefault();
@@ -5464,6 +5500,8 @@ const getServiceVisual = (group, title = '') => {
                   <ApplicationRow
                     application={application}
                     customerDocs={customer.documents}
+                    onRemove={(app) => setAppPendingRemoval(app)}
+                    lang={lang}
                     key={application.id}
                   />
                 )) : <p className="empty-customer-state">No service selected yet. Choose a service to see its required documents.</p>}
@@ -5545,6 +5583,8 @@ const getServiceVisual = (group, title = '') => {
                     <ApplicationRow
                       application={application}
                       customerDocs={customer.documents}
+                      onRemove={(app) => setAppPendingRemoval(app)}
+                      lang={lang}
                       key={application.id}
                     />
                   ))}
@@ -5712,11 +5752,127 @@ const getServiceVisual = (group, title = '') => {
           </div>
         )}
 
+        {/* REMOVE APPLICATION CONFIRMATION MODAL */}
+        {appPendingRemoval && (
+          <div
+            onClick={() => setAppPendingRemoval(null)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '16px',
+              boxSizing: 'border-box'
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: '#ffffff',
+                borderRadius: '16px',
+                maxWidth: '440px',
+                width: '100%',
+                padding: '24px',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                border: '1px solid #e2e8f0',
+                textAlign: 'center'
+              }}
+            >
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '50%',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px',
+                  border: '2px solid #fecaca'
+                }}
+              >
+                <Trash2 size={26} />
+              </div>
+
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 8px 0' }}>
+                {lang === 'ta' ? 'விண்ணப்பத்தை நீக்க வேண்டுமா?' : 'Remove Application?'}
+              </h3>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px', margin: '14px 0 16px', textAlign: 'left' }}>
+                <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{appPendingRemoval.name}</strong>
+                <small style={{ fontSize: '12px', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                  ID: {appPendingRemoval.id || 'N/A'} · Status: {appPendingRemoval.status || 'Submitted'}
+                </small>
+              </div>
+
+              <p style={{ fontSize: '13px', color: '#475569', lineHeight: 1.5, margin: '0 0 6px 0' }}>
+                {lang === 'ta'
+                  ? 'இந்த விண்ணப்பத்தை My Applications பட்டியலில் இருந்து நீக்க வேண்டுமா?'
+                  : 'Are you sure you want to remove this application from your My Applications list?'}
+              </p>
+              <small style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '20px' }}>
+                {lang === 'ta'
+                  ? '⚠️ உங்கள் பதிவேற்றிய ஆவணங்கள் மற்றும் கணக்கு விவரங்கள் பாதுகாப்பாக இருக்கும்.'
+                  : '⚠️ Your uploaded documents and account details will remain safe.'}
+              </small>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setAppPendingRemoval(null)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #cbd5e1',
+                    background: '#f8fafc',
+                    color: '#334155',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {lang === 'ta' ? 'ரத்துசெய் / Cancel' : 'Cancel'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmRemoveApp}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                    color: '#ffffff',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Trash2 size={15} /> {lang === 'ta' ? 'நீக்கு / Remove' : 'Remove Application'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </section>
     );
   }
 
-  function ApplicationRow({ application, customerDocs = [] }) {
+  function ApplicationRow({ application, customerDocs = [], onRemove, lang = 'ta' }) {
     const [isExpanded, setIsExpanded] = useState(false);
 
     const appDocs = (customerDocs || []).filter((d) => {
@@ -5747,10 +5903,45 @@ const getServiceVisual = (group, title = '') => {
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
             <span className={`status-text ${application.status?.toLowerCase().replace(' ', '-')}`} style={{ fontWeight: 800, fontSize: '13px', color: isAppComplete ? '#16a34a' : '#d97706', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               {application.status || 'Submitted'} {isExpanded ? <ChevronUp size={16} /> : <ChevronRight size={16} />}
             </span>
+
+            {onRemove && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(application);
+                }}
+                title={lang === 'ta' ? 'விண்ணப்பத்தை நீக்கு' : 'Remove application'}
+                style={{
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  border: '1px solid #fca5a5',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  fontSize: '11.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#dc2626';
+                  e.currentTarget.style.color = '#ffffff';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#fee2e2';
+                  e.currentTarget.style.color = '#dc2626';
+                }}
+              >
+                <Trash2 size={13} /> {lang === 'ta' ? 'நீக்கு' : 'Remove'}
+              </button>
+            )}
           </div>
         </div>
 
