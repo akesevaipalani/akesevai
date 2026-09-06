@@ -17,6 +17,7 @@ import AdminAutoFillProfileDrawer from './AdminAutoFillProfileDrawer';
 import AdminSponsoredAdsManager from './AdminSponsoredAdsManager';
 import AdminCenterBannersControl from './AdminCenterBannersControl';
 import AdminPasswordModal from './AdminPasswordModal';
+import AdminCustomerDocumentVault from './AdminCustomerDocumentVault';
 import { validatePhotoUpload, handleViewDocument, handleDownloadDocument } from '../utils/documentHelper';
 
 export default function AdminSevaiSmartDesk({ notify, changeAdminPassword, initialVaultTab = 'all' }) {
@@ -903,126 +904,22 @@ export default function AdminSevaiSmartDesk({ notify, changeAdminPassword, initi
         </button>
       </div>
 
-      {/* 📁 CUSTOMER UPLOADED DOCUMENTS VAULT */}
-      {(deskTab === 'all' || deskTab === 'documents') && (() => {
-        const filteredDocs = customerDocs.filter((doc) => {
-          const q = docSearch.trim().toLowerCase();
-          if (!q) return true;
-          return (
-            (doc.name || '').toLowerCase().includes(q) ||
-            (doc.requirement || '').toLowerCase().includes(q) ||
-            (doc.customerPhone || '').toLowerCase().includes(q) ||
-            (doc.title || '').toLowerCase().includes(q)
-          );
-        });
-
-        return (
-          <div id="admin-smartdesk-documents-vault" style={{ background: '#ffffff', border: '2px solid #16a34a', borderRadius: '18px', padding: '24px', marginBottom: '24px', boxShadow: '0 8px 24px rgba(22, 163, 74, 0.08)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', borderBottom: '1.5px solid #bbf7d0', paddingBottom: '14px', marginBottom: '18px' }}>
-              <div>
-                <span style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <FileCheck2 size={14} /> CUSTOMER UPLOADED DOCUMENTS VAULT
-                </span>
-                <h3 style={{ font: '800 20px Manrope', color: '#14532d', margin: '6px 0 0' }}>
-                  📁 வாடிக்கையாளர் பதிவேற்றிய ஆவணக் காப்பகம் ({customerDocs.length} Documents)
-                </h3>
-                <p style={{ fontSize: '12.5px', color: '#166534', margin: '4px 0 0' }}>
-                  வாடிக்கையாளர்கள் சமர்ப்பித்த ஆதார், ரேஷன் கார்டு, வருமானச் சான்றிதழ் மற்றும் பிற ஆவணங்களை ஒரே இடத்தில் காண்க மற்றும் பதிவிறக்குக.
-                </p>
-              </div>
-
-              {/* Search Bar */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f8fafc', padding: '6px 12px', borderRadius: '10px', border: '1px solid #cbd5e1', minWidth: '240px' }}>
-                <Search size={16} color="#64748b" />
-                <input
-                  type="text"
-                  value={docSearch}
-                  onChange={(e) => setDocSearch(e.target.value)}
-                  placeholder="Search by Document or Mobile..."
-                  style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: '12px', width: '100%', fontWeight: 600 }}
-                />
-                {docSearch && (
-                  <button type="button" onClick={() => setDocSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '11px', color: '#94a3b8' }}>✕</button>
-                )}
-              </div>
-            </div>
-
-            {filteredDocs.length === 0 ? (
-              <div style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: '12px', padding: '32px', textAlign: 'center', color: '#64748b', fontSize: '13px', fontWeight: 700 }}>
-                📂 பதிவேற்றப்பட்ட ஆவணங்கள் எதுவும் இல்லை (No uploaded documents found).
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '14px' }}>
-                {filteredDocs.map((doc, idx) => {
-                  const isPdf = (doc.name && doc.name.toLowerCase().endsWith('.pdf')) || doc.type === 'application/pdf';
-                  const docUrl = doc.url || doc.data || '';
-                  const isImg = !isPdf && (docUrl || (doc.name && /\.(jpg|jpeg|png|webp|svg)$/i.test(doc.name)));
-
-                  return (
-                    <div key={doc.id ? `${doc.id}_${idx}` : `smartdesk_doc_${idx}`} style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: '14px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                        {isImg && docUrl ? (
-                          <div
-                            onClick={() => handleViewDocument(doc)}
-                            style={{ width: '48px', height: '48px', borderRadius: '8px', border: '1.5px solid #86efac', overflow: 'hidden', cursor: 'pointer', flexShrink: 0, background: '#ffffff', display: 'grid', placeItems: 'center' }}
-                            title="Click to preview full image"
-                          >
-                            <img src={docUrl} alt={doc.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          </div>
-                        ) : isPdf ? (
-                          <div
-                            onClick={() => handleViewDocument(doc)}
-                            style={{ width: '48px', height: '48px', borderRadius: '8px', border: '1.5px solid #fca5a5', background: '#fee2e2', color: '#dc2626', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: '10px', fontWeight: 900 }}
-                            title="Click to view PDF"
-                          >
-                            <FileText size={18} />
-                            <span>PDF</span>
-                          </div>
-                        ) : (
-                          <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#dcfce7', color: '#16a34a', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                            <FileCheck2 size={22} />
-                          </div>
-                        )}
-
-                        <div style={{ minWidth: 0, flex: 1 }}>
-                          <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block', wordBreak: 'break-word' }}>
-                            {doc.requirement || doc.name || 'Uploaded Document'}
-                          </strong>
-                          {doc.customerPhone && (
-                            <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 700, display: 'block' }}>
-                              📱 +91 {doc.customerPhone}
-                            </span>
-                          )}
-                          <small style={{ fontSize: '11px', color: '#64748b' }}>
-                            {doc.uploadedAt || 'Recently'}
-                          </small>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '6px', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleViewDocument(doc)}
-                          style={{ flex: 1, background: '#0052cc', color: 'white', border: 'none', padding: '7px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                        >
-                          <Eye size={13} /> View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadDocument(doc)}
-                          style={{ flex: 1, background: '#16a34a', color: 'white', border: 'none', padding: '7px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                        >
-                          <Download size={13} /> Download
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* 📁 CUSTOMER UPLOADED DOCUMENTS VAULT - CUSTOMER-WISE ORGANIZATION */}
+      {(deskTab === 'all' || deskTab === 'documents') && (
+        <AdminCustomerDocumentVault
+          customerDocs={customerDocs}
+          customerProfiles={customerProfiles}
+          customerTokens={customerTokens}
+          applicationRecords={(() => {
+            try {
+              return JSON.parse(localStorage.getItem('akesevai-application-records') || '{}');
+            } catch (e) {
+              return {};
+            }
+          })()}
+          notify={notify}
+        />
+      )}
 
       {/* 💳 PRIORITY TOKEN PAYMENT VERIFICATION & TOKEN APPROVAL DESK */}
       {(deskTab === 'all' || deskTab === 'payments') && (() => {
