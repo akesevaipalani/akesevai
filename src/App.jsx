@@ -2846,10 +2846,18 @@ const getServiceVisual = (group, title = '') => {
     const activeRecords = { ...localRecords, ...(customerRecords || {}) };
     const deletedCustSet = new Set(JSON.parse(localStorage.getItem('akesevai-deleted-customers') || '[]'));
     const appCustomersMap = new Map();
+
+    const normalizePhone10 = (raw) => {
+      if (!raw) return '';
+      const digits = String(raw).replace(/\D/g, '');
+      return digits.length >= 10 ? digits.slice(-10) : '';
+    };
+
+    // 1. Existing activeRecords customer discovery pass
     Object.values(activeRecords).forEach((c) => {
       if (c && (c.phone || c.profile?.name || c.name)) {
-        const cleanP = String(c.phone || '').replace(/\D/g, '');
-        if (!cleanP || deletedCustSet.has(cleanP) || deletedCustSet.has(c.phone)) return;
+        const cleanP = normalizePhone10(c.phone);
+        if (!cleanP || cleanP.length !== 10 || deletedCustSet.has(cleanP) || deletedCustSet.has(c.phone)) return;
 
         const existing = appCustomersMap.get(cleanP) || {};
         const mergedName = c.name && c.name !== 'Customer' && !c.name.startsWith('Customer ') ? c.name :
@@ -2897,14 +2905,129 @@ const getServiceVisual = (group, title = '') => {
       }
     });
 
+    // 2. Document discovery pass over cloudExpiryDocs
+    (cloudExpiryDocs || []).forEach((d) => {
+      if (!d) return;
+      const cleanDocPhone = normalizePhone10(d.customerPhone || d.phone);
+      if (!cleanDocPhone || cleanDocPhone.length !== 10 || deletedCustSet.has(cleanDocPhone)) return;
+
+      const docIdKey = String(d.id || d.url || d.data || d.storagePath || `${cleanDocPhone}_${d.name || d.requirement}`).trim();
+      if (!docIdKey) return;
+
+      const docEntry = {
+        id: d.id || d.url || d.data || docIdKey,
+        applicationId: d.applicationId || '',
+        requirement: d.requirement || d.title || d.name,
+        name: d.name || d.title || d.requirement || 'Uploaded Document',
+        uploadedAt: d.uploadedAt ? (typeof d.uploadedAt === 'string' && d.uploadedAt.includes('T') ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : d.uploadedAt) : 'Recently',
+        data: d.url || d.data,
+        url: d.url || d.data,
+        type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
+      };
+
+      if (!appCustomersMap.has(cleanDocPhone)) {
+        // Create lightweight customer entry for document-only customer
+        appCustomersMap.set(cleanDocPhone, {
+          phone: cleanDocPhone,
+          name: `Customer +91 ${cleanDocPhone}`,
+          profile: {
+            name: `Customer +91 ${cleanDocPhone}`,
+            phone: cleanDocPhone
+          },
+          applications: [],
+          documents: [docEntry],
+          updatedAt: d.uploadedAt || new Date().toISOString()
+        });
+      } else {
+        // Merge document into existing customer's documents
+        const existing = appCustomersMap.get(cleanDocPhone);
+        const docs = existing.documents || [];
+        const isDuplicate = docs.some((existingDoc) => {
+          if (!existingDoc) return false;
+          const exId = String(existingDoc.id || existingDoc.url || existingDoc.data || '').trim();
+          const curId = String(d.id || d.url || d.data || '').trim();
+          if (exId && curId && exId === curId) return true;
+          const exReq = String(existingDoc.requirement || existingDoc.name || '').trim().toLowerCase();
+          const curReq = String(d.requirement || d.name || '').trim().toLowerCase();
+          const exApp = String(existingDoc.applicationId || '').trim();
+          const curApp = String(d.applicationId || '').trim();
+          return exReq && curReq && exReq === curReq && exApp === curApp;
+        });
+
+        if (!isDuplicate) {
+          existing.documents = [...docs, docEntry];
+        }
+      }
+    });
+
+    // 3. Application discovery pass over applicationRecords
+    Object.values(applicationRecords || {}).forEach((app) => {
+      if (!app) return;
+      const cleanAppPhone = normalizePhone10(app.phone || app.customerPhone || app.applicantPhone || app.customerRef?.phone);
+      if (!cleanAppPhone || cleanAppPhone.length !== 10 || deletedCustSet.has(cleanAppPhone)) return;
+
+      const appId = String(app.id || app.ackNo || app.applicationId || '').trim();
+      const appObj = {
+        id: appId || `APP-${cleanAppPhone}-${Date.now()}`,
+        ackNo: appId || `APP-${cleanAppPhone}-${Date.now()}`,
+        name: app.service || app.name || app.serviceName || 'e-Sevai Application',
+        service: app.service || app.name || app.serviceName || 'e-Sevai Application',
+        date: app.submittedDate || app.date || 'Recently',
+        currentStage: app.currentStage || app.stage || 1,
+        statusLabel: app.statusLabel || app.status || 'In Progress',
+        status: app.status || 'Processing'
+      };
+
+      if (!appCustomersMap.has(cleanAppPhone)) {
+        // Create lightweight customer entry for application-only customer
+        const applicantName = (app.applicantName && app.applicantName !== 'Applicant' && app.applicantName !== 'Customer') ? app.applicantName :
+                              (app.name && app.name !== 'Customer' && !app.name.startsWith('Customer ')) ? app.name :
+                              `Customer +91 ${cleanAppPhone}`;
+        appCustomersMap.set(cleanAppPhone, {
+          phone: cleanAppPhone,
+          name: applicantName,
+          profile: {
+            name: applicantName,
+            phone: cleanAppPhone
+          },
+          applications: [appObj],
+          documents: [],
+          updatedAt: app.submittedDate || app.date || new Date().toISOString()
+        });
+      } else {
+        // Merge application into existing customer's applications
+        const existing = appCustomersMap.get(cleanAppPhone);
+        if ((!existing.name || existing.name.startsWith('Customer +91')) && app.applicantName && app.applicantName !== 'Applicant' && app.applicantName !== 'Customer') {
+          existing.name = app.applicantName;
+          if (existing.profile) existing.profile.name = app.applicantName;
+        }
+
+        const apps = existing.applications || [];
+        const isDuplicate = apps.some((existingApp) => {
+          if (!existingApp) return false;
+          const exId = String(existingApp.id || existingApp.ackNo || '').trim();
+          const curId = String(appObj.id || appObj.ackNo || '').trim();
+          if (exId && curId && exId === curId) return true;
+          const exName = String(existingApp.name || existingApp.service || '').trim().toLowerCase();
+          const curName = String(appObj.name || appObj.service || '').trim().toLowerCase();
+          return exName && curName && exName === curName;
+        });
+
+        if (!isDuplicate) {
+          existing.applications = [...apps, appObj];
+        }
+      }
+    });
+
     const customers = Array.from(appCustomersMap.values())
       .sort((a, b) => ((b.profile?.createdAt || b.updatedAt || '').localeCompare(a.profile?.createdAt || a.updatedAt || '')));
 
     const matchingCustomers = customers.filter((customer) => {
       const name = customer.profile?.name || customer.name || 'Customer';
       const phone = customer.phone || '';
-      const apps = Array.isArray(customer.applications) ? customer.applications.map((app) => app?.name || '').join(' ') : '';
-      return `${name} ${phone} ${apps}`.toLowerCase().includes(query.toLowerCase());
+      const apps = Array.isArray(customer.applications) ? customer.applications.map((app) => app?.name || app?.service || '').join(' ') : '';
+      const docs = Array.isArray(customer.documents) ? customer.documents.map((doc) => doc?.requirement || doc?.name || '').join(' ') : '';
+      return `${name} ${phone} ${apps} ${docs}`.toLowerCase().includes(query.toLowerCase());
     });
 
     const selected = matchingCustomers.find((customer) => customer.phone === activeCustomer) || matchingCustomers[0];
@@ -3875,10 +3998,11 @@ const getServiceVisual = (group, title = '') => {
                 const custName = customer.profile?.name || customer.name || customer.phone || 'Customer';
                 const avatar = custName.slice(0, 2).toUpperCase();
                 const appCount = Array.isArray(customer.applications) ? customer.applications.length : 0;
+                const docCount = Array.isArray(customer.documents) ? customer.documents.length : 0;
                 return (
                   <button className={`admin-customer-row ${selected?.phone === customer.phone ? 'admin-customer-active' : ''}`} onClick={() => setActiveCustomer(customer.phone)} key={customer.phone || Math.random()}>
                     <span className="avatar">{avatar}</span>
-                    <span><strong>{custName}</strong><small>+91 {customer.phone} · {appCount} services</small></span>
+                    <span><strong>{custName}</strong><small>+91 {customer.phone} · {appCount} services · {docCount} documents</small></span>
                     <ChevronRight size={16} />
                   </button>
                 );
@@ -3887,7 +4011,7 @@ const getServiceVisual = (group, title = '') => {
             <section className="admin-detail">
               {selected ? (() => {
                 const liveCustomerMap = customerRecords || {};
-                const cleanSelectedPhone = (selected.phone || '').replace(/\D/g, '');
+                const cleanSelectedPhone = String(selected.phone || '').replace(/\D/g, '').slice(-10);
                 const profileRecord = liveCustomerMap[cleanSelectedPhone] || liveCustomerMap[selected.phone] || {};
                 const globalExpiryDocs = cloudExpiryDocs || [];
 
@@ -3908,17 +4032,20 @@ const getServiceVisual = (group, title = '') => {
                   ...(selected.documents || []),
                   ...(profileRecord.documents || []),
                   ...globalExpiryDocs.filter((d) => {
-                    const docPhone = (d.customerPhone || '').replace(/\D/g, '');
+                    const docPhone = String(d.customerPhone || d.phone || '').replace(/\D/g, '').slice(-10);
                     const docAppId = d.applicationId || d.id || '';
-                    const matchesPhone = cleanSelectedPhone && docPhone && (docPhone === cleanSelectedPhone || docPhone.includes(cleanSelectedPhone) || cleanSelectedPhone.includes(docPhone));
-                    const matchesApp = selectedAppIds.some(appId => docAppId.includes(appId));
+                    const matchesPhone = cleanSelectedPhone && docPhone && (docPhone === cleanSelectedPhone);
+                    const matchesApp = selectedAppIds.some(appId => docAppId && (docAppId === appId || docAppId.includes(appId)));
                     return matchesPhone || matchesApp;
                   }).map(d => ({
                     id: d.id || d.url,
+                    applicationId: d.applicationId || '',
                     requirement: d.requirement || d.title || d.name,
                     name: d.name || 'Uploaded Document',
-                    uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
-                    data: d.url || d.data
+                    uploadedAt: d.uploadedAt ? (typeof d.uploadedAt === 'string' && d.uploadedAt.includes('T') ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : d.uploadedAt) : 'Recently',
+                    data: d.url || d.data,
+                    url: d.url || d.data,
+                    type: d.type
                   }))
                 ];
 
@@ -5900,18 +6027,210 @@ const getServiceVisual = (group, title = '') => {
     );
   }
 
+  // Bilingual Requirement Matching & Canonical Document Mapping
+  const normalizeRequirementText = (str) => {
+    if (!str || typeof str !== 'string') return '';
+    return str.trim().toLowerCase().replace(/[\s\-_/\\().,]+/g, ' ');
+  };
+
+  const CANONICAL_REQUIREMENT_MAP = {
+    // Aadhaar
+    'aadhaar': 'aadhaar',
+    'aadhaar card': 'aadhaar',
+    'applicant aadhaar card': 'aadhaar',
+    'applicant aadhaar': 'aadhaar',
+    'ஆதார்': 'aadhaar',
+    'ஆதார் அட்டை': 'aadhaar',
+    'விண்ணப்பதாரரின் ஆதார் அட்டை': 'aadhaar',
+    'விண்ணப்பதாரர் ஆதார் அட்டை': 'aadhaar',
+    'குடும்ப உறுப்பினர்களின் ஆதார் அட்டை': 'aadhaar',
+    'குடும்ப உறுப்பினர்கள் ஆதார்': 'aadhaar',
+
+    // Ration Card / Smart Card / Family Card
+    'smart card': 'ration_card',
+    'smart ration card': 'ration_card',
+    'family card': 'ration_card',
+    'smart ration card family card': 'ration_card',
+    'ration card': 'ration_card',
+    'family card ration card': 'ration_card',
+    'குடும்ப அட்டை': 'ration_card',
+    'ஸ்மார்ட் குடும்ப அட்டை': 'ration_card',
+    'ஸ்மார்ட் ரேஷன் கார்டு': 'ration_card',
+    'குடும்ப அட்டை ஸ்மார்ட் ரேஷன் கார்டு': 'ration_card',
+    'ஸ்மார்ட் கார்டு': 'ration_card',
+    'குடும்ப அட்டை நகல்': 'ration_card',
+
+    // Photo
+    'photo': 'photo',
+    'passport photo': 'photo',
+    'applicant photo': 'photo',
+    'applicant passport photo': 'photo',
+    'applicant passport size photo': 'photo',
+    'head of family passport photo': 'photo_head',
+    'head of family photo': 'photo_head',
+    'புகைப்படம்': 'photo',
+    'பாஸ்போர்ட் அளவு புகைப்படம்': 'photo',
+    'விண்ணப்பதாரரின் பாஸ்போர்ட் அளவு புகைப்படம்': 'photo',
+    'குடும்பத் தலைவர் பாஸ்போர்ட் அளவு புகைப்படம்': 'photo_head',
+    'குடும்ப தலைவர் புகைப்படம்': 'photo_head',
+
+    // Salary / Income Proof
+    'salary certificate': 'income_proof',
+    'salary certificate income proof': 'income_proof',
+    'income proof': 'income_proof',
+    'monthly salary certificate': 'income_proof',
+    'pay slip': 'income_proof',
+    'ஊதியச் சான்றிதழ்': 'income_proof',
+    'ஊதிய சான்றிதழ்': 'income_proof',
+    'மாத ஊதியச் சான்றிதழ்': 'income_proof',
+    'வருமானச் சான்று': 'income_proof',
+    'வருமான சான்று': 'income_proof',
+
+    // Community / Caste
+    'community certificate': 'community_cert',
+    'parent community certificate': 'community_cert',
+    'parent or sibling community certificate': 'community_cert',
+    'சாதிச் சான்றிதழ்': 'community_cert',
+    'சாதி சான்றிதழ்': 'community_cert',
+    'பெற்றோர் அல்லது உடன் பிறந்தோரின் சாதிச் சான்றிதழ்': 'community_cert',
+    'பெற்றோரின் சாதிச் சான்றிதழ்': 'community_cert',
+
+    // School TC / Marksheet
+    'transfer certificate': 'school_tc',
+    'tc': 'school_tc',
+    'school transfer certificate': 'school_tc',
+    'applicant school transfer certificate tc mark sheet': 'school_tc',
+    'mark sheet': 'school_tc',
+    'பள்ளி மாற்றுச் சான்றிதழ்': 'school_tc',
+    'பள்ளி மாற்றுச் சான்றிதழ் tc மதிப்பெண் சான்றிதழ்': 'school_tc',
+    'பள்ளி மாற்றுச் சான்றிதழ் tc': 'school_tc',
+    'மதிப்பெண் சான்றிதழ்': 'school_tc',
+
+    // Self-Declaration Form
+    'self declaration form': 'self_declaration',
+    'self declaration': 'self_declaration',
+    'சுய அறிவிப்புப் படிவம்': 'self_declaration',
+    'சுய அறிவிப்புப் படிவம் self declaration form': 'self_declaration',
+    'சுய அறிவிப்பு': 'self_declaration',
+
+    // Address Proof / EB Bill
+    'address proof': 'address_proof',
+    'address proof eb bill': 'address_proof',
+    'eb bill': 'address_proof',
+    'electricity bill': 'address_proof',
+    'மின் கட்டண ரசீது': 'address_proof',
+    'முகவரிச் சான்று': 'address_proof',
+    'முகவரிச் சான்று மின் கட்டண ரசீது': 'address_proof',
+
+    // Driving License
+    'driving license': 'driving_license',
+    'driving licence': 'driving_license',
+    'dl': 'driving_license',
+    'ஓட்டுநர் உரிமம்': 'driving_license',
+
+    // PAN Card
+    'pan card': 'pan_card',
+    'pan': 'pan_card',
+    'பான் கார்டு': 'pan_card',
+    'பான் அட்டை': 'pan_card',
+
+    // Voter ID / EPIC
+    'voter id': 'voter_id',
+    'voter card': 'voter_id',
+    'epic card': 'voter_id',
+    'வாக்காளர் அடையாள அட்டை': 'voter_id',
+    'வாக்காளர் அட்டை': 'voter_id',
+
+    // Nativity / Residence
+    'nativity certificate': 'nativity_cert',
+    'residence certificate': 'residence_cert',
+    'இருப்பிடச் சான்றிதழ்': 'residence_cert',
+    'பிறப்பிடச் சான்றிதழ்': 'nativity_cert'
+  };
+
+  const isRequirementMatch = (reqA, reqB, serviceMaster = null) => {
+    if (!reqA || !reqB) return false;
+    const cleanA = String(reqA).trim().toLowerCase();
+    const cleanB = String(reqB).trim().toLowerCase();
+    if (cleanA === cleanB) return true;
+
+    const normA = normalizeRequirementText(reqA);
+    const normB = normalizeRequirementText(reqB);
+    if (normA === normB) return true;
+
+    // 1. Check Canonical Dictionary
+    const keyA = CANONICAL_REQUIREMENT_MAP[normA] || CANONICAL_REQUIREMENT_MAP[cleanA];
+    const keyB = CANONICAL_REQUIREMENT_MAP[normB] || CANONICAL_REQUIREMENT_MAP[cleanB];
+    if (keyA && keyB && keyA === keyB) return true;
+
+    // 2. Check serviceMaster parallel arrays (if provided)
+    if (serviceMaster) {
+      const reqEn = serviceMaster.requiredDocuments || [];
+      const reqTa = serviceMaster.requiredDocumentsTa || [];
+      const maxReq = Math.min(reqEn.length, reqTa.length);
+      for (let i = 0; i < maxReq; i++) {
+        const en = String(reqEn[i] || '').trim().toLowerCase();
+        const ta = String(reqTa[i] || '').trim().toLowerCase();
+        const matchA = cleanA === en || cleanA === ta || normA === normalizeRequirementText(en) || normA === normalizeRequirementText(ta);
+        const matchB = cleanB === en || cleanB === ta || normB === normalizeRequirementText(en) || normB === normalizeRequirementText(ta);
+        if (matchA && matchB) return true;
+      }
+
+      const optEn = serviceMaster.optionalDocuments || [];
+      const optTa = serviceMaster.optionalDocumentsTa || [];
+      const maxOpt = Math.min(optEn.length, optTa.length);
+      for (let i = 0; i < maxOpt; i++) {
+        const en = String(optEn[i] || '').trim().toLowerCase();
+        const ta = String(optTa[i] || '').trim().toLowerCase();
+        const matchA = cleanA === en || cleanA === ta || normA === normalizeRequirementText(en) || normA === normalizeRequirementText(ta);
+        const matchB = cleanB === en || cleanB === ta || normB === normalizeRequirementText(en) || normB === normalizeRequirementText(ta);
+        if (matchA && matchB) return true;
+      }
+
+      const conds = serviceMaster.conditionalDocuments || [];
+      for (const c of conds) {
+        const en = String(c.requirement || '').trim().toLowerCase();
+        const ta = String(c.requirementTa || '').trim().toLowerCase();
+        const matchA = cleanA === en || cleanA === ta || normA === normalizeRequirementText(en) || normA === normalizeRequirementText(ta);
+        const matchB = cleanB === en || cleanB === ta || normB === normalizeRequirementText(en) || normB === normalizeRequirementText(ta);
+        if (matchA && matchB) return true;
+      }
+    }
+
+    // 3. Fallback: Search across all GOVERNMENT_SERVICES for 1-to-1 English-Tamil correspondence
+    for (const s of GOVERNMENT_SERVICES) {
+      const reqEn = s.requiredDocuments || [];
+      const reqTa = s.requiredDocumentsTa || [];
+      const max = Math.min(reqEn.length, reqTa.length);
+      for (let i = 0; i < max; i++) {
+        const en = String(reqEn[i] || '').trim().toLowerCase();
+        const ta = String(reqTa[i] || '').trim().toLowerCase();
+        if ((cleanA === en && cleanB === ta) || (cleanA === ta && cleanB === en)) return true;
+        if ((normA === normalizeRequirementText(en) && normB === normalizeRequirementText(ta)) ||
+            (normA === normalizeRequirementText(ta) && normB === normalizeRequirementText(en))) return true;
+      }
+    }
+
+    return false;
+  };
+
   function ApplicationRow({ application, customerDocs = [], onRemove, lang = 'ta' }) {
     const [isExpanded, setIsExpanded] = useState(false);
+
+    const master = findGovernmentService(application.serviceId || application.name || application.service);
+    const appReqs = master?.requiredDocuments || application.requirements || [];
+    const appReqsTa = master?.requiredDocumentsTa || [];
+    const allReqs = [...appReqs, ...appReqsTa];
 
     const appDocs = (customerDocs || []).filter((d) => {
       if (!d) return false;
       const appIdMatch = d.applicationId && application.id && (String(d.applicationId) === String(application.id));
-      const appNameMatch = d.requirement && application.requirements && application.requirements.some(r => String(r).toLowerCase().includes(String(d.requirement).toLowerCase()) || String(d.requirement).toLowerCase().includes(String(r).toLowerCase()));
-      const reqNameMatch = d.name && application.requirements && application.requirements.some(r => String(r).toLowerCase().includes(String(d.name).toLowerCase()) || String(d.name).toLowerCase().includes(String(r).toLowerCase()));
-      return appIdMatch || appNameMatch || reqNameMatch;
+      const appNameMatch = d.requirement && allReqs.some(r => isRequirementMatch(r, d.requirement, master));
+      const reqNameMatch = d.name && allReqs.some(r => isRequirementMatch(r, d.name, master));
+      return appIdMatch || (appNameMatch && (!d.applicationId || d.applicationId === application.id)) || (reqNameMatch && (!d.applicationId || d.applicationId === application.id));
     });
 
-    const isAppComplete = appDocs.length > 0 && application.requirements && appDocs.length >= application.requirements.length;
+    const isAppComplete = appDocs.length > 0 && appReqs.length > 0 && appDocs.length >= appReqs.length;
 
     return (
       <div style={{ marginBottom: '10px', borderRadius: '12px', border: isExpanded ? '2px solid #0052cc' : '1px solid #e2e8f0', overflow: 'hidden', background: '#ffffff', transition: 'all 0.2s ease' }}>
@@ -6023,16 +6342,57 @@ const getServiceVisual = (group, title = '') => {
       </div>
     );
   }
+
   function DocumentsTab({ customer, updateCustomer, notify, cloudExpiryDocs = [], lang = 'ta' }) {
-    const activeApps = customer.applications && customer.applications.length > 0 ? customer.applications : [{
-      id: `AK-${Date.now().toString().slice(-8)}`,
-      name: 'Income Certificate',
-      status: 'Submitted',
-      date: new Date().toLocaleDateString('en-IN'),
-      requirements: ['Aadhaar Card', 'Family Card', 'Applicant Photo', 'Salary Certificate']
-    }];
+    const activeApps = Array.isArray(customer.applications) ? customer.applications : [];
     const [applicationId, setApplicationId] = useState(activeApps[0]?.id || '');
-    const application = activeApps.find((item) => item.id === applicationId) || activeApps[0];
+    const application = activeApps.find((item) => item.id === applicationId) || activeApps[0] || null;
+
+    // Aggregate ALL documents belonging to this customer across all applications & cloud storage
+    const customerDocs = Array.isArray(customer.documents) ? customer.documents : [];
+    const globalDocs = Array.isArray(cloudExpiryDocs) ? cloudExpiryDocs : [];
+    const cleanPhone = String(customer.phone || '').replace(/\D/g, '');
+
+    const allCustomerDocsMap = new Map();
+    customerDocs.forEach((d) => {
+      if (!d) return;
+      const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+      if (k && !allCustomerDocsMap.has(k)) {
+        allCustomerDocsMap.set(k, {
+          ...d,
+          id: d.id || k,
+          applicationId: d.applicationId || '',
+          requirement: d.requirement || d.title || d.name,
+          name: d.name || d.title || d.requirement || 'Uploaded Document',
+          uploadedAt: d.uploadedAt || 'Recently',
+          data: d.url || d.data,
+          url: d.url || d.data,
+          type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
+        });
+      }
+    });
+
+    globalDocs.forEach((d) => {
+      if (!d) return;
+      const docPhone = String(d.customerPhone || '').replace(/\D/g, '');
+      if (cleanPhone && docPhone && cleanPhone === docPhone) {
+        const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+        if (k && !allCustomerDocsMap.has(k)) {
+          allCustomerDocsMap.set(k, {
+            id: d.id || d.url || k,
+            applicationId: d.applicationId || '',
+            requirement: d.requirement || d.title || d.name,
+            name: d.name || d.title || d.requirement || 'Uploaded Document',
+            uploadedAt: d.uploadedAt ? (typeof d.uploadedAt === 'string' && d.uploadedAt.includes('T') ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : d.uploadedAt) : 'Recently',
+            data: d.url || d.data,
+            url: d.url || d.data,
+            type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
+          });
+        }
+      }
+    });
+
+    const allCustomerDocsList = Array.from(allCustomerDocsMap.values());
 
     const uploadDocument = async (event, requirement) => {
       const file = event.target.files?.[0];
@@ -6127,7 +6487,6 @@ const getServiceVisual = (group, title = '') => {
       }
 
       // UNIQUE docId ensures EVERY document uploaded by a customer is saved separately!
-      const cleanPhone = (customer.phone || 'guest').replace(/\D/g, '');
       const docId = `DOC-${cleanPhone}-${requirement.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}`;
       const documentObj = {
         id: docId,
@@ -6189,7 +6548,7 @@ const getServiceVisual = (group, title = '') => {
       const confirmDelete = window.confirm(`ஆவணம் "${docName}"-ஐ நிச்சயமாக நீக்க விரும்புகிறீர்களா? (Delete uploaded document permanently?)`);
       if (!confirmDelete) return;
 
-      const targetId = documentObj.id || `${application.id}-${requirement}`;
+      const targetId = documentObj.id || `${application?.id}-${requirement}`;
       deleteDocBinary(targetId).catch(() => {});
 
       // 1. Delete from local state instantly without deleting unrelated requirement docs
@@ -6217,15 +6576,172 @@ const getServiceVisual = (group, title = '') => {
       notify(`🗑️ ஆவணம் வெற்றிகரமாக நீக்கப்பட்டது! (${docName} deleted permanently from everywhere)`);
     };
 
-    if (!customer.applications.length) return <div className="tab-content"><div className="panel-heading"><div><span className="section-kicker">DOCUMENT VAULT</span><h2>My documents</h2><p>Select a service first. Its required document list will appear here.</p></div></div></div>;
+    const isTa = lang === 'ta';
+    const master = application ? findGovernmentService(application.serviceId || application.name || application.service) : null;
+
+    const reqDocs = master
+      ? (isTa && master.requiredDocumentsTa?.length ? master.requiredDocumentsTa : (master.requiredDocuments || []))
+      : (application?.requirements || []);
+
+    const prereqs = master
+      ? (isTa && master.prerequisitesTa?.length ? master.prerequisitesTa : (master.prerequisites || []))
+      : [];
+
+    const condDocs = master ? (master.conditionalDocuments || []) : [];
+    const optDocs = master
+      ? (isTa && master.optionalDocumentsTa?.length ? master.optionalDocumentsTa : (master.optionalDocuments || []))
+      : [];
+
+    const hasNotes = Boolean(master?.notesTa || master?.notesEn);
+
+    const renderDocRow = (requirementName, badgeLabel, badgeBg, badgeColor, isConditional = false, condText = '') => {
+      const document = allCustomerDocsList.find(
+        (item) =>
+          (item.applicationId === application?.id || !item.applicationId) &&
+          (isRequirementMatch(item.requirement, requirementName, master) ||
+          item.id === `${application?.id}-${requirementName}`)
+      );
+
+      const isPdf = document && (((document.name || '').toLowerCase().endsWith('.pdf')) || document.type === 'application/pdf');
+      const docUrl = document?.url || document?.data || '';
+      const isImage = document && !isPdf && (docUrl || /\.(jpg|jpeg|png|webp|svg)$/i.test(document.name || ''));
+
+      return (
+        <div
+          key={requirementName}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            padding: '16px',
+            background: document ? '#f0fdf4' : '#ffffff',
+            border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+            borderRadius: '12px',
+            marginBottom: '12px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '240px' }}>
+            {document && isImage && docUrl ? (
+              <div
+                onClick={() => handleViewDocument(document, notify)}
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '8px',
+                  border: '1.5px solid #86efac',
+                  overflow: 'hidden',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  background: '#ffffff',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                  display: 'grid',
+                  placeItems: 'center'
+                }}
+                title="Click to view full image (பெரிதாக்க சொடுக்கவும்)"
+              >
+                <img
+                  src={docUrl}
+                  alt={document.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              </div>
+            ) : document && isPdf ? (
+              <div
+                onClick={() => handleViewDocument(document, notify)}
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '8px',
+                  border: '1.5px solid #fca5a5',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  fontSize: '9px',
+                  fontWeight: 900
+                }}
+                title="Click to view PDF document (PDF ஆவணத்தைக் காண்க)"
+              >
+                <FileText size={18} />
+                <span>PDF</span>
+              </div>
+            ) : (
+              <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc', width: '40px', height: '40px', borderRadius: '10px', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
+              </span>
+            )}
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                <strong style={{ fontSize: '14px', color: '#0f172a' }}>{requirementName}</strong>
+                <span style={{ background: badgeBg, color: badgeColor, fontSize: '10.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '6px' }}>
+                  {badgeLabel}
+                </span>
+              </div>
+              {isConditional && condText && (
+                <small style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 700, display: 'block' }}>
+                  📌 {condText}
+                </small>
+              )}
+              {document ? (
+                <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700, display: 'block' }}>
+                  📄 {document.name} · Uploaded {document.uploadedAt}
+                </small>
+              ) : (
+                <small style={{ fontSize: '12px', color: '#64748b', display: 'block' }}>
+                  {badgeLabel === 'Required' || badgeLabel === 'கட்டாயம்' ? 'Required — not uploaded yet' : 'Optional document upload (if applicable)'}
+                </small>
+              )}
+            </div>
+          </div>
+
+          {document ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+              <span style={{ background: '#16a34a', color: 'white', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Check size={13} /> UPLOADED
+              </span>
+
+              <button className="document-open" onClick={() => handleViewDocument(document, notify)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                <Eye size={14} /> View
+              </button>
+
+              <button className="document-open" onClick={() => handleDownloadDocument(document, notify)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                <Download size={14} /> Download
+              </button>
+
+              <button onClick={() => deleteDocument(requirementName, document)} title="Delete Document" style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                <Trash2 size={14} /> Delete
+              </button>
+
+              <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
+                Change
+                <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirementName)} style={{ display: 'none' }} />
+              </label>
+            </div>
+          ) : (
+            <label className="document-upload" style={{ marginLeft: 'auto', background: badgeLabel === 'Required' || badgeLabel === 'கட்டாயம்' ? '#0052cc' : '#475569', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+              📤 Upload PDF / JPG
+              <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirementName)} style={{ display: 'none' }} />
+            </label>
+          )}
+        </div>
+      );
+    };
 
     return (
       <div className="tab-content">
         <div className="panel-heading">
           <div>
             <span className="section-kicker">DOCUMENT VAULT</span>
-            <h2>Required documents</h2>
-            <p>Only documents required for your selected service can be uploaded, viewed, or deleted.</p>
+            <h2>{isTa ? 'ஆவண மேலாண்மை' : 'Document Vault & Repository'}</h2>
+            <p>{isTa ? 'உங்கள் சேவைகளுக்கான தேவையான ஆவணங்களை பதிவேற்றவும் மற்றும் ஏற்கனவே பதிவேற்றிய ஆவணங்களை பார்வையிடவும்.' : 'Upload required documents for your selected service, and view all your saved documents.'}</p>
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px', margin: '8px 0 14px', fontSize: '11px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span>🔒</span>
               <span>Your uploaded documents are processed securely and are not publicly accessible. (உங்கள் ஆவணங்கள் பாதுகாப்பாக செயலாக்கப்படுகின்றன; அனுமதியின்றி எவரும் அணுக முடியாது).</span>
@@ -6233,198 +6749,16 @@ const getServiceVisual = (group, title = '') => {
           </div>
         </div>
 
-        <label className="document-service-select">
-          Service
-          <select value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
-            {customer.applications.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
-          </select>
-        </label>
+        {activeApps.length > 0 ? (
+          <>
+            <label className="document-service-select">
+              {isTa ? 'சேவை (Service):' : 'Service:'}
+              <select value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
+                {activeApps.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}
+              </select>
+            </label>
 
-        {/* Service Classification & Requirements Section */}
-        {(() => {
-          const master = findGovernmentService(application.serviceId || application.name || application.service);
-          const isTa = lang === 'ta';
-
-          const reqDocs = master
-            ? (isTa && master.requiredDocumentsTa?.length ? master.requiredDocumentsTa : (master.requiredDocuments || []))
-            : (application.requirements || []);
-
-          const prereqs = master
-            ? (isTa && master.prerequisitesTa?.length ? master.prerequisitesTa : (master.prerequisites || []))
-            : [];
-
-          const condDocs = master ? (master.conditionalDocuments || []) : [];
-          const optDocs = master
-            ? (isTa && master.optionalDocumentsTa?.length ? master.optionalDocumentsTa : (master.optionalDocuments || []))
-            : [];
-
-          const hasNotes = Boolean(master?.notesTa || master?.notesEn);
-
-          const renderDocRow = (requirementName, badgeLabel, badgeBg, badgeColor, isConditional = false, condText = '') => {
-            const customerDocs = customer.documents || [];
-            const globalExpiryDocs = cloudExpiryDocs || [];
-            const cleanPhone = (customer.phone || '').replace(/\D/g, '');
-
-            const document = customerDocs.find(
-              (item) =>
-                (item.applicationId === application.id || !item.applicationId) &&
-                (item.requirement === requirementName ||
-                item.id === `${application.id}-${requirementName}` ||
-                (item.requirement && requirementName && item.requirement.trim().toLowerCase() === requirementName.trim().toLowerCase()))
-            ) || globalExpiryDocs.filter(d => {
-              const docPhone = (d.customerPhone || '').replace(/\D/g, '');
-              const docAppId = d.applicationId || '';
-              const matchesPhone = cleanPhone && docPhone && (docPhone === cleanPhone || docPhone.includes(cleanPhone) || cleanPhone.includes(docPhone));
-              const matchesApp = !docAppId || docAppId === application.id;
-              return matchesPhone && matchesApp;
-            }).map(d => ({
-              id: d.id || d.url,
-              applicationId: d.applicationId,
-              requirement: d.requirement || d.title || d.name,
-              name: d.name || 'Uploaded Document',
-              uploadedAt: d.uploadedAt ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : 'Recently',
-              data: d.url || d.data
-            })).find(
-              (item) =>
-                item.requirement === requirementName ||
-                item.id === `${application.id}-${requirementName}` ||
-                (item.requirement && requirementName && item.requirement.trim().toLowerCase() === requirementName.trim().toLowerCase())
-            );
-
-            const isPdf = document && (((document.name || '').toLowerCase().endsWith('.pdf')) || document.type === 'application/pdf');
-            const docUrl = document?.url || document?.data || '';
-            const isImage = document && !isPdf && (docUrl || /\.(jpg|jpeg|png|webp|svg)$/i.test(document.name || ''));
-
-            return (
-              <div
-                key={requirementName}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                  padding: '16px',
-                  background: document ? '#f0fdf4' : '#ffffff',
-                  border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0',
-                  borderRadius: '12px',
-                  marginBottom: '12px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '240px' }}>
-                  {document && isImage && docUrl ? (
-                    <div
-                      onClick={() => handleViewDocument(document, notify)}
-                      style={{
-                        width: '48px',
-                        height: '48px',
-                        borderRadius: '8px',
-                        border: '1.5px solid #86efac',
-                        overflow: 'hidden',
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        background: '#ffffff',
-                        boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
-                        display: 'grid',
-                        placeItems: 'center'
-                      }}
-                      title="Click to view full image (பெரிதாக்க சொடுக்கவும்)"
-                    >
-                      <img
-                        src={docUrl}
-                        alt={document.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    </div>
-                  ) : document && isPdf ? (
-                    <div
-                      onClick={() => handleViewDocument(document, notify)}
-                      style={{
-                        width: '48px',
-                        height: '48px',
-                        borderRadius: '8px',
-                        border: '1.5px solid #fca5a5',
-                        background: '#fee2e2',
-                        color: '#dc2626',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                        fontSize: '9px',
-                        fontWeight: 900
-                      }}
-                      title="Click to view PDF document (PDF ஆவணத்தைக் காண்க)"
-                    >
-                      <FileText size={18} />
-                      <span>PDF</span>
-                    </div>
-                  ) : (
-                    <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc', width: '40px', height: '40px', borderRadius: '10px', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                      {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
-                    </span>
-                  )}
-
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
-                      <strong style={{ fontSize: '14px', color: '#0f172a' }}>{requirementName}</strong>
-                      <span style={{ background: badgeBg, color: badgeColor, fontSize: '10.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '6px' }}>
-                        {badgeLabel}
-                      </span>
-                    </div>
-                    {isConditional && condText && (
-                      <small style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 700, display: 'block' }}>
-                        📌 {condText}
-                      </small>
-                    )}
-                    {document ? (
-                      <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700, display: 'block' }}>
-                        📄 {document.name} · Uploaded {document.uploadedAt}
-                      </small>
-                    ) : (
-                      <small style={{ fontSize: '12px', color: '#64748b', display: 'block' }}>
-                        {badgeLabel === 'Required' || badgeLabel === 'கட்டாயம்' ? 'Required — not uploaded yet' : 'Optional document upload (if applicable)'}
-                      </small>
-                    )}
-                  </div>
-                </div>
-
-                {document ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                    <span style={{ background: '#16a34a', color: 'white', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      <Check size={13} /> UPLOADED
-                    </span>
-
-                    <button className="document-open" onClick={() => handleViewDocument(document, notify)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                      <Eye size={14} /> View
-                    </button>
-
-                    <button className="document-open" onClick={() => handleDownloadDocument(document, notify)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                      <Download size={14} /> Download
-                    </button>
-
-                    <button onClick={() => deleteDocument(requirementName, document)} title="Delete Document" style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                      <Trash2 size={14} /> Delete
-                    </button>
-
-                    <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
-                      Change
-                      <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirementName)} style={{ display: 'none' }} />
-                    </label>
-                  </div>
-                ) : (
-                  <label className="document-upload" style={{ marginLeft: 'auto', background: badgeLabel === 'Required' || badgeLabel === 'கட்டாயம்' ? '#0052cc' : '#475569', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
-                    📤 Upload PDF / JPG
-                    <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirementName)} style={{ display: 'none' }} />
-                  </label>
-                )}
-              </div>
-            );
-          };
-
-          return (
+            {/* Service Classification & Requirements Section */}
             <div>
               {/* 1. PREREQUISITES & ESSENTIAL DETAILS (NO UPLOAD) */}
               {prereqs.length > 0 && (
@@ -6521,8 +6855,192 @@ const getServiceVisual = (group, title = '') => {
                 </div>
               )}
             </div>
-          );
-        })()}
+          </>
+        ) : (
+          <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '20px', textAlign: 'center', marginBottom: '24px' }}>
+            <FileText size={32} style={{ color: '#64748b', marginBottom: '8px' }} />
+            <h4 style={{ margin: '0 0 6px', fontSize: '15px', color: '#1e293b' }}>
+              {isTa ? 'சேவை எதுவும் இன்னும் தேர்வு செய்யப்படவில்லை' : 'No service selected yet'}
+            </h4>
+            <p style={{ margin: 0, fontSize: '12.5px', color: '#64748b' }}>
+              {isTa
+                ? 'சேவை சார்ந்த ஆவணத் தேவைகளைக் காண "My Applications" பக்கத்தில் இருந்து சேவையைத் தேர்வு செய்யவும். உங்கள் முந்தைய அனைத்து ஆவணங்களும் கீழே பட்டியலிடப்பட்டுள்ளன.'
+                : 'Select a service from My Applications to view its required document checklist. All your previously uploaded documents are listed below.'}
+            </p>
+          </div>
+        )}
+
+        {/* 6. ALL MY UPLOADED DOCUMENTS (ALL APPLICATIONS & REPOSITORY) */}
+        <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '2px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', marginBottom: '16px' }}>
+            <div>
+              <span className="section-kicker" style={{ color: '#0052cc', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em' }}>
+                {isTa ? 'ஆவணக் களஞ்சியம்' : 'DOCUMENT REPOSITORY'}
+              </span>
+              <h3 style={{ margin: '2px 0 0', fontSize: '16px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                📁 {isTa ? 'எனது பதிவேற்றிய ஆவணங்கள்' : 'All My Uploaded Documents'} ({allCustomerDocsList.length})
+              </h3>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                {isTa
+                  ? 'உங்கள் அனைத்து விண்ணப்பங்கள் மற்றும் சேவைகளுக்காக பதிவேற்றப்பட்ட ஆவணங்களின் முழுமையான தொகுப்பு.'
+                  : 'Complete list of documents uploaded across all your service requests and digital applications.'}
+              </p>
+            </div>
+          </div>
+
+          {allCustomerDocsList.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '12px' }}>
+              {allCustomerDocsList.map((docItem, dIdx) => {
+                const isPdf = docItem && (((docItem.name || '').toLowerCase().endsWith('.pdf')) || docItem.type === 'application/pdf');
+                const docUrl = docItem?.url || docItem?.data || '';
+                const isImage = docItem && !isPdf && (docUrl || /\.(jpg|jpeg|png|webp|svg)$/i.test(docItem.name || ''));
+
+                // Find related application / service name if available
+                const relatedApp = activeApps.find(a => a.id === docItem.applicationId || a.ackNo === docItem.applicationId);
+                const relatedServiceName = relatedApp?.name || relatedApp?.service || (docItem.applicationId && !docItem.applicationId.startsWith('ADMIN-') ? docItem.applicationId : '');
+
+                return (
+                  <div
+                    key={docItem.id || docItem.url || dIdx}
+                    style={{
+                      background: '#ffffff',
+                      border: '1.5px solid #cbd5e1',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                      {isImage && docUrl ? (
+                        <div
+                          onClick={() => handleViewDocument(docItem, notify)}
+                          style={{
+                            width: '46px',
+                            height: '46px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            overflow: 'hidden',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            background: '#f8fafc',
+                            display: 'grid',
+                            placeItems: 'center'
+                          }}
+                          title={isTa ? 'பெரிதாக்க சொடுக்கவும்' : 'Click to view'}
+                        >
+                          <img src={docUrl} alt={docItem.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      ) : isPdf ? (
+                        <div
+                          onClick={() => handleViewDocument(docItem, notify)}
+                          style={{
+                            width: '46px',
+                            height: '46px',
+                            borderRadius: '8px',
+                            border: '1px solid #fca5a5',
+                            background: '#fee2e2',
+                            color: '#dc2626',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            fontSize: '9px',
+                            fontWeight: 900
+                          }}
+                          title={isTa ? 'PDF ஆவணத்தைக் காண்க' : 'Click to view PDF'}
+                        >
+                          <FileText size={18} />
+                          <span>PDF</span>
+                        </div>
+                      ) : (
+                        <span style={{ width: '46px', height: '46px', borderRadius: '8px', background: '#eff6ff', color: '#0052cc', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                          <FileCheck2 size={20} />
+                        </span>
+                      )}
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={docItem.requirement || docItem.name}>
+                          {docItem.requirement || docItem.name}
+                        </strong>
+                        <small style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          📄 {docItem.name}
+                        </small>
+                        {relatedServiceName && (
+                          <span style={{ display: 'inline-block', marginTop: '4px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', padding: '2px 6px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 700 }}>
+                            🔗 {relatedServiceName}
+                          </span>
+                        )}
+                        <small style={{ fontSize: '10.5px', color: '#166534', fontWeight: 700, display: 'block', marginTop: '3px' }}>
+                          📅 {docItem.uploadedAt || 'Recently'}
+                        </small>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+                      <button
+                        className="document-open"
+                        onClick={() => handleViewDocument(docItem, notify)}
+                        style={{
+                          flex: 1,
+                          background: '#0052cc',
+                          color: 'white',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          fontSize: '11.5px',
+                          fontWeight: 800,
+                          border: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Eye size={13} /> {isTa ? 'காண்க (View)' : 'View'}
+                      </button>
+
+                      <button
+                        className="document-open"
+                        onClick={() => handleDownloadDocument(docItem, notify)}
+                        style={{
+                          flex: 1,
+                          background: '#16a34a',
+                          color: 'white',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          fontSize: '11.5px',
+                          fontWeight: 800,
+                          border: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Download size={13} /> {isTa ? 'பதிவிறக்குக (Download)' : 'Download'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '12px', padding: '20px', textAlign: 'center' }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                {isTa
+                  ? 'இதுவரை எந்த ஆவணமும் பதிவேற்றப்படவில்லை. மேலே உள்ள சேவைத் தேவைகளில் ஆவணங்களைப் பதிவேற்றலாம்.'
+                  : 'No uploaded documents found. You can upload required documents for your selected service above.'}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
