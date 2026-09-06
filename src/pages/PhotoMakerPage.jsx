@@ -199,21 +199,69 @@ export default function PhotoMakerPage({ notify, lang = 'ta' }) {
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, pageW, pageH);
 
-      const photoW = PHOTO_WIDTH_PX;
-      const photoH = PHOTO_HEIGHT_PX;
+      let photoW = PHOTO_WIDTH_PX;
+      let photoH = PHOTO_HEIGHT_PX;
+      const targetAspect = 3.5 / 4.5; // standard passport aspect ratio (413 / 531)
 
-      const mt = paper === 'single' ? 0 : mmToPx(marginTop);
-      const ml = paper === 'single' ? 0 : mmToPx(marginLeft);
-      const gh = paper === 'single' ? 0 : mmToPx(gapHorizontal);
-      const gv = paper === 'single' ? 0 : mmToPx(gapVertical);
+      let gapX = paper === 'single' ? 0 : mmToPx(gapHorizontal);
+      let gapY = paper === 'single' ? 0 : mmToPx(gapVertical);
 
-      // Render each photo cell
+      const minMarginX = paper === 'single' ? 0 : 20;
+      const minMarginY = paper === 'single' ? 0 : 20;
+
+      if (paper !== 'single') {
+        let maxAvailW = (pageW - 2 * minMarginX - (cols - 1) * gapX) / cols;
+        let maxAvailH = (pageH - 2 * minMarginY - (rows - 1) * gapY) / rows;
+
+        // If gaps alone are too large for the requested cols/rows, reduce gaps dynamically
+        if (maxAvailW < 200 || maxAvailH < 250) {
+          gapX = Math.max(8, Math.min(gapX, Math.floor((pageW - 2 * minMarginX) / (cols * 4))));
+          gapY = Math.max(8, Math.min(gapY, Math.floor((pageH - 2 * minMarginY) / (rows * 4))));
+          maxAvailW = (pageW - 2 * minMarginX - (cols - 1) * gapX) / cols;
+          maxAvailH = (pageH - 2 * minMarginY - (rows - 1) * gapY) / rows;
+        }
+
+        // Auto-scale photo size to guarantee fitting within target canvas while preserving 3.5:4.5 aspect ratio
+        if (photoW > maxAvailW || photoH > maxAvailH) {
+          if (maxAvailW / targetAspect <= maxAvailH) {
+            photoW = Math.floor(maxAvailW);
+            photoH = Math.floor(photoW / targetAspect);
+          } else {
+            photoH = Math.floor(maxAvailH);
+            photoW = Math.floor(photoH * targetAspect);
+          }
+        }
+      }
+
+      // Compute total grid dimensions
+      const totalGridW = cols * photoW + (cols - 1) * gapX;
+      const totalGridH = rows * photoH + (rows - 1) * gapY;
+
+      // Perfectly center the complete grid horizontally and vertically inside the canvas
+      let startX = paper === 'single' ? 0 : Math.max(0, Math.floor((pageW - totalGridW) / 2));
+      let startY = paper === 'single' ? 0 : Math.max(0, Math.floor((pageH - totalGridH) / 2));
+
+      // User custom margin offsets (relative to default 5mm)
+      const userMtPx = mmToPx(marginTop);
+      const userMlPx = mmToPx(marginLeft);
+      const defaultMarginPx = mmToPx(5);
+
+      if (paper !== 'single') {
+        if (userMlPx !== defaultMarginPx) {
+          const shiftX = userMlPx - defaultMarginPx;
+          startX = Math.max(0, Math.min(startX + shiftX, pageW - totalGridW));
+        }
+        if (userMtPx !== defaultMarginPx) {
+          const shiftY = userMtPx - defaultMarginPx;
+          startY = Math.max(0, Math.min(startY + shiftY, pageH - totalGridH));
+        }
+      }
+
+      // Render each photo cell (guaranteed exactly cols x rows)
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
-          const x = ml + c * (photoW + gh);
-          const y = mt + r * (photoH + gv);
-
-          if (x + photoW > pageW || y + photoH > pageH) continue;
+          const x = startX + c * (photoW + gapX);
+          const y = startY + r * (photoH + gapY);
 
           ctx.save();
 
@@ -230,16 +278,16 @@ export default function PhotoMakerPage({ notify, lang = 'ta' }) {
           ctx.filter = `brightness(${brightness}%) contrast(${contrast}%)`;
 
           // Calculate Image Draw Coordinates with Zoom and Offsets
-          const aspect = img.width / img.height;
-          const targetAspect = photoW / photoH;
+          const imgAspect = img.width / img.height;
+          const cellAspect = photoW / photoH;
           let drawW, drawH;
 
-          if (aspect > targetAspect) {
+          if (imgAspect > cellAspect) {
             drawH = photoH * zoom;
-            drawW = drawH * aspect;
+            drawW = drawH * imgAspect;
           } else {
             drawW = photoW * zoom;
-            drawH = drawW / aspect;
+            drawH = drawW / imgAspect;
           }
 
           const drawX = x + (photoW - drawW) / 2 + offsetX;
@@ -258,7 +306,8 @@ export default function PhotoMakerPage({ notify, lang = 'ta' }) {
           // Draw Text Stamp (Name & Date)
           if (enableText && (nameText || dateText)) {
             const scaleDpi = 300 / 96;
-            const textBandHeight = Math.round(36 * scaleDpi);
+            const cellScale = photoH / PHOTO_HEIGHT_PX;
+            const textBandHeight = Math.round(Math.min(36 * scaleDpi * cellScale, photoH * 0.22));
             const textY = y + photoH - textBandHeight;
 
             ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
@@ -276,8 +325,8 @@ export default function PhotoMakerPage({ notify, lang = 'ta' }) {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
 
-            const nameFontPx = Math.round(fontSize * scaleDpi);
-            const dateFontPx = Math.round((fontSize - 2) * scaleDpi);
+            const nameFontPx = Math.max(9, Math.round(fontSize * scaleDpi * cellScale));
+            const dateFontPx = Math.max(8, Math.round((fontSize - 2) * scaleDpi * cellScale));
 
             if (nameText && dateText) {
               ctx.font = `${fontWeight} ${nameFontPx}px sans-serif`;
@@ -829,7 +878,7 @@ export default function PhotoMakerPage({ notify, lang = 'ta' }) {
                     </>
                   ) : (
                     <>
-                      <button className={`pill-btn ${copies === '16' ? 'active' : ''}`} onClick={() => setCopies('16')}>16 Photos</button>
+                      <button className={`pill-btn ${copies === '16' ? 'active' : ''}`} onClick={() => setCopies('16')}>16 Photos (4x4)</button>
                       <button className={`pill-btn ${copies === '30' ? 'active' : ''}`} onClick={() => setCopies('30')}>30 Photos (5x6)</button>
                       <button className={`pill-btn ${copies === '35' ? 'active' : ''}`} onClick={() => setCopies('35')}>35 Photos (5x7)</button>
                       <button className={`pill-btn ${copies === '40' ? 'active' : ''}`} onClick={() => setCopies('40')}>40 Photos (5x8)</button>

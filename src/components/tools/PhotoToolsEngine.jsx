@@ -218,9 +218,9 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
             const pw = 531;
             const ph = 413;
             const gapX = 40;
-            const gapY = 24;
+            const gapY = 20;
             const startX = 118;
-            const startY = 68;
+            const startY = 32;
 
             for (let r = 0; r < 8; r++) {
               for (let c = 0; c < 4; c++) {
