@@ -1161,19 +1161,21 @@ function App() {
     const updateCustomer = (updater) => {
       setCustomer((current) => {
         const updated = typeof updater === 'function' ? updater(current) : updater;
-        saveCustomerRecord(updated);
-        setCustomerRecords((prev) => ({
-          ...prev,
-          [updated.phone]: updated
-        }));
-        if (updated && updated.phone) {
-          saveCustomerProfileCloud(updated.phone, updated);
-        }
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new Event('akesevai-data-changed'));
+        if (!updated) return current;
+        try {
+          saveCustomerRecord(updated);
+        } catch (e) {}
+        if (updated.phone) {
+          try {
+            saveCustomerProfileCloud(updated.phone, updated);
+          } catch (e) {}
         }
         return updated;
       });
+      try {
+        const recs = readCustomerRecords();
+        setCustomerRecords(recs);
+      } catch (e) {}
     };
 
     const logoutCustomer = () => {
@@ -5038,47 +5040,69 @@ const getServiceVisual = (group, title = '') => {
 
     const rawApps = customer.applications || [];
     const applicationsMap = new Map();
-    rawApps.forEach((a) => {
+    rawApps.forEach((a, idx) => {
       if (!a) return;
-      const key = String(a.id || a.ackNo || a.name || '').trim();
+      const key = String(a.id || a.ackNo || '').trim() || (a.name ? `${a.name}-${idx}` : `app-idx-${idx}`);
       if (key && !applicationsMap.has(key)) {
         applicationsMap.set(key, a);
       }
     });
     const applications = Array.from(applicationsMap.values());
     const [appPendingRemoval, setAppPendingRemoval] = useState(null);
+    const [isRemovingApp, setIsRemovingApp] = useState(false);
 
     const handleConfirmRemoveApp = async () => {
-      if (!appPendingRemoval) return;
+      if (!appPendingRemoval || isRemovingApp) return;
       const target = appPendingRemoval;
-      const targetId = String(target.id || target.ackNo || target.tokenId || '').trim();
+      const targetId = String(target.id || '').trim();
+      const targetAckNo = String(target.ackNo || '').trim();
+      const targetName = target.name || target.service || target.serviceName || target.title || 'Application';
 
-      // 1. Delete from standalone applications collection & MongoDB via existing cloud helper
-      if (targetId) {
-        await deleteApplicationCloud(targetId);
+      if (!targetId && !targetAckNo) {
+        setAppPendingRemoval(null);
+        return;
       }
 
-      // 2. Remove from embedded customer.applications array
-      updateCustomer((curr) => {
-        if (!curr) return curr;
-        const currentApps = curr.applications || [];
-        const remaining = currentApps.filter((a) => {
-          if (!a) return false;
-          const aId = String(a.id || a.ackNo || a.tokenId || '').trim();
-          const matchId = targetId && aId === targetId;
-          const matchName = a.name && target.name && (a.name.trim().toLowerCase() === target.name.trim().toLowerCase());
-          return !(matchId || matchName);
-        });
-        return {
-          ...curr,
-          applications: remaining
-        };
-      });
+      setIsRemovingApp(true);
+      try {
+        // 1. Delete from standalone applications collection & MongoDB via existing cloud helper
+        const deleteSuccess = await deleteApplicationCloud(targetId || targetAckNo, { id: targetId, ackNo: targetAckNo, name: targetName });
+        if (deleteSuccess === false) {
+          throw new Error(lang === 'ta' ? 'சர்வர் பிழை காரணமாக விண்ணப்பத்தை நீக்க முடியவில்லை. தயவுசெய்து சிறிது நேரம் கழித்து முயற்சிக்கவும்.' : 'Could not remove application due to a server error. Please try again later.');
+        }
 
-      setAppPendingRemoval(null);
-      notify(lang === 'ta'
-        ? `விண்ணப்பம் "${target.name}" வெற்றிகரமாக நீக்கப்பட்டது.`
-        : `Application "${target.name}" removed successfully.`);
+        // 2. Remove from embedded customer.applications array using strictly unique identifier (id / ackNo)
+        updateCustomer((curr) => {
+          if (!curr) return curr;
+          const currentApps = curr.applications || [];
+          const remaining = currentApps.filter((a) => {
+            if (!a) return false;
+            const aId = String(a.id || '').trim();
+            const aAckNo = String(a.ackNo || '').trim();
+            if (targetId && aId && aId === targetId) return false;
+            if (targetAckNo && aAckNo && aAckNo === targetAckNo) return false;
+            if (targetId && aAckNo && aAckNo === targetId) return false;
+            if (targetAckNo && aId && aId === targetAckNo) return false;
+            return true;
+          });
+          return {
+            ...curr,
+            applications: remaining
+          };
+        });
+
+        setAppPendingRemoval(null);
+        notify(lang === 'ta'
+          ? `✅ "${targetName}" விண்ணப்பம் My Applications பட்டியலில் இருந்து நீக்கப்பட்டது.`
+          : `✅ Application "${targetName}" removed from your list successfully.`);
+      } catch (err) {
+        console.error('[AkEsevai Remove Application Error]:', err);
+        notify(lang === 'ta'
+          ? `❌ விண்ணப்பத்தை நீக்க முடியவில்லை: ${err?.message || 'மீண்டும் முயற்சிக்கவும்'}`
+          : `❌ Failed to remove application: ${err?.message || 'Please try again'}`);
+      } finally {
+        setIsRemovingApp(false);
+      }
     };
 
     const addApplication = (eventOrService) => {
@@ -5825,6 +5849,7 @@ const getServiceVisual = (group, title = '') => {
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
                 <button
                   type="button"
+                  disabled={isRemovingApp}
                   onClick={() => setAppPendingRemoval(null)}
                   style={{
                     flex: 1,
@@ -5835,7 +5860,8 @@ const getServiceVisual = (group, title = '') => {
                     color: '#334155',
                     fontSize: '13px',
                     fontWeight: 700,
-                    cursor: 'pointer'
+                    cursor: isRemovingApp ? 'not-allowed' : 'pointer',
+                    opacity: isRemovingApp ? 0.6 : 1
                   }}
                 >
                   {lang === 'ta' ? 'ரத்துசெய் / Cancel' : 'Cancel'}
@@ -5843,25 +5869,27 @@ const getServiceVisual = (group, title = '') => {
 
                 <button
                   type="button"
+                  disabled={isRemovingApp}
                   onClick={handleConfirmRemoveApp}
                   style={{
                     flex: 1,
                     padding: '10px 16px',
                     borderRadius: '10px',
                     border: 'none',
-                    background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                    background: isRemovingApp ? '#991b1b' : 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
                     color: '#ffffff',
                     fontSize: '13px',
                     fontWeight: 800,
-                    cursor: 'pointer',
+                    cursor: isRemovingApp ? 'not-allowed' : 'pointer',
                     boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '6px'
+                    gap: '6px',
+                    opacity: isRemovingApp ? 0.8 : 1
                   }}
                 >
-                  <Trash2 size={15} /> {lang === 'ta' ? 'நீக்கு / Remove' : 'Remove Application'}
+                  <Trash2 size={15} /> {isRemovingApp ? (lang === 'ta' ? 'நீக்கப்படுகிறது...' : 'Removing...') : (lang === 'ta' ? 'நீக்கு / Remove' : 'Remove Application')}
                 </button>
               </div>
             </div>

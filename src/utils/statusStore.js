@@ -1,4 +1,4 @@
-import { saveApplicationCloud } from './dataService';
+import { saveApplicationCloud } from './dataService.js';
 
 export const syncWithCentralServer = async () => {};
 
@@ -236,33 +236,51 @@ export const updateApplicationStage = (appId, newStage, newStatusLabel, newRemar
   return existing;
 };
 
-export const deleteApplicationRecord = (targetId) => {
-  if (!targetId) return;
-  const strId = String(targetId).trim();
+export const deleteApplicationRecord = (targetId, targetMeta = {}) => {
+  const strId = targetId ? String(targetId).trim() : (targetMeta?.id ? String(targetMeta.id).trim() : '');
+  const ackNo = targetMeta?.ackNo ? String(targetMeta.ackNo).trim() : '';
+  if (!strId && !ackNo) return;
 
-  // 1. Add to blacklist set
+  // 1. Add to blacklist set (unique IDs only)
   try {
     const delSet = getDeletedAppsSet();
-    delSet.add(strId);
+    if (strId) delSet.add(strId);
+    if (ackNo) delSet.add(ackNo);
     localStorage.setItem('akesevai-deleted-apps', JSON.stringify(Array.from(delSet)));
   } catch (e) {}
 
-  // 2. Remove from inMemoryApplications
-  Object.keys(inMemoryApplications).forEach((key) => {
-    const app = inMemoryApplications[key];
-    if (key === strId || app?.id === strId || app?.ackNo === strId || app?.tokenId === strId) {
-      delete inMemoryApplications[key];
+  // 2. Remove from inMemoryApplications (matching only unique id or ackNo)
+  try {
+    if (inMemoryApplications && typeof inMemoryApplications === 'object') {
+      Object.keys(inMemoryApplications).forEach((key) => {
+        const app = inMemoryApplications[key];
+        const appId = app?.id ? String(app.id).trim() : '';
+        const appAckNo = app?.ackNo ? String(app.ackNo).trim() : '';
+        const match =
+          (strId && (key === strId || appId === strId || appAckNo === strId)) ||
+          (ackNo && (key === ackNo || appId === ackNo || appAckNo === ackNo));
+        if (match) {
+          delete inMemoryApplications[key];
+        }
+      });
     }
-  });
+  } catch (e) {}
 
-  // 3. Remove from localStorage akesevai-application-records
+  // 3. Remove from localStorage akesevai-application-records (matching only unique id or ackNo)
   try {
     const raw = localStorage.getItem('akesevai-application-records');
     if (raw) {
       const records = JSON.parse(raw);
-      delete records[strId];
-      Object.keys(records).forEach(k => {
-        if (records[k]?.id === strId || records[k]?.ackNo === strId) {
+      if (strId) delete records[strId];
+      if (ackNo) delete records[ackNo];
+      Object.keys(records).forEach((k) => {
+        const r = records[k];
+        const rId = r?.id ? String(r.id).trim() : '';
+        const rAckNo = r?.ackNo ? String(r.ackNo).trim() : '';
+        const match =
+          (strId && (k === strId || rId === strId || rAckNo === strId)) ||
+          (ackNo && (k === ackNo || rId === ackNo || rAckNo === ackNo));
+        if (match) {
           delete records[k];
         }
       });
@@ -270,7 +288,7 @@ export const deleteApplicationRecord = (targetId) => {
     }
   } catch (e) {}
 
-  // 4. Remove from ALL customer records in localStorage (akesevai-customer-records and akesevai-customers)
+  // 4. Remove from ALL customer records in localStorage (matching only unique id or ackNo)
   ['akesevai-customer-records', 'akesevai-customers'].forEach((storageKey) => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -280,9 +298,16 @@ export const deleteApplicationRecord = (targetId) => {
         Object.keys(custs).forEach((phone) => {
           if (custs[phone] && Array.isArray(custs[phone].applications)) {
             const initialLen = custs[phone].applications.length;
-            custs[phone].applications = custs[phone].applications.filter(
-              (a) => a && String(a.id || a.ackNo || '').trim() !== strId
-            );
+            custs[phone].applications = custs[phone].applications.filter((a) => {
+              if (!a) return false;
+              const aId = String(a.id || '').trim();
+              const aAckNo = String(a.ackNo || '').trim();
+              if (strId && aId && aId === strId) return false;
+              if (ackNo && aAckNo && aAckNo === ackNo) return false;
+              if (strId && aAckNo && aAckNo === strId) return false;
+              if (ackNo && aId && aId === ackNo) return false;
+              return true;
+            });
             if (custs[phone].applications.length !== initialLen) {
               updated = true;
             }
@@ -296,7 +321,9 @@ export const deleteApplicationRecord = (targetId) => {
   });
 
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new Event('akesevai-data-changed'));
+    try {
+      window.dispatchEvent(new Event('akesevai-data-changed'));
+    } catch (e) {}
   }
 };
 

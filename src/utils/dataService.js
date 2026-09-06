@@ -46,7 +46,7 @@ import {
   subscribeLiveQueueMongo,
   fetchPublicAppStatusMongo,
   fetchTrackByMobileMongo
-} from './mongoService';
+} from './mongoService.js';
 import {
   saveDocBinary,
   getDocBinary,
@@ -366,14 +366,22 @@ export const saveApplicationCloud = async (appId, appData) => {
   }
 };
 
-export const deleteApplicationCloud = async (appId) => {
-  if (!appId) return;
-  const strId = String(appId).trim();
-  deleteApplicationRecord(strId);
+export const deleteApplicationCloud = async (appId, targetMeta = {}) => {
+  const strId = appId ? String(appId).trim() : (targetMeta?.id ? String(targetMeta.id).trim() : '');
+  const ackNo = targetMeta?.ackNo ? String(targetMeta.ackNo).trim() : '';
+  if (!strId && !ackNo) return false;
+
+  const targetId = strId || ackNo;
   try {
-    await deleteApplicationMongo(strId);
+    const isDeletedOnCloud = await deleteApplicationMongo(targetId);
+    if (isDeletedOnCloud === false) {
+      return false;
+    }
+    deleteApplicationRecord(targetId, targetMeta);
+    return true;
   } catch (err) {
     logNotice('MongoDB Application delete', err);
+    return false;
   }
 };
 
