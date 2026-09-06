@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { siteConfig } from './config/siteConfig';
 import { translations } from './config/translations';
 import { APPOINTMENT_SLOTS_30MIN, BUSINESS_HOURS_CONFIG, getOperationalStatus } from './config/businessHours';
@@ -51,21 +51,7 @@ import { saveDocBinary, getDocBinary, deleteDocBinary, getAllDocBinaries } from 
 import AdvertisementBannerSection from './components/AdvertisementBannerSection';
 import ServiceCard from './components/ServiceCard';
 import NotificationCard from './components/NotificationCard';
-import NotificationTables from './components/NotificationTables';
 import OtpGate from './components/OtpGate';
-import TokenPass from './components/TokenPass';
-import StatusTrackPage from './pages/StatusTrackPage';
-import TokenGeneratorPage from './pages/TokenGeneratorPage';
-import SoftwarePage from './pages/SoftwarePage';
-import WeblinkPage from './pages/WeblinkPage';
-import { allWebLinks } from './data/weblinksData';
-import PhotoMakerPage from './pages/PhotoMakerPage';
-import PhotoToolsHubPage from './pages/PhotoToolsHubPage';
-import PhotoToolPage from './pages/PhotoToolPage';
-import XeroxPrintingPage from './pages/XeroxPrintingPage';
-import TypingServicesPage from './pages/TypingServicesPage';
-import SpiralBindingPage from './pages/SpiralBindingPage';
-import { PHOTO_TOOLS_CATALOG } from './data/photoToolsData';
 import HeroDocumentShowcase from './components/HeroDocumentShowcase';
 import HeroBannerSlider from './components/HeroBannerSlider';
 import ServicePhotoSlider from './components/ServicePhotoSlider';
@@ -75,10 +61,8 @@ import AnimatedLiveStatsStrip from './components/AnimatedLiveStatsStrip';
 import AiDocumentCheckerWidget from './components/AiDocumentCheckerWidget';
 import CscDigitalHubWidget from './components/CscDigitalHubWidget';
 import SmartServiceGuideWidget from './components/SmartServiceGuideWidget';
-import AdminSevaiSmartDesk from './components/AdminSevaiSmartDesk';
 import WelcomeSplashIntro from './components/WelcomeSplashIntro';
 import CustomerLogoutModal from './components/CustomerLogoutModal';
-import FirstTimeLoginModal from './components/FirstTimeLoginModal';
 import TamilVoiceAssistantWidget from './components/TamilVoiceAssistantWidget';
 import LiveWaitTimeBanner from './components/LiveWaitTimeBanner';
 import WhatsAppQuickFormWidget from './components/WhatsAppQuickFormWidget';
@@ -88,6 +72,22 @@ import ServiceOfTheDayBanner from './components/ServiceOfTheDayBanner';
 import DocumentReadinessScore from './components/DocumentReadinessScore';
 import PhotoBackgroundRemover from './components/PhotoBackgroundRemover';
 import BrowserNotificationOptIn from './components/BrowserNotificationOptIn';
+
+// Lazy-loaded secondary route pages & heavy tool components
+const StatusTrackPage = lazy(() => import('./pages/StatusTrackPage'));
+const TokenGeneratorPage = lazy(() => import('./pages/TokenGeneratorPage'));
+const TokenPass = lazy(() => import('./components/TokenPass'));
+const SoftwarePage = lazy(() => import('./pages/SoftwarePage'));
+const WeblinkPage = lazy(() => import('./pages/WeblinkPage'));
+const PhotoMakerPage = lazy(() => import('./pages/PhotoMakerPage'));
+const PhotoToolsHubPage = lazy(() => import('./pages/PhotoToolsHubPage'));
+const PhotoToolPage = lazy(() => import('./pages/PhotoToolPage'));
+const XeroxPrintingPage = lazy(() => import('./pages/XeroxPrintingPage'));
+const TypingServicesPage = lazy(() => import('./pages/TypingServicesPage'));
+const SpiralBindingPage = lazy(() => import('./pages/SpiralBindingPage'));
+const NotificationTables = lazy(() => import('./components/NotificationTables'));
+const AdminSevaiSmartDesk = lazy(() => import('./components/AdminSevaiSmartDesk'));
+const FirstTimeLoginModal = lazy(() => import('./components/FirstTimeLoginModal'));
 import GoogleMapEmbed from './components/GoogleMapEmbed';
 import SocialMediaFollowWidget from './components/SocialMediaFollowWidget';
 import InstallPwaBanner from './components/InstallPwaBanner';
@@ -444,6 +444,43 @@ function toDownloadLink(link) {
   const document = link?.match(/docs\.google\.com\/document\/d\/([^/]+)/);
   if (document) return `https://docs.google.com/document/d/${document[1]}/export?format=pdf`;
   return link;
+}
+
+function PageLoadingFallback({ lang = 'ta' }) {
+  return (
+    <div
+      className="page-loading-fallback"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '38vh',
+        padding: '32px 16px',
+        textAlign: 'center'
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        style={{
+          width: '32px',
+          height: '32px',
+          border: '3px solid rgba(22, 163, 74, 0.2)',
+          borderTopColor: '#16a34a',
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+          marginBottom: '12px'
+        }}
+      />
+      <div style={{ fontSize: '15px', fontWeight: 600, color: '#16a34a', marginBottom: '2px' }}>
+        {lang === 'ta' ? 'பக்கம் ஏற்றப்படுகிறது...' : 'Loading page...'}
+      </div>
+      <div style={{ fontSize: '12px', color: '#64748b' }}>
+        {lang === 'ta' ? 'Loading page...' : 'பக்கம் ஏற்றப்படுகிறது...'}
+      </div>
+    </div>
+  );
 }
 
 const validPages = [
@@ -1235,6 +1272,13 @@ function App() {
             navigate('home');
           }}
         />
+        <Suspense fallback={null}>
+          <FirstTimeLoginModal
+            isOpen={showFirstLoginModal}
+            customerName={customer?.profile?.name || customer?.name || 'Customer'}
+            onClose={() => setShowFirstLoginModal(false)}
+          />
+        </Suspense>
         <header className="site-header">
           <div className="header-inner">
             <button className="brand" onClick={() => navigate('home')} aria-label="AK e-Sevai home">
@@ -1432,26 +1476,28 @@ function App() {
         </div>
 
         <main>
-          {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
-          {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
-          {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
-          {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
-          {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
-          {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
-          {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
-          {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
-          {page === 'photo-maker' && <PhotoMakerPage notify={notify} lang={lang} />}
-          {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
-          {page === 'notifications' && <NotificationsPage lang={lang} navigate={navigate} />}
-          {page === 'software' && (adminLoggedIn ? <SoftwarePage notify={notify} navigate={navigate} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
-          {page === 'whatsapp-poster' && <WhatsappPosterPage notify={notify} lang={lang} />}
-          {page === 'status-track' && <StatusTrackPage lang={lang} />}
-          {page === 'token-generator' && <TokenGeneratorPage onTokenSaved={saveToken} lang={lang} />}
-          {page === 'about' && <AboutPage navigate={navigate} lang={lang} />}
-          {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
-          {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} customerRecords={customerRecords} onClose={() => navigate('home')} />}
-          {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} activeTab={customerTab} setActiveTab={setCustomerTab} lang={lang} navigate={navigate} />}
-          {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} changeAdminPassword={changeAdminPassword} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
+          <Suspense fallback={<PageLoadingFallback lang={lang} />}>
+            {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
+            {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
+            {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
+            {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
+            {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
+            {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
+            {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
+            {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
+            {page === 'photo-maker' && <PhotoMakerPage notify={notify} lang={lang} />}
+            {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
+            {page === 'notifications' && <NotificationsPage lang={lang} navigate={navigate} />}
+            {page === 'software' && (adminLoggedIn ? <SoftwarePage notify={notify} navigate={navigate} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
+            {page === 'whatsapp-poster' && <WhatsappPosterPage notify={notify} lang={lang} />}
+            {page === 'status-track' && <StatusTrackPage lang={lang} />}
+            {page === 'token-generator' && <TokenGeneratorPage onTokenSaved={saveToken} lang={lang} />}
+            {page === 'about' && <AboutPage navigate={navigate} lang={lang} />}
+            {page === 'contact' && <ContactPage notify={notify} lang={lang} />}
+            {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} customerRecords={customerRecords} onClose={() => navigate('home')} />}
+            {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} activeTab={customerTab} setActiveTab={setCustomerTab} lang={lang} navigate={navigate} />}
+            {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} changeAdminPassword={changeAdminPassword} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
+          </Suspense>
         </main>
 
         <footer className="site-footer">
@@ -1986,7 +2032,9 @@ const getServiceVisual = (group, title = '') => {
           )}
         </div>
 
-        <NotificationTables forceAdmin={false} lang={lang} />
+        <Suspense fallback={<PageLoadingFallback lang={lang} />}>
+          <NotificationTables forceAdmin={false} lang={lang} />
+        </Suspense>
         <div className="notice-list" style={{ marginTop: '35px' }}>
           <div>
             <Megaphone size={18} />
@@ -3627,7 +3675,9 @@ const getServiceVisual = (group, title = '') => {
 
         {adminTab === 'smartdesk' && (
           <div style={{ marginTop: '10px' }}>
-            <AdminSevaiSmartDesk notify={notify} changeAdminPassword={changeAdminPassword} initialVaultTab={smartDeskTargetTab} />
+            <Suspense fallback={<PageLoadingFallback lang={lang || 'ta'} />}>
+              <AdminSevaiSmartDesk notify={notify} changeAdminPassword={changeAdminPassword} initialVaultTab={smartDeskTargetTab} />
+            </Suspense>
           </div>
         )}
         {adminTab === 'notifications' && (
@@ -3643,7 +3693,9 @@ const getServiceVisual = (group, title = '') => {
                 </p>
               </div>
             </div>
-            <NotificationTables forceAdmin={true} lang={lang || 'ta'} />
+            <Suspense fallback={<PageLoadingFallback lang={lang || 'ta'} />}>
+              <NotificationTables forceAdmin={true} lang={lang || 'ta'} />
+            </Suspense>
           </div>
         )}
 
@@ -4500,7 +4552,9 @@ const getServiceVisual = (group, title = '') => {
 
         {adminTab === 'photomaker' && (
           <div style={{ marginTop: '10px' }}>
-            <PhotoMakerPage notify={notify} lang={lang || 'ta'} />
+            <Suspense fallback={<PageLoadingFallback lang={lang || 'ta'} />}>
+              <PhotoMakerPage notify={notify} lang={lang || 'ta'} />
+            </Suspense>
           </div>
         )}
 
@@ -5518,26 +5572,29 @@ const getServiceVisual = (group, title = '') => {
         )}
         {activeTab === 'token-slip' && (
           <div className="tab-content" style={{ background: 'transparent', border: 'none', padding: 0, marginTop: '20px' }}>
-            <TokenPass
-              defaultToken={(() => {
-                const lt = customer.lastToken;
-                if (!lt) return null;
-                const todayStr = new Date().toISOString().split('T')[0];
-                const isToday = lt.date === todayStr;
-                const isVerified = (lt.paymentStatus === 'VERIFIED' || String(lt.status || '').includes('VERIFIED')) && Boolean(lt.tokenNo);
-                return isToday && isVerified ? lt : null;
-              })()}
-              initialName={customer.profile?.name || ''}
-              initialPhone={customer.phone || ''}
-              onTokenSaved={(tok) => {
-                if (typeof saveToken === 'function') saveToken(tok);
-                updateCustomer((curr) => ({ ...curr, lastToken: tok }));
-                notify(`Token ${tok.tokenNo} generated and saved to your customer portal!`);
-              }}
-              onTokenDeleted={(tokNo) => {
-                handleDeleteCustomerToken(tokNo);
-              }}
-            />
+            <Suspense fallback={<PageLoadingFallback lang={lang} />}>
+              <TokenPass
+                defaultToken={(() => {
+                  const lt = customer.lastToken;
+                  if (!lt) return null;
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  const isToday = lt.date === todayStr;
+                  const isVerified = (lt.paymentStatus === 'VERIFIED' || String(lt.status || '').includes('VERIFIED')) && Boolean(lt.tokenNo);
+                  return isToday && isVerified ? lt : null;
+                })()}
+                initialName={customer.profile?.name || ''}
+                initialPhone={customer.phone || ''}
+                onTokenSaved={(tok) => {
+                  if (typeof saveToken === 'function') saveToken(tok);
+                  updateCustomer((curr) => ({ ...curr, lastToken: tok }));
+                  notify(`Token ${tok.tokenNo} generated and saved to your customer portal!`);
+                }}
+                onTokenDeleted={(tokNo) => {
+                  handleDeleteCustomerToken(tokNo);
+                }}
+                lang={lang}
+              />
+            </Suspense>
           </div>
         )}
 
