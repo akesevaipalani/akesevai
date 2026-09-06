@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   Search, X, Check, Copy, ExternalLink, ArrowRight, FileText,
   AlertCircle, ShieldCheck, HelpCircle, ChevronRight, Layers,
-  Info, CheckCircle2, Building, Sparkles, SlidersHorizontal
+  Info, CheckCircle2, Building, Sparkles, SlidersHorizontal, KeyRound
 } from 'lucide-react';
 import {
   GOVERNMENT_SERVICES,
@@ -68,16 +68,34 @@ export default function GovernmentServiceSelector({
   const copyDocumentChecklist = () => {
     if (!selectedService) return;
     const isTa = lang === 'ta';
-    const docs = isTa && selectedService.requiredDocumentsTa?.length
+    const reqDocs = isTa && selectedService.requiredDocumentsTa?.length
       ? selectedService.requiredDocumentsTa
-      : selectedService.requiredDocuments;
+      : selectedService.requiredDocuments || [];
 
-    const text = `📋 ${isTa ? selectedService.nameTa : selectedService.nameEn} (${selectedService.id})\n` +
-      `🏛️ ${isTa ? selectedService.departmentTa : selectedService.department}\n\n` +
-      `${isTa ? 'தேவையான ஆவணங்கள் (Required Documents):' : 'Required Documents Checklist:'}\n` +
-      docs.map((d, i) => `${i + 1}. ${d}`).join('\n') +
-      (selectedService.notesTa ? `\n\n📌 குறிப்பு: ${isTa ? selectedService.notesTa : selectedService.notesEn}` : '') +
-      `\n\n- AK E-SEVAI Application Assistance`;
+    const prereqs = isTa && selectedService.prerequisitesTa?.length
+      ? selectedService.prerequisitesTa
+      : selectedService.prerequisites || [];
+
+    let text = `📋 ${isTa ? selectedService.nameTa : selectedService.nameEn} (${selectedService.id})\n` +
+      `🏛️ ${isTa ? selectedService.departmentTa : selectedService.department}\n\n`;
+
+    if (reqDocs.length > 0) {
+      text += `${isTa ? 'தேவையான ஆவணங்கள் (Required Documents):' : 'Required Documents Checklist:'}\n` +
+        reqDocs.map((d, i) => `${i + 1}. ${d}`).join('\n') + '\n\n';
+    } else {
+      text += `${isTa ? '✅ ஆவணப் பதிவேற்றம் எதுவும் தேவையில்லை (Zero Document Upload Required)' : '✅ No Document Upload Required'}\n\n`;
+    }
+
+    if (prereqs.length > 0) {
+      text += `${isTa ? '🔑 முன்நிபந்தனைகள் / தேவைப்படும் தகவல்கள் (Prerequisites & Details):' : '🔑 Prerequisites & Details:'}\n` +
+        prereqs.map((p, i) => `• ${p}`).join('\n') + '\n\n';
+    }
+
+    if (selectedService.notesTa || selectedService.notesEn) {
+      text += `📌 ${isTa ? 'குறிப்பு:' : 'Note:'} ${isTa ? selectedService.notesTa : selectedService.notesEn}\n\n`;
+    }
+
+    text += `- AK E-SEVAI Application Assistance (Citizen Facilitation)`;
 
     navigator.clipboard.writeText(text).then(() => {
       setCopiedNotification(true);
@@ -95,8 +113,8 @@ export default function GovernmentServiceSelector({
           <div className="title-with-badge">
             <span className="gov-icon-badge">🏛️</span>
             <div>
-              <h3>{isTa ? 'அரசு சேவை பட்டியல் & தேவையான ஆவணங்கள்' : 'Tamil Nadu Government Service Catalog'}</h3>
-              <p>{isTa ? 'சேவையைத் தேர்வு செய்து தேவையான ஆவணங்களின் பட்டியலை சரிபார்க்கவும்' : 'Select any official service to view eligibility and required document checklist'}</p>
+              <h3>{isTa ? 'தமிழ்நாடு அரசு சேவைகள் வழிகாட்டி (98 சேவைகள்)' : 'Tamil Nadu Government Service Facilitation (98 Options)'}</h3>
+              <p>{isTa ? 'சேவையைத் தேர்வு செய்து தேவையான ஆவணங்கள் மற்றும் முன்நிபந்தனைகளை சரிபார்க்கவும்' : 'Select any service option to view eligibility, required documents, and prerequisites'}</p>
             </div>
           </div>
           {isModal && onClose && (
@@ -113,7 +131,7 @@ export default function GovernmentServiceSelector({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={isTa ? 'சேவை அல்லது துறையைத் தேடுக (எ.கா: வருமானம், TNEB, Smart Card, RTO)...' : 'Search service or department (e.g., Income, Electricity, Ration Card, DL)...'}
+            placeholder={isTa ? 'சேவை, துறை அல்லது குறியீட்டைத் தேடுக (எ.கா: வருமானம், TNEB, Smart Card, RTO, REV-101)...' : 'Search service, dept or code (e.g., Income, Electricity, Ration Card, DL, NAT-2008)...'}
             className="search-input"
             autoFocus={isModal}
           />
@@ -153,6 +171,9 @@ export default function GovernmentServiceSelector({
             <div className="service-cards-stack">
               {filteredServices.map(service => {
                 const isSelected = selectedService?.id === service.id;
+                const reqDocsCount = service.requiredDocuments?.length || 0;
+                const prereqsCount = service.prerequisites?.length || 0;
+
                 return (
                   <div
                     key={service.id}
@@ -175,11 +196,22 @@ export default function GovernmentServiceSelector({
 
                     <div className="card-footer-row">
                       <span className={`service-type-badge type-${(service.serviceType || '').toLowerCase().replace(/[^a-z]/g, '')}`}>
-                        {service.serviceType}
+                        {service.serviceType || 'Facilitation'}
                       </span>
-                      <span className="doc-count-tag">
-                        📄 {service.requiredDocuments?.length || 0} {isTa ? 'ஆவணங்கள்' : 'Docs'}
-                      </span>
+                      {reqDocsCount > 0 ? (
+                        <span className="doc-count-tag">
+                          📄 {reqDocsCount} {isTa ? 'ஆவணங்கள்' : 'Docs'}
+                        </span>
+                      ) : (
+                        <span className="doc-count-tag" style={{ background: '#dcfce7', color: '#166534', borderColor: '#86efac' }}>
+                          ⚡ {isTa ? 'ஆவணம் தேவையில்லை' : 'No Upload'}
+                        </span>
+                      )}
+                      {prereqsCount > 0 && (
+                        <span className="prereq-count-tag" style={{ fontSize: '11px', color: '#854d0e', background: '#fef9c3', padding: '2px 6px', borderRadius: '4px', border: '1px solid #fef08a' }}>
+                          🔑 {prereqsCount}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -212,7 +244,7 @@ export default function GovernmentServiceSelector({
                   </span>
                   <span className="badge-id">{selectedService.id}</span>
                   <span className={`badge-type type-${(selectedService.serviceType || '').toLowerCase().replace(/[^a-z]/g, '')}`}>
-                    {selectedService.serviceType}
+                    {selectedService.serviceType || 'e-Sevai Facilitation'}
                   </span>
                 </div>
 
@@ -257,6 +289,31 @@ export default function GovernmentServiceSelector({
                 </div>
               )}
 
+              {/* PREREQUISITES & REQUIRED INFORMATION (NO UPLOAD) */}
+              {selectedService.prerequisites && selectedService.prerequisites.length > 0 && (
+                <div className="sheet-section prerequisites-section" style={{ background: '#fefce8', border: '1.5px solid #fef08a', borderRadius: '12px', padding: '14px 16px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <KeyRound size={16} color="#854d0e" />
+                    <h5 style={{ margin: 0, font: '800 13px Manrope', color: '#854d0e', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      {isTa ? '🔑 முன்நிபந்தனைகள் & தேவைப்படும் தகவல்கள் (Prerequisites / தகவல்கள் மட்டும்)' : '🔑 Prerequisites & Details (Information Only — No Upload)'}
+                    </h5>
+                  </div>
+                  <p style={{ margin: '0 0 10px', fontSize: '11.5px', color: '#a16207' }}>
+                    {isTa
+                      ? 'கீழே உள்ளவை ஆவணப் பதிவேற்றம் அல்ல; இச்சேவைக்கு விண்ணப்பிக்க தேவையான எண்கள் / தகவல்கள் / நிபந்தனைகள் ஆகும்:'
+                      : 'The following are mandatory details/conditions to process the service (NOT document uploads):'}
+                  </p>
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    {(isTa && selectedService.prerequisitesTa?.length ? selectedService.prerequisitesTa : selectedService.prerequisites).map((item, pIdx) => (
+                      <div key={pIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12.5px', color: '#713f12', lineHeight: 1.4 }}>
+                        <span style={{ color: '#ca8a04', fontWeight: 900 }}>•</span>
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Interactive Required Documents Checklist */}
               <div className="sheet-section documents-section">
                 <div className="docs-header-row">
@@ -281,31 +338,66 @@ export default function GovernmentServiceSelector({
                   </button>
                 </div>
 
-                <div className="docs-checklist-box">
-                  {(isTa && selectedService.requiredDocumentsTa?.length ? selectedService.requiredDocumentsTa : selectedService.requiredDocuments).map((doc, idx) => {
-                    const isChecked = !!checkedDocs[doc];
-                    return (
-                      <label key={idx} className={`doc-check-item ${isChecked ? 'doc-is-checked' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleDocCheck(doc)}
-                        />
-                        <span className="doc-num">{idx + 1}.</span>
-                        <span className="doc-name">{doc}</span>
-                        {isChecked && <Check size={14} className="check-indicator" />}
-                      </label>
-                    );
-                  })}
-                </div>
+                {selectedService.requiredDocuments && selectedService.requiredDocuments.length > 0 ? (
+                  <div className="docs-checklist-box">
+                    {(isTa && selectedService.requiredDocumentsTa?.length ? selectedService.requiredDocumentsTa : selectedService.requiredDocuments).map((doc, idx) => {
+                      const isChecked = !!checkedDocs[doc];
+                      return (
+                        <label key={idx} className={`doc-check-item ${isChecked ? 'doc-is-checked' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleDocCheck(doc)}
+                          />
+                          <span className="doc-num">{idx + 1}.</span>
+                          <span className="doc-name">{doc}</span>
+                          <span style={{ marginLeft: 'auto', background: '#fee2e2', color: '#991b1b', fontSize: '10px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px' }}>
+                            {isTa ? 'கட்டாயம்' : 'Required'}
+                          </span>
+                          {isChecked && <Check size={14} className="check-indicator" />}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '14px', textAlign: 'center', margin: '8px 0' }}>
+                    <p style={{ margin: 0, fontSize: '13px', fontWeight: 700, color: '#15803d' }}>
+                      ⚡ {isTa ? 'இச்சேவைக்கு ஆவணப் பதிவேற்றம் எதுவும் தேவையில்லை!' : 'No document upload required for this service!'}
+                    </p>
+                    <small style={{ color: '#166534', fontSize: '11.5px', display: 'block', marginTop: '4px' }}>
+                      {isTa ? 'மேலே உள்ள முன்நிபந்தனைகள் / பதிவு எண்களை மட்டும் சரிபார்த்து விண்ணப்பிக்கலாம்.' : 'Direct online search / token booking / digital processing using prerequisites above.'}
+                    </small>
+                  </div>
+                )}
+
+                {/* Conditional Documents */}
+                {selectedService.conditionalDocuments && selectedService.conditionalDocuments.length > 0 && (
+                  <div className="conditional-docs-block" style={{ marginTop: '12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '12px 14px' }}>
+                    <h6 style={{ margin: '0 0 8px', font: '800 12px Manrope', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      ⚠️ {isTa ? 'நிபந்தனைக்குட்பட்ட ஆவணங்கள் (Conditional Documents – Required only if):' : 'Conditional Documents (Required only if applicable):'}
+                    </h6>
+                    <div style={{ display: 'grid', gap: '8px' }}>
+                      {selectedService.conditionalDocuments.map((cond, cIdx) => (
+                        <div key={cIdx} style={{ background: '#ffffff', border: '1px solid #dbeafe', borderRadius: '8px', padding: '8px 10px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#2563eb', display: 'block' }}>
+                            📌 {isTa ? cond.conditionTa || cond.condition : cond.condition}:
+                          </span>
+                          <span style={{ fontSize: '12px', color: '#1e293b', fontWeight: 600 }}>
+                            👉 {isTa ? cond.requirementTa || cond.requirement : cond.requirement}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Optional / Supporting Documents */}
                 {selectedService.optionalDocuments && selectedService.optionalDocuments.length > 0 && (
-                  <div className="optional-docs-block">
-                    <h6>{isTa ? 'கூடுதல் / விருப்ப ஆவணங்கள் (Optional / If applicable):' : 'Additional / Optional Documents:'}</h6>
+                  <div className="optional-docs-block" style={{ marginTop: '12px' }}>
+                    <h6>{isTa ? 'கூடுதல் / விருப்ப ஆவணங்கள் (Optional Documents):' : 'Additional / Optional Documents:'}</h6>
                     <ul>
-                      {selectedService.optionalDocuments.map((optDoc, oIdx) => (
-                        <li key={oIdx}>• {optDoc}</li>
+                      {(isTa && selectedService.optionalDocumentsTa?.length ? selectedService.optionalDocumentsTa : selectedService.optionalDocuments).map((optDoc, oIdx) => (
+                        <li key={oIdx}>• {optDoc} <span style={{ fontSize: '10px', color: '#64748b' }}>({isTa ? 'விருப்பம்' : 'Optional'})</span></li>
                       ))}
                     </ul>
                   </div>
@@ -327,7 +419,7 @@ export default function GovernmentServiceSelector({
               {/* Official Source & Legal Disclaimer */}
               <div className="sheet-official-source-box">
                 <div className="official-source-text">
-                  <span>🏛️ {isTa ? 'அதிகாரப்பூர்வ அரசு தளம்:' : 'Official Portal:'} </span>
+                  <span>🏛️ {isTa ? 'அதிகாரப்பூர்வ அரசு தளம்:' : 'Official Department Portal:'} </span>
                   <a
                     href={selectedService.officialPortalUrl || '#'}
                     target="_blank"
@@ -340,7 +432,7 @@ export default function GovernmentServiceSelector({
                 <small className="assistance-disclaimer">
                   {isTa
                     ? '🛡️ AK E-SEVAI என்பது தனியார் குடிமக்கள் சேவை மற்றும் வழிகாட்டுதல் மையமாகும். அரசு சட்டப்பூர்வ கட்டணங்கள் துறையின் விதிகளுக்கு உட்பட்டவை.'
-                    : '🛡️ AK E-SEVAI is an independent citizen facilitation & digital assistance centre. Official government fees apply as per actual department norms.'}
+                    : '🛡️ AK E-SEVAI is an independent citizen facilitation & digital assistance centre. Official government statutory fees apply as per actual department norms.'}
                 </small>
               </div>
 
@@ -351,7 +443,7 @@ export default function GovernmentServiceSelector({
                   className="btn-select-continue"
                   onClick={() => handleConfirmSelection(selectedService)}
                 >
-                  <span>{isTa ? 'ஆவணங்கள் பதிவேற்றத்திற்கு தொடர்க' : 'Continue to Documents'}</span>
+                  <span>{isTa ? 'ஆவணங்கள் பகுதிக்கு தொடர்க (Continue)' : 'Continue with this Service'}</span>
                   <ArrowRight size={18} />
                 </button>
               </div>
@@ -363,8 +455,8 @@ export default function GovernmentServiceSelector({
                 <h3>{isTa ? 'சேவையைத் தேர்ந்தெடுக்கவும்' : 'Select a Service'}</h3>
                 <p>
                   {isTa
-                    ? 'இடதுபுறப் பட்டியலில் உள்ள சேவைகளில் ஒன்றைத் தேர்வு செய்து அதன் முழு விவரங்கள் மற்றும் தேவையான ஆவணங்களின் பட்டியலைக் காண்க.'
-                    : 'Choose a service from the left catalog to view its purpose, eligibility, and interactive required-document checklist.'}
+                    ? 'இடதுபுறப் பட்டியலில் உள்ள சேவைகளில் ஒன்றைத் தேர்வு செய்து அதன் முழு விவரங்கள், தேவையான ஆவணங்கள் மற்றும் முன்நிபந்தனைகளைக் காண்க.'
+                    : 'Choose a service from the catalog to view its purpose, eligibility, required documents, and prerequisite information.'}
                 </p>
               </div>
             </div>

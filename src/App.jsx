@@ -98,6 +98,7 @@ import AkEsevaiOfficePhotoSlider from './components/AkEsevaiOfficePhotoSlider';
 import CustomerEasyGuide from './components/CustomerEasyGuide';
 import SEOHeadManager from './components/SEOHeadManager';
 import GovernmentServiceSelector from './components/GovernmentServiceSelector';
+import SearchableServiceSelect from './components/SearchableServiceSelect';
 import {
   GOVERNMENT_SERVICES,
   SERVICE_CATEGORIES,
@@ -260,13 +261,13 @@ function getRequiredDocuments(serviceTitle, group, lang = 'ta') {
       : ['Aadhaar Card', 'Family Card / Smart Card', 'Address Proof', 'Passport Photo', 'Supporting Document'];
   }
 
-  // 1. Dynamic lookup in Master Government Services Registry (97 Services)
+  // 1. Dynamic lookup in Master Government Services Registry (98 Services)
   const masterService = findGovernmentService(serviceTitle);
   if (masterService) {
-    if (lang === 'ta' && Array.isArray(masterService.requiredDocumentsTa) && masterService.requiredDocumentsTa.length > 0) {
+    if (lang === 'ta' && Array.isArray(masterService.requiredDocumentsTa)) {
       return masterService.requiredDocumentsTa;
     }
-    if (Array.isArray(masterService.requiredDocuments) && masterService.requiredDocuments.length > 0) {
+    if (Array.isArray(masterService.requiredDocuments)) {
       return masterService.requiredDocuments;
     }
   }
@@ -5027,9 +5028,9 @@ const getServiceVisual = (group, title = '') => {
       }
 
       const requirements = masterService
-        ? (lang === 'ta' && Array.isArray(masterService.requiredDocumentsTa) && masterService.requiredDocumentsTa.length > 0
+        ? (lang === 'ta' && Array.isArray(masterService.requiredDocumentsTa)
             ? masterService.requiredDocumentsTa
-            : masterService.requiredDocuments)
+            : (masterService.requiredDocuments || []))
         : getRequiredDocuments(targetServiceName, undefined, lang);
 
       const appId = `AK-${Math.floor(10000000 + Math.random() * 90000000)}`;
@@ -5416,7 +5417,7 @@ const getServiceVisual = (group, title = '') => {
               <div className="quick-panel">
                 <span className="section-kicker">{lang === 'ta' ? 'அரசு சேவையைத் தேர்வு செய்க' : 'SELECT A SERVICE'}</span>
                 <h2>{lang === 'ta' ? 'விண்ணப்பத்தைத் தொடங்குக' : 'Start your request'}</h2>
-                <p>{lang === 'ta' ? '97 அதிகாரப்பூர்வ தமிழ்நாடு அரசு சேவைகளில் தேவையானதைத் தேர்வு செய்து தேவையான ஆவணங்களைப் பதிவேற்றவும்.' : 'Choose from 97 official Tamil Nadu government services to view required documents.'}</p>
+                <p>{lang === 'ta' ? '98 தமிழ்நாடு அரசு சேவைகள் வழிகாட்டுதல் விருப்பங்களில் தேவையானதைத் தேர்வு செய்து தேவையான ஆவணங்களைப் பதிவேற்றவும்.' : 'Choose from 98 Tamil Nadu government service assistance options to view required documents and prerequisites.'}</p>
 
                 <button
                   type="button"
@@ -5440,39 +5441,24 @@ const getServiceVisual = (group, title = '') => {
                     transition: 'transform 0.15s ease'
                   }}
                 >
-                  <span>🏛️ {lang === 'ta' ? 'அனைத்து அரசு சேவைகள் பட்டியல் (97 சேவைகள்)' : 'Browse Government Services (97 Services)'}</span>
+                  <span>🏛️ {lang === 'ta' ? 'அனைத்து அரசு சேவைகள் பட்டியல் (98 சேவைகள்)' : 'Browse Government Services (98 Options)'}</span>
                   <ArrowRight size={16} />
                 </button>
 
                 <form onSubmit={addApplication}>
-                  <select
+                  <SearchableServiceSelect
                     value={selectedService}
-                    onChange={(event) => setSelectedService(event.target.value)}
+                    onChange={(serviceName) => setSelectedService(serviceName)}
+                    onSelect={(serviceObj) => addApplication(serviceObj)}
+                    lang={lang}
+                    id="customer-service-search-combobox"
                     required
-                    style={{
-                      width: '100%',
-                      padding: '11px 12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #cbd5e1',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: '#0f172a',
-                      marginBottom: '12px',
-                      background: '#ffffff'
-                    }}
+                  />
+                  <button
+                    className="button button-primary button-wide"
+                    type="submit"
+                    disabled={!selectedService}
                   >
-                    <option value="">{lang === 'ta' ? '-- சேவையைத் தேர்ந்தெடுக்கவும் (97 சேவைகள்) --' : '-- Select a service (97 Services) --'}</option>
-                    {SERVICE_CATEGORIES.filter(cat => cat.id !== 'all').map(cat => (
-                      <optgroup key={cat.id} label={`${cat.icon} ${lang === 'ta' ? cat.nameTa : cat.nameEn}`}>
-                        {GOVERNMENT_SERVICES.filter(s => s.category === cat.id).map(s => (
-                          <option key={s.id} value={lang === 'ta' ? s.nameTa : s.nameEn}>
-                            {s.id} – {lang === 'ta' ? s.nameTa : s.nameEn}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <button className="button button-primary button-wide" type="submit">
                     {lang === 'ta' ? 'ஆவணங்கள் பகுதிக்குச் செல்க' : 'Continue to documents'} <ArrowRight size={16} />
                   </button>
                 </form>
@@ -5978,8 +5964,27 @@ const getServiceVisual = (group, title = '') => {
           </select>
         </label>
 
-        <div className="document-list">
-          {application.requirements.map((requirement) => {
+        {/* Service Classification & Requirements Section */}
+        {(() => {
+          const master = findGovernmentService(application.serviceId || application.name || application.service);
+          const isTa = lang === 'ta';
+
+          const reqDocs = master
+            ? (isTa && master.requiredDocumentsTa?.length ? master.requiredDocumentsTa : (master.requiredDocuments || []))
+            : (application.requirements || []);
+
+          const prereqs = master
+            ? (isTa && master.prerequisitesTa?.length ? master.prerequisitesTa : (master.prerequisites || []))
+            : [];
+
+          const condDocs = master ? (master.conditionalDocuments || []) : [];
+          const optDocs = master
+            ? (isTa && master.optionalDocumentsTa?.length ? master.optionalDocumentsTa : (master.optionalDocuments || []))
+            : [];
+
+          const hasNotes = Boolean(master?.notesTa || master?.notesEn);
+
+          const renderDocRow = (requirementName, badgeLabel, badgeBg, badgeColor, isConditional = false, condText = '') => {
             const customerDocs = customer.documents || [];
             const globalExpiryDocs = cloudExpiryDocs || [];
             const cleanPhone = (customer.phone || '').replace(/\D/g, '');
@@ -5987,9 +5992,9 @@ const getServiceVisual = (group, title = '') => {
             const document = customerDocs.find(
               (item) =>
                 (item.applicationId === application.id || !item.applicationId) &&
-                (item.requirement === requirement ||
-                item.id === `${application.id}-${requirement}` ||
-                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()))
+                (item.requirement === requirementName ||
+                item.id === `${application.id}-${requirementName}` ||
+                (item.requirement && requirementName && item.requirement.trim().toLowerCase() === requirementName.trim().toLowerCase()))
             ) || globalExpiryDocs.filter(d => {
               const docPhone = (d.customerPhone || '').replace(/\D/g, '');
               const docAppId = d.applicationId || '';
@@ -6005,9 +6010,9 @@ const getServiceVisual = (group, title = '') => {
               data: d.url || d.data
             })).find(
               (item) =>
-                item.requirement === requirement ||
-                item.id === `${application.id}-${requirement}` ||
-                (item.requirement && requirement && item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase())
+                item.requirement === requirementName ||
+                item.id === `${application.id}-${requirementName}` ||
+                (item.requirement && requirementName && item.requirement.trim().toLowerCase() === requirementName.trim().toLowerCase())
             );
 
             const isPdf = document && (((document.name || '').toLowerCase().endsWith('.pdf')) || document.type === 'application/pdf');
@@ -6015,8 +6020,23 @@ const getServiceVisual = (group, title = '') => {
             const isImage = document && !isPdf && (docUrl || /\.(jpg|jpeg|png|webp|svg)$/i.test(document.name || ''));
 
             return (
-              <div key={requirement} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', padding: '16px', background: document ? '#f0fdf4' : 'white', border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div
+                key={requirementName}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  padding: '16px',
+                  background: document ? '#f0fdf4' : '#ffffff',
+                  border: document ? '1.5px solid #86efac' : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  marginBottom: '12px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '240px' }}>
                   {document && isImage && docUrl ? (
                     <div
                       onClick={() => handleViewDocument(document, notify)}
@@ -6066,82 +6086,161 @@ const getServiceVisual = (group, title = '') => {
                       <span>PDF</span>
                     </div>
                   ) : (
-                    <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc' }}>
+                    <span className="doc-symbol" style={{ background: document ? '#dcfce7' : '#eff6ff', color: document ? '#16a34a' : '#0052cc', width: '40px', height: '40px', borderRadius: '10px', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
                       {document ? <FileCheck2 size={20} /> : <FileText size={20} />}
                     </span>
                   )}
+
                   <div>
-                    <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>{requirement}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '2px' }}>
+                      <strong style={{ fontSize: '14px', color: '#0f172a' }}>{requirementName}</strong>
+                      <span style={{ background: badgeBg, color: badgeColor, fontSize: '10.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '6px' }}>
+                        {badgeLabel}
+                      </span>
+                    </div>
+                    {isConditional && condText && (
+                      <small style={{ fontSize: '11.5px', color: '#2563eb', fontWeight: 700, display: 'block' }}>
+                        📌 {condText}
+                      </small>
+                    )}
                     {document ? (
-                      <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700 }}>
+                      <small style={{ fontSize: '12px', color: '#166534', fontWeight: 700, display: 'block' }}>
                         📄 {document.name} · Uploaded {document.uploadedAt}
                       </small>
                     ) : (
-                      <small style={{ fontSize: '12px', color: '#64748b' }}>Required — not uploaded yet</small>
+                      <small style={{ fontSize: '12px', color: '#64748b', display: 'block' }}>
+                        {badgeLabel === 'Required' || badgeLabel === 'கட்டாயம்' ? 'Required — not uploaded yet' : 'Optional document upload (if applicable)'}
+                      </small>
                     )}
                   </div>
                 </div>
 
                 {document ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                    <span style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '16px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 8px rgba(22,163,74,0.3)' }}>
-                      <Check size={13} /> UPLOAD SUCCESS (வெற்றி)
+                    <span style={{ background: '#16a34a', color: 'white', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <Check size={13} /> UPLOADED
                     </span>
 
                     <button className="document-open" onClick={() => handleViewDocument(document, notify)} title="View Document" style={{ background: '#0052cc', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                      <Eye size={14} /> View (காண்க)
+                      <Eye size={14} /> View
                     </button>
 
                     <button className="document-open" onClick={() => handleDownloadDocument(document, notify)} title="Download Document" style={{ background: '#16a34a', color: 'white', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, border: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                      <Download size={14} /> Download (பதிவிறக்கு)
+                      <Download size={14} /> Download
                     </button>
 
-                    <button onClick={() => deleteDocument(requirement, document)} title="Delete Document" style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                      <Trash2 size={14} /> Delete (நீக்குக)
+                    <button onClick={() => deleteDocument(requirementName, document)} title="Delete Document" style={{ background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                      <Trash2 size={14} /> Delete
                     </button>
 
                     <label style={{ cursor: 'pointer', fontSize: '11px', color: '#0052cc', fontWeight: 700, textDecoration: 'underline', marginLeft: '4px' }}>
                       Change
-                      <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                      <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirementName)} style={{ display: 'none' }} />
                     </label>
                   </div>
                 ) : (
-                  <label className="document-upload" style={{ marginLeft: 'auto', background: '#0052cc', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                  <label className="document-upload" style={{ marginLeft: 'auto', background: badgeLabel === 'Required' || badgeLabel === 'கட்டாயம்' ? '#0052cc' : '#475569', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
                     📤 Upload PDF / JPG
-                    <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirement)} style={{ display: 'none' }} />
+                    <input type="file" accept=".pdf,image/jpeg,.jpg,.jpeg,image/png,.png,.webp" onChange={(event) => uploadDocument(event, requirementName)} style={{ display: 'none' }} />
                   </label>
                 )}
               </div>
             );
-          })}
-        </div>
-
-        {/* Master Service Notes & Optional Documents Helper */}
-        {(() => {
-          const master = findGovernmentService(application.name || application.service || application.serviceId);
-          if (!master) return null;
-          const hasNotes = Boolean(master.notesTa || master.notesEn);
-          const hasOptDocs = Boolean(master.optionalDocuments && master.optionalDocuments.length > 0);
-          if (!hasNotes && !hasOptDocs) return null;
+          };
 
           return (
-            <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '16px', marginTop: '16px' }}>
-              {hasOptDocs && (
-                <div style={{ marginBottom: hasNotes ? '10px' : '0' }}>
-                  <strong style={{ fontSize: '13px', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    📎 {lang === 'ta' ? 'கூடுதல் / விருப்ப ஆவணங்கள் (Optional / If applicable):' : 'Additional / Optional Documents:'}
-                  </strong>
-                  <ul style={{ margin: '6px 0 0 18px', padding: 0, fontSize: '12.5px', color: '#475569' }}>
-                    {master.optionalDocuments.map((opt, oIdx) => (
-                      <li key={oIdx}>{opt}</li>
+            <div>
+              {/* 1. PREREQUISITES & ESSENTIAL DETAILS (NO UPLOAD) */}
+              {prereqs.length > 0 && (
+                <div style={{ background: '#fefce8', border: '1.5px solid #fef08a', borderRadius: '14px', padding: '16px', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '18px' }}>🔑</span>
+                    <strong style={{ fontSize: '14px', color: '#854d0e', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                      {isTa ? 'முன்நிபந்தனைகள் & தேவைப்படும் தகவல்கள் (Prerequisites / தகவல் மட்டும் — பதிவேற்றம் அல்ல)' : 'Prerequisites & Information (No Document Upload Needed)'}
+                    </strong>
+                  </div>
+                  <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#a16207' }}>
+                    {isTa
+                      ? 'கீழே உள்ளவை ஆவணப் பதிவேற்றம் அல்ல; இச்சேவைக்குத் தேவையான எண்கள் மற்றும் சரிபார்ப்பு நிபந்தனைகள் ஆகும்:'
+                      : 'The following are mandatory details/conditions for processing this service (these are NOT uploaded documents):'}
+                  </p>
+                  <div style={{ display: 'grid', gap: '6px' }}>
+                    {prereqs.map((pr, pIdx) => (
+                      <div key={pIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#713f12', lineHeight: 1.4 }}>
+                        <span style={{ color: '#ca8a04', fontWeight: 900 }}>•</span>
+                        <span>{pr}</span>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
+
+              {/* 2. REQUIRED DOCUMENTS CHECKLIST */}
+              {reqDocs.length > 0 ? (
+                <div style={{ marginBottom: '20px' }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: '14px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FileText size={16} color="#0052cc" />
+                    {isTa ? 'தேவையான கட்டாய ஆவணங்கள் (Required Documents):' : 'Required Supporting Documents:'}
+                  </h4>
+                  <div className="document-list">
+                    {reqDocs.map((req) =>
+                      renderDocRow(req, isTa ? 'கட்டாயம்' : 'Required', '#fee2e2', '#991b1b')
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '12px', padding: '16px', textAlign: 'center', marginBottom: '20px' }}>
+                  <p style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#15803d' }}>
+                    ⚡ {isTa ? 'இச்சேவைக்கு ஆவணப் பதிவேற்றம் எதுவும் தேவையில்லை!' : 'No document uploads required for this service!'}
+                  </p>
+                  <small style={{ color: '#166534', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                    {isTa
+                      ? 'மேலே உள்ள முன்நிபந்தனைகள் / விவரங்களை மட்டும் சரிபார்க்கவும்.'
+                      : 'This service operates via direct online query / token verification using the prerequisites above.'}
+                  </small>
+                </div>
+              )}
+
+              {/* 3. CONDITIONAL DOCUMENTS (IF APPLICABLE) */}
+              {condDocs.length > 0 && (
+                <div style={{ marginBottom: '20px', background: '#f8fafc', border: '1px solid #bfdbfe', borderRadius: '14px', padding: '16px' }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: '13.5px', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    ⚠️ {isTa ? 'நிபந்தனைக்குட்பட்ட ஆவணங்கள் (Conditional Documents – Required only if):' : 'Conditional Documents (Required only if applicable):'}
+                  </h4>
+                  {condDocs.map((cond, cIdx) => {
+                    const condText = isTa ? (cond.conditionTa || cond.condition) : cond.condition;
+                    const reqName = isTa ? (cond.requirementTa || cond.requirement) : cond.requirement;
+                    return renderDocRow(
+                      reqName,
+                      isTa ? 'நிபந்தனைக்குட்பட்டது' : 'Required only if...',
+                      '#dbeafe',
+                      '#1e40af',
+                      true,
+                      condText
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* 4. OPTIONAL DOCUMENTS (IF APPLICABLE) */}
+              {optDocs.length > 0 && (
+                <div style={{ marginBottom: '20px' }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: '13.5px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    📎 {isTa ? 'கூடுதல் / விருப்ப ஆவணங்கள் (Optional Documents):' : 'Optional / Supporting Documents:'}
+                  </h4>
+                  <div className="document-list">
+                    {optDocs.map((opt) =>
+                      renderDocRow(opt, isTa ? 'விருப்பம்' : 'Optional', '#f1f5f9', '#475569')
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 5. IMPORTANT NOTES & VALIDITY */}
               {hasNotes && (
-                <div style={{ borderTop: hasOptDocs ? '1px dashed #cbd5e1' : 'none', paddingTop: hasOptDocs ? '10px' : '0' }}>
-                  <small style={{ fontSize: '12px', color: '#64748b', display: 'block', lineHeight: 1.5 }}>
-                    📌 <strong>{lang === 'ta' ? 'குறிப்பு & செல்லுபடி காலம்:' : 'Note & Validity:'}</strong> {lang === 'ta' ? master.notesTa : master.notesEn}
+                <div style={{ background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '14px 16px', marginTop: '16px' }}>
+                  <small style={{ fontSize: '12.5px', color: '#475569', display: 'block', lineHeight: 1.5 }}>
+                    📌 <strong>{isTa ? 'குறிப்பு & சான்றிதழ் செல்லுபடி காலம்:' : 'Important Note & Validity:'}</strong> {isTa ? master.notesTa : master.notesEn}
                   </small>
                 </div>
               )}
