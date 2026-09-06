@@ -2708,7 +2708,7 @@ app.post('/api/applications', async (req, res) => {
   }
 });
 
-// 4. Delete Application (Admin or Owner Only)
+// 4. Delete Application (Admin or Verified Owner Only)
 app.delete('/api/applications/:id', async (req, res) => {
   try {
     const auth = resolveAuthContext(req);
@@ -2717,32 +2717,74 @@ app.delete('/api/applications/:id', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Application ID is required' });
     }
 
-    const existing = await Application.findOne({ $or: [{ id: targetId }, { ackNo: targetId }] }).lean();
-    if (existing) {
-      const appPhone = cleanPhoneDigits(existing.phone);
-      if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== appPhone)) {
-        if (!auth.customerPhone) return res.status(401).json({ success: false, error: 'UNAUTHORIZED' });
-        return res.status(403).json({ success: false, error: 'FORBIDDEN' });
+    // Must be either Admin or Authenticated Customer
+    if (!auth.isAdmin && !auth.customerPhone) {
+      return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required to delete application.' });
+    }
+
+    // 1. Locate application in standalone Application collection
+    const existingApp = await Application.findOne({ $or: [{ id: targetId }, { ackNo: targetId }] }).lean();
+
+    // 2. Fallback: Locate in Customer collection if phone is missing on standalone record or record only exists in customer profile
+    let existingOwnerCustomer = null;
+    const appPhoneFromRecord = existingApp ? cleanPhoneDigits(existingApp.phone || existingApp.customerPhone || existingApp.applicantPhone) : '';
+    if (!existingApp || !appPhoneFromRecord) {
+      existingOwnerCustomer = await Customer.findOne({
+        $or: [
+          { 'applications.id': targetId },
+          { 'applications.ackNo': targetId }
+        ]
+      }).lean();
+    }
+
+    const authoritativePhone = appPhoneFromRecord || (existingOwnerCustomer ? cleanPhoneDigits(existingOwnerCustomer.phone) : '');
+
+    // 3. Strict Ownership Authorization Check
+    if (!auth.isAdmin) {
+      if (authoritativePhone && auth.customerPhone !== authoritativePhone) {
+        console.warn(`🚨 [SECURITY] Customer +91 ${maskPhoneForLog(auth.customerPhone)} attempted unauthorized deletion of application ${targetId} owned by +91 ${maskPhoneForLog(authoritativePhone)}`);
+        return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Access denied: You do not own this application.' });
       }
     }
 
+    // 4. Authoritative deletion from Application collection
     await Application.deleteMany({ $or: [{ id: targetId }, { ackNo: targetId }] });
-    await Customer.updateMany(
-      {},
-      {
-        $pull: {
-          applications: {
-            $or: [
-              { id: targetId },
-              { ackNo: targetId }
-            ]
+
+    // 5. Authoritative deletion from Customer collection (scoped for Customer, global for Admin)
+    if (auth.isAdmin) {
+      await Customer.updateMany(
+        {},
+        {
+          $pull: {
+            applications: {
+              $or: [
+                { id: targetId },
+                { ackNo: targetId }
+              ]
+            }
           }
         }
-      }
-    );
+      );
+    } else if (auth.customerPhone) {
+      const ownPhone = auth.customerPhone;
+      await Customer.updateMany(
+        { $or: [{ phone: ownPhone }, { phone: `+91${ownPhone}` }, { phone: `91${ownPhone}` }, { phone: `+91 ${ownPhone}` }] },
+        {
+          $pull: {
+            applications: {
+              $or: [
+                { id: targetId },
+                { ackNo: targetId }
+              ]
+            }
+          }
+        }
+      );
+    }
 
     res.json({ success: true, deletedId: targetId });
   } catch (err) {
+    console.error('Delete application error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
