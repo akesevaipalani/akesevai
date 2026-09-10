@@ -3197,13 +3197,14 @@ app.get('/api/documents', async (req, res) => {
     // ADMIN ACCESS: Full access to all documents or filtered by customer
     if (auth.isAdmin) {
       const filter = targetPhone ? { $or: [{ customerPhone: targetPhone }, { customerPhone: `+91${targetPhone}` }, { customerPhone: `91${targetPhone}` }] } : {};
-      const docs = await DocumentModel.find(filter).sort({ uploadedAt: -1 }).limit(100).maxTimeMS(5000).lean();
-      console.log(`📋 [AUDIT] Admin retrieved document list (Count: ${docs.length})`);
-      const decryptedDocs = (docs || []).map((d) => ({
+      const docs = await DocumentModel.find(filter, { data: 0 }).sort({ uploadedAt: -1 }).limit(100).maxTimeMS(5000).lean();
+      console.log(`📋 [AUDIT] Admin retrieved document list metadata (Count: ${docs.length})`);
+      const sanitizedDocs = (docs || []).map((d) => ({
         ...d,
-        data: decryptDocumentPayload(d.data)
+        data: '',
+        url: d.url && d.url.startsWith('http') ? d.url : ''
       }));
-      return res.json(decryptedDocs);
+      return res.json(sanitizedDocs);
     }
 
     // CUSTOMER ACCESS: Strictly isolated to own documents
@@ -3220,13 +3221,14 @@ app.get('/api/documents', async (req, res) => {
 
       const ownPhone = auth.customerPhone;
       const filter = { $or: [{ customerPhone: ownPhone }, { customerPhone: `+91${ownPhone}` }, { customerPhone: `91${ownPhone}` }] };
-      const docs = await DocumentModel.find(filter).sort({ uploadedAt: -1 }).limit(50).maxTimeMS(5000).lean();
-      console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(ownPhone)} retrieved own documents (Count: ${docs.length})`);
-      const decryptedDocs = (docs || []).map((d) => ({
+      const docs = await DocumentModel.find(filter, { data: 0 }).sort({ uploadedAt: -1 }).limit(50).maxTimeMS(5000).lean();
+      console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(ownPhone)} retrieved own documents metadata (Count: ${docs.length})`);
+      const sanitizedDocs = (docs || []).map((d) => ({
         ...d,
-        data: decryptDocumentPayload(d.data)
+        data: '',
+        url: d.url && d.url.startsWith('http') ? d.url : ''
       }));
-      return res.json(decryptedDocs);
+      return res.json(sanitizedDocs);
     }
 
     // ANONYMOUS ACCESS: Blocked from accessing private documents

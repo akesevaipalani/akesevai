@@ -2,9 +2,6 @@ import { useState, useEffect } from 'react';
 import { Search, CheckCircle2, Clock, FileCheck2, AlertCircle, ArrowRight, ShieldCheck, RefreshCw } from 'lucide-react';
 import { getStoredApplications } from '../utils/statusStore';
 import {
-  subscribeCustomerProfiles,
-  subscribeTokens,
-  subscribeApplications,
   fetchAllCloudRecords,
   fetchPublicAppStatusCloud,
   fetchTrackByMobileCloud,
@@ -65,33 +62,8 @@ export default function StatusTracker({ initialQuery = '', lang = 'ta' }) {
     };
     window.addEventListener('akesevai-data-changed', handleDataChanged);
 
-    const unsubCust = subscribeCustomerProfiles((custs) => {
-      setCloudData((prev) => ({ ...prev, customers: custs || {} }));
-    });
-    const unsubTok = subscribeTokens((toks) => {
-      setCloudData((prev) => ({ ...prev, tokens: toks || [] }));
-    });
-    const unsubApps = subscribeApplications((apps) => {
-      const localApps = getStoredApplications() || {};
-      const merged = { ...(apps || {}) };
-      Object.keys(localApps).forEach((k) => {
-        if (!localApps[k]) return;
-        const targetStage = Number(localApps[k]?.currentStage || localApps[k]?.stage || 1);
-        merged[k] = {
-          ...(apps?.[k] || {}),
-          ...localApps[k],
-          currentStage: targetStage,
-          stage: targetStage
-        };
-      });
-      setCloudData((prev) => ({ ...prev, applications: merged }));
-    });
-
     return () => {
       window.removeEventListener('akesevai-data-changed', handleDataChanged);
-      if (typeof unsubCust === 'function') unsubCust();
-      if (typeof unsubTok === 'function') unsubTok();
-      if (typeof unsubApps === 'function') unsubApps();
     };
   }, []);
 

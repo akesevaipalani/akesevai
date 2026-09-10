@@ -330,12 +330,17 @@ export const uploadFileToMongoStorage = async (fileInput, pathFolder = 'customer
 
 // --- REAL-TIME POLLING SUBSCRIPTIONS FOR MONGO ---
 
-export const subscribeCustomerProfilesMongo = (callback, intervalMs = 1500) => {
+export const subscribeCustomerProfilesMongo = (callback, intervalMs = 30000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
+    const auth = getAuthHeaders();
+    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+      if (callback && isMounted) callback({});
+      return;
+    }
     const data = await fetchAllCustomerProfilesMongo();
-    if (data && callback) callback(data);
+    if (data && callback && isMounted) callback(data);
   };
   poll();
   const timer = setInterval(poll, intervalMs);
@@ -345,12 +350,17 @@ export const subscribeCustomerProfilesMongo = (callback, intervalMs = 1500) => {
   };
 };
 
-export const subscribeApplicationsMongo = (callback, intervalMs = 1500) => {
+export const subscribeApplicationsMongo = (callback, intervalMs = 30000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
+    const auth = getAuthHeaders();
+    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+      if (callback && isMounted) callback({});
+      return;
+    }
     const data = await fetchAllApplicationsMongo();
-    if (data && callback) callback(data);
+    if (data && callback && isMounted) callback(data);
   };
   poll();
   const timer = setInterval(poll, intervalMs);
@@ -360,12 +370,17 @@ export const subscribeApplicationsMongo = (callback, intervalMs = 1500) => {
   };
 };
 
-export const subscribeTokensMongo = (callback, intervalMs = 1500) => {
+export const subscribeTokensMongo = (callback, intervalMs = 20000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
+    const auth = getAuthHeaders();
+    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+      if (callback && isMounted) callback([]);
+      return;
+    }
     const data = await fetchAllTokensMongo();
-    if (data && callback) callback(data);
+    if (data && callback && isMounted) callback(data);
   };
   poll();
   const timer = setInterval(poll, intervalMs);
@@ -375,7 +390,7 @@ export const subscribeTokensMongo = (callback, intervalMs = 1500) => {
   };
 };
 
-export const subscribeExpiryDocumentsMongo = (callback, intervalMs = 2500) => {
+export const subscribeExpiryDocumentsMongo = (callback, intervalMs = 30000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
@@ -398,12 +413,17 @@ export const subscribeExpiryDocumentsMongo = (callback, intervalMs = 2500) => {
   };
 };
 
-export const subscribeDeletedCustomersMongo = (callback, intervalMs = 1500) => {
+export const subscribeDeletedCustomersMongo = (callback, intervalMs = 30000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
+    const auth = getAuthHeaders();
+    if (!auth['x-admin-token']) {
+      if (callback && isMounted) callback(new Set());
+      return;
+    }
     const arrayList = await fetchDeletedCustomersMongo();
-    if (arrayList && callback) {
+    if (arrayList && callback && isMounted) {
       callback(new Set(arrayList));
     }
   };
@@ -452,12 +472,12 @@ export const deleteNotificationMongo = async (id) => {
   return Boolean(res?.success);
 };
 
-export const subscribeNotificationsMongo = (callback, intervalMs = 2500) => {
+export const subscribeNotificationsMongo = (callback, intervalMs = 300000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
     const data = await fetchNotificationsMongo('all', 'all');
-    if (data && callback) callback(data);
+    if (data && callback && isMounted) callback(data);
   };
   poll();
   const timer = setInterval(poll, intervalMs);
@@ -677,12 +697,12 @@ export const saveLiveQueueMongo = async (queueState) => {
   }
 };
 
-export const subscribeLiveQueueMongo = (callback, intervalMs = 2000) => {
+export const subscribeLiveQueueMongo = (callback, intervalMs = 30000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
     const data = await fetchLiveQueueMongo();
-    if (data && callback) callback(data);
+    if (data && callback && isMounted) callback(data);
   };
   poll();
   const timer = setInterval(poll, intervalMs);

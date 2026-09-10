@@ -45,7 +45,8 @@ import {
   saveLiveQueueMongo,
   subscribeLiveQueueMongo,
   fetchPublicAppStatusMongo,
-  fetchTrackByMobileMongo
+  fetchTrackByMobileMongo,
+  getAuthHeaders
 } from './mongoService.js';
 import {
   saveDocBinary,
@@ -1015,8 +1016,12 @@ export const readTokenBookings = () => {
   }
 };
 
+// Shared Singleton Listener Pool for Live Center Queue Status
+const liveQueueListeners = new Set();
+let sharedLiveQueueUnsub = null;
+
 export const subscribeLiveQueue = (callback) => {
-  if (typeof window === 'undefined') {
+  if (typeof window === 'undefined' || typeof callback !== 'function') {
     if (callback) callback(null);
     return () => {};
   }
@@ -1024,34 +1029,46 @@ export const subscribeLiveQueue = (callback) => {
   // 1. Immediate local cache emission for 0ms initial render
   try {
     const raw = localStorage.getItem('akesevai-live-center-status');
-    if (raw && callback) callback(JSON.parse(raw));
+    if (raw) callback(JSON.parse(raw));
   } catch (e) {}
 
-  // 2. Live Cloud Polling Subscription from MongoDB Atlas (Updates all devices in real-time)
-  const unsubMongo = subscribeLiveQueueMongo((cloudData) => {
-    if (cloudData && typeof cloudData === 'object') {
-      try {
-        localStorage.setItem('akesevai-live-center-status', JSON.stringify(cloudData));
-      } catch (e) {}
-      if (callback) callback(cloudData);
-    }
-  }, 2000);
+  liveQueueListeners.add(callback);
+
+  // 2. Start shared polling timer if this is the first listener (Shared across all widgets)
+  if (!sharedLiveQueueUnsub) {
+    sharedLiveQueueUnsub = subscribeLiveQueueMongo((cloudData) => {
+      if (cloudData && typeof cloudData === 'object') {
+        try {
+          localStorage.setItem('akesevai-live-center-status', JSON.stringify(cloudData));
+        } catch (e) {}
+        liveQueueListeners.forEach((listener) => {
+          try { listener(cloudData); } catch (err) {}
+        });
+      }
+    }, 30000);
+  }
 
   const localHandler = (e) => {
     try {
       if (e?.detail?.type === 'live-queue' && e?.detail?.data) {
-        if (callback) callback(e.detail.data);
+        callback(e.detail.data);
         return;
       }
       const raw = localStorage.getItem('akesevai-live-center-status');
-      if (raw && callback) callback(JSON.parse(raw));
+      if (raw) callback(JSON.parse(raw));
     } catch (e) {}
   };
   window.addEventListener('akesevai-data-changed', localHandler);
 
   return () => {
-    if (typeof unsubMongo === 'function') unsubMongo();
+    liveQueueListeners.delete(callback);
     window.removeEventListener('akesevai-data-changed', localHandler);
+
+    // Teardown shared timer when all widgets have unmounted
+    if (liveQueueListeners.size === 0 && typeof sharedLiveQueueUnsub === 'function') {
+      sharedLiveQueueUnsub();
+      sharedLiveQueueUnsub = null;
+    }
   };
 };
 
@@ -1093,10 +1110,14 @@ export const fetchAllCloudRecords = async () => {
   let mongoApps = {};
 
   try {
-    mongoCustomers = (await fetchAllCustomerProfilesMongo()) || {};
-    mongoTokens = (await fetchAllTokensMongo()) || [];
-    mongoDocs = (await fetchAllExpiryDocumentsMongo()) || [];
-    mongoApps = (await fetchAllApplicationsMongo()) || {};
+    const auth = getAuthHeaders();
+    const hasAuth = Boolean(auth && (auth['x-admin-token'] || auth['x-customer-phone']));
+    if (hasAuth) {
+      mongoCustomers = (await fetchAllCustomerProfilesMongo()) || {};
+      mongoTokens = (await fetchAllTokensMongo()) || [];
+      mongoDocs = (await fetchAllExpiryDocumentsMongo()) || [];
+      mongoApps = (await fetchAllApplicationsMongo()) || {};
+    }
 
     if (typeof window !== 'undefined' && window.localStorage) {
       // Merge with existing local customer records to preserve document binary URLs without reviving deleted records
