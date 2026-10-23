@@ -31,6 +31,11 @@ import {
   deleteNotificationMongo,
   syncBankingNotificationsMongo,
   subscribeNotificationsMongo,
+  fetchPendingNotificationsMongo,
+  approveNotificationMongo,
+  rejectNotificationMongo,
+  triggerIngestionJobMongo,
+  fetchIngestionStatusMongo,
   sendOtpMongo,
   verifyOtpMongo,
   loginCustomerPasswordMongo,
@@ -109,6 +114,26 @@ export const syncBankingNotificationsCloud = async () => {
 
 export const subscribeNotificationsCloud = (callback) => {
   return subscribeNotificationsMongo(callback);
+};
+
+export const fetchPendingNotificationsCloud = async () => {
+  return await fetchPendingNotificationsMongo();
+};
+
+export const approveNotificationCloud = async (id) => {
+  return await approveNotificationMongo(id);
+};
+
+export const rejectNotificationCloud = async (id) => {
+  return await rejectNotificationMongo(id);
+};
+
+export const triggerIngestionJobCloud = async (sourceKey = '') => {
+  return await triggerIngestionJobMongo(sourceKey);
+};
+
+export const fetchIngestionStatusCloud = async () => {
+  return await fetchIngestionStatusMongo();
 };
 
 export const fetchSingleCustomerProfileCloud = async (phone) => {

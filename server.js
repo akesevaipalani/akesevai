@@ -13,6 +13,10 @@ import {
   calculateExamStatus,
   enrichNotificationWithDateStatus
 } from './src/utils/notificationDateHelper.js';
+import {
+  runAllIngestionJobs,
+  getIngestionStatus
+} from './server/ingestion/ingestionManager.js';
 
 if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
@@ -254,6 +258,7 @@ const notificationSchema = new mongoose.Schema({
   lastScrapedAt: { type: Date, default: null },
   ingestionSource: { type: String, default: 'manual_admin' }, // 'manual_admin' | 'verified_master_feed' | 'scraper_tnpsc' | etc.
   ingestionError: { type: String, default: '' },
+  fingerprint: { type: String, default: '', index: true },
 
   updatedAt: { type: Date, default: Date.now }
 }, { suppressReservedKeysWarning: true });
@@ -4044,6 +4049,161 @@ app.delete('/api/notifications/:id', async (req, res) => {
   }
 });
 
+// Trigger Automated Ingestion Job (Admin or Cron Secret Header)
+app.post('/api/notifications/ingest-job', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    const secretHeader = req.headers['x-ingestion-secret'] || req.headers['x-cron-secret'];
+    const rawEnvSecret = typeof process.env.INGESTION_SECRET_KEY === 'string'
+      ? process.env.INGESTION_SECRET_KEY.trim()
+      : '';
+    // Fail-closed: Secret-based authentication is strictly prohibited if INGESTION_SECRET_KEY is not configured or empty
+    const isSecretValid = Boolean(
+      rawEnvSecret &&
+      rawEnvSecret.length > 0 &&
+      secretHeader &&
+      secretHeader.trim() === rawEnvSecret
+    );
+
+    if (!auth.isAdmin && !isSecretValid) {
+      return res.status(403).json({
+        success: false,
+        error: 'FORBIDDEN',
+        message: 'Admin authorization or valid X-Ingestion-Secret header is required to trigger ingestion.'
+      });
+    }
+
+    const { sourceKey, dryRun } = req.query;
+    console.log(`📡 [Ingestion Trigger]: Running ingestion jobs (source: ${sourceKey || 'ALL'}, dryRun: ${dryRun || 'false'})...`);
+    const summary = await runAllIngestionJobs(Notification, {
+      sourceKey,
+      dryRun: dryRun === 'true'
+    });
+
+    res.json({
+      success: true,
+      message: `Ingestion job completed. ${summary.newRecordsInserted} new items detected, ${summary.duplicatesSkipped} duplicates skipped.`,
+      summary
+    });
+  } catch (err) {
+    if (err.code === 'CONCURRENT_INGESTION_LOCKED' || err.message === 'INGESTION_IN_PROGRESS') {
+      return res.status(409).json({
+        success: false,
+        error: 'CONFLICT',
+        code: 'INGESTION_IN_PROGRESS',
+        message: 'An automated ingestion job is already running. Please wait for it to finish.'
+      });
+    }
+    console.error('Ingestion job error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Fetch Pending Review Notifications (Admin Only)
+app.get('/api/notifications/pending', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
+    const today = getKolkataToday();
+    const pendingList = await Notification.find({ ingestionStatus: 'pending_review' })
+      .sort({ updatedAt: -1, _id: -1 })
+      .maxTimeMS(4000)
+      .lean();
+
+    const enriched = (pendingList || []).map(item => enrichNotificationWithDateStatus(item, today));
+    res.json({ success: true, count: enriched.length, notifications: enriched });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Approve Pending Notification and Publish to Public Feed (Admin Only)
+app.post('/api/notifications/:id/approve', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
+    const notif = await Notification.findOneAndUpdate(
+      { id: req.params.id },
+      {
+        $set: {
+          ingestionStatus: 'published',
+          isVerified: true,
+          updatedAt: new Date()
+        }
+      },
+      { new: true }
+    );
+    if (!notif) {
+      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Notification not found' });
+    }
+    res.json({
+      success: true,
+      message: '✅ Notification approved and published to live /notifications page!',
+      notification: notif
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Reject / Discard Pending Notification (Admin Only)
+app.post('/api/notifications/:id/reject', async (req, res) => {
+  try {
+    const auth = resolveAuthContext(req);
+    if (!auth.isAdmin) {
+      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
+    }
+    await Notification.deleteMany({ id: req.params.id });
+    res.json({
+      success: true,
+      message: `Notification ${req.params.id} rejected and removed.`
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Ingestion Diagnostics & System Status Endpoint
+app.get('/api/notifications/ingestion-status', async (req, res) => {
+  try {
+    const status = getIngestionStatus();
+    let publishedCount = 0;
+    let pendingCount = 0;
+    let totalCount = 0;
+
+    if (mongoose.connection.readyState === 1) {
+      [publishedCount, pendingCount, totalCount] = await Promise.all([
+        Notification.countDocuments({
+          $or: [
+            { ingestionStatus: 'published' },
+            { ingestionStatus: { $exists: false } },
+            { ingestionStatus: null },
+            { ingestionStatus: '' }
+          ]
+        }),
+        Notification.countDocuments({ ingestionStatus: 'pending_review' }),
+        Notification.countDocuments({})
+      ]);
+    }
+
+    res.json({
+      status: 'ok',
+      diagnostics: status,
+      counts: {
+        published: publishedCount,
+        pending: pendingCount,
+        total: totalCount
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- ADVERTISEMENTS API ---
 
 // 1. Fetch Advertisements (Active by default, or all if ?all=true)
@@ -4245,6 +4405,23 @@ const startServer = async () => {
       console.warn(`⚠️ [Auto-Sync Warning]:`, e.message);
     }
   }, 30 * 60 * 1000);
+
+  // Automated Ingestion Engine Scheduler (Runs every 4 hours with 2-min startup delay)
+  setTimeout(() => {
+    const runScheduledIngestion = async () => {
+      try {
+        if (mongoose.connection.readyState === 1) {
+          console.log(`🤖 [Scheduler]: Starting automated exam notification ingestion across official sources...`);
+          const summary = await runAllIngestionJobs(Notification);
+          console.log(`🤖 [Scheduler]: Ingestion completed: ${summary.newRecordsInserted} new inserted, ${summary.duplicatesSkipped} duplicates skipped.`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ [Scheduler Warning]: Ingestion run failed:`, err.message);
+      }
+    };
+    runScheduledIngestion();
+    setInterval(runScheduledIngestion, 4 * 60 * 60 * 1000); // 4-hour periodic interval
+  }, 2 * 60 * 1000);
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 AkEsevai MongoDB Express Backend API Server running on port ${PORT} (0.0.0.0)`);

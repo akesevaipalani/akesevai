@@ -37,7 +37,11 @@ import {
   saveNotificationCloud,
   deleteNotificationCloud,
   syncBankingNotificationsCloud,
-  subscribeNotificationsCloud
+  subscribeNotificationsCloud,
+  fetchPendingNotificationsCloud,
+  approveNotificationCloud,
+  rejectNotificationCloud,
+  triggerIngestionJobCloud
 } from '../utils/dataService';
 import { INITIAL_NOTIFICATIONS } from '../data/initialNotifications';
 import {
@@ -63,6 +67,7 @@ export function normalizeCategory(cat) {
   if (c.includes('med') || c.includes('nurse') || c.includes('mrb') || c.includes('doctor') || c.includes('health') || c.includes('hospital')) return 'medical';
   if (c.includes('enter') || c.includes('entrance') || c.includes('jee') || c.includes('neet') || c.includes('cuet') || c.includes('gate') || c.includes('tancet')) return 'entrance';
   if (c.includes('psu') || c.includes('iocl') || c.includes('ongc') || c.includes('bhel') || c.includes('tneb') || c.includes('tech')) return 'psu';
+  if (c.includes('other')) return 'other';
   return cat;
 }
 
@@ -78,7 +83,8 @@ const CATEGORY_CONFIG = {
   teaching: { label: 'ஆசிரியர் பணி (Teaching & TET)', icon: BookOpen, color: '#9333ea', bg: '#faf5ff' },
   medical: { label: 'மருத்துவம் & நர்சிங் (Medical & Health)', icon: Stethoscope, color: '#e11d48', bg: '#fff1f2' },
   entrance: { label: 'நுழைவுத் தேர்வுகள் (Entrance Exams)', icon: GraduationCap, color: '#4f46e5', bg: '#eef2ff' },
-  psu: { label: 'பொதுத்துறை & தொழில்முறை (PSU & Technical)', icon: Cpu, color: '#0284c7', bg: '#f0f9ff' }
+  psu: { label: 'பொதுத்துறை & தொழில்முறை (PSU & Technical)', icon: Cpu, color: '#0284c7', bg: '#f0f9ff' },
+  other: { label: 'பிற தேர்வுகள் (Other Govt Jobs)', icon: Sparkles, color: '#64748b', bg: '#f8fafc' }
 };
 
 export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
@@ -111,6 +117,72 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
   const isAdmin = forceAdmin === true;
   const today = useMemo(() => getKolkataToday(), []);
+
+  // Admin Ingestion & Pending Review States
+  const [pendingNotifications, setPendingNotifications] = useState([]);
+  const [showPendingQueue, setShowPendingQueue] = useState(false);
+  const [ingestionReport, setIngestionReport] = useState(null);
+
+  // Load pending review notifications when in Admin Mode
+  useEffect(() => {
+    if (isAdmin) {
+      fetchPendingNotificationsCloud().then((data) => {
+        if (Array.isArray(data)) setPendingNotifications(data);
+      }).catch(() => {});
+    }
+  }, [isAdmin]);
+
+  const handleApprovePending = async (id) => {
+    try {
+      const res = await approveNotificationCloud(id);
+      if (res?.success) {
+        setPendingNotifications((prev) => prev.filter((p) => p.id !== id));
+        const fresh = await fetchNotificationsCloud();
+        if (Array.isArray(fresh) && fresh.length > 0) setNotifications(fresh);
+        setSyncMessage('✅ புதிய அறிவிப்பு வெற்றிகரமாக அங்கீகரிக்கப்பட்டு நேரலை தளத்தில் வெளியிடப்பட்டது!');
+      } else {
+        alert(res?.message || 'ஒப்புதல் அளிப்பதில் பிழை');
+      }
+    } catch (e) {
+      alert('ஒப்புதல் அளிப்பதில் பிழை: ' + e.message);
+    }
+  };
+
+  const handleRejectPending = async (id) => {
+    if (window.confirm('இந்த அறிவிப்பை நிராகரிக்க விரும்புகிறீர்களா? (Reject and remove candidate?)')) {
+      try {
+        await rejectNotificationCloud(id);
+        setPendingNotifications((prev) => prev.filter((p) => p.id !== id));
+        setSyncMessage('ℹ️ அறிவிப்பு நிராகரிக்கப்பட்டு நீக்கப்பட்டது.');
+      } catch (e) {
+        alert('நிராகரிப்பதில் பிழை: ' + e.message);
+      }
+    }
+  };
+
+  const handleRunIngestion = async () => {
+    setIsSyncing(true);
+    setSyncMessage('⏳ அனைத்து அரசு தளங்களிலும் புதிய அறிவிப்புகள் தானாகத் தேடப்படுகின்றன (Scanning official sources)...');
+    try {
+      const res = await triggerIngestionJobCloud();
+      if (res?.success) {
+        setIngestionReport(res.summary);
+        setSyncMessage(`✅ தானியங்கி ஸ்கேன் நிறைவடைந்தது! புதியவை: ${res.summary?.newRecordsInserted || 0}, நகல்கள்: ${res.summary?.duplicatesSkipped || 0}`);
+        const freshPending = await fetchPendingNotificationsCloud();
+        setPendingNotifications(freshPending || []);
+        if (freshPending && freshPending.length > 0) {
+          setShowPendingQueue(true);
+        }
+      } else {
+        setSyncMessage('⚠️ தானியங்கி ஸ்கேன் செய்வதில் பிழை ஏற்பட்டது.');
+      }
+    } catch (err) {
+      setSyncMessage('⚠️ ஸ்கேன் பிழை: ' + err.message);
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncMessage(''), 6000);
+    }
+  };
 
   // Real-time MongoDB notifications subscription & Auto-Sync on mount
   useEffect(() => {
@@ -386,25 +458,79 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             </button>
 
             {isAdmin && (
-              <button
-                onClick={() => setShowAddModal(true)}
-                style={{
-                  background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '10px 18px',
-                  borderRadius: '12px',
-                  fontWeight: 800,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
-                }}
-              >
-                <Plus size={16} /> <span>➕ புதிய அறிவிப்பு சேர்க்க (Add)</span>
-              </button>
+              <>
+                <button
+                  onClick={handleRunIngestion}
+                  disabled={isSyncing}
+                  style={{
+                    background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '10px 18px',
+                    borderRadius: '12px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 12px rgba(124, 58, 237, 0.25)'
+                  }}
+                >
+                  <Sparkles size={16} /> <span>⚡ அரசு தளங்களில் தேடு (Run Ingestion)</span>
+                </button>
+
+                <button
+                  onClick={() => setShowPendingQueue(!showPendingQueue)}
+                  style={{
+                    background: pendingNotifications.length > 0 ? '#fef3c7' : '#f8fafc',
+                    color: pendingNotifications.length > 0 ? '#b45309' : '#475569',
+                    border: pendingNotifications.length > 0 ? '1px solid #fde68a' : '1px solid #cbd5e1',
+                    padding: '10px 16px',
+                    borderRadius: '12px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <span>📥 புதிய அறிவிப்புகள் ஒப்புதல்</span>
+                  <span
+                    style={{
+                      background: pendingNotifications.length > 0 ? '#ea580c' : '#64748b',
+                      color: '#ffffff',
+                      borderRadius: '20px',
+                      padding: '2px 8px',
+                      fontSize: '11px',
+                      fontWeight: 900
+                    }}
+                  >
+                    {pendingNotifications.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: '10px 18px',
+                    borderRadius: '12px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                  }}
+                >
+                  <Plus size={16} /> <span>➕ புதிய அறிவிப்பு சேர்க்க (Add)</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -426,6 +552,131 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
           >
             <CheckCircle2 size={18} color="#16a34a" />
             <span>{syncMessage}</span>
+          </div>
+        )}
+
+        {/* Admin Ingestion Pending Review Approval Queue Panel */}
+        {isAdmin && showPendingQueue && (
+          <div
+            style={{
+              background: '#fffbeb',
+              border: '2px solid #fde68a',
+              borderRadius: '16px',
+              padding: '20px',
+              display: 'grid',
+              gap: '14px',
+              boxShadow: '0 4px 16px rgba(217, 119, 6, 0.08)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>📥 அரசு தளங்களில் கண்டறியப்பட்ட புதிய அறிவிப்புகள் (Pending Ingestion Review Queue)</span>
+                  <span style={{ background: '#ea580c', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>
+                    {pendingNotifications.length} நிலுவை
+                  </span>
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#b45309' }}>
+                  இவை TNPSC, IBPS, SSC, UPSC, Railway, Defence போன்ற அதிகாரப்பூர்வ தளங்களிலிருந்து தானாக எடுக்கப்பட்டவை. நீங்கள் ஒப்புதல் (Approve) அளித்த பிறகே பொதுத் தளத்தில் நேரலையாகும்.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPendingQueue(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#b45309' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {pendingNotifications.length === 0 ? (
+              <div style={{ background: '#ffffff', padding: '16px', borderRadius: '10px', textAlign: 'center', color: '#15803d', fontWeight: 700, fontSize: '13px' }}>
+                🟢 தற்போது ஒப்புதலுக்காக புதிய அறிவிப்புகள் நிலுவையில் இல்லை. (No pending notifications). மேலே உள்ள "அரசு தளங்களில் தேடு" பட்டனை அழுத்திப் புதிய அறிவிப்புகளை ஸ்கேன் செய்யலாம்.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+                {pendingNotifications.map((cand) => (
+                  <div
+                    key={cand.id}
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #fed7aa',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '12px'
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: '280px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 800, background: '#fef3c7', color: '#b45309', padding: '2px 8px', borderRadius: '6px' }}>
+                          {cand.category?.toUpperCase() || 'EXAM'}
+                        </span>
+                        <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{cand.organization}</span>
+                        {cand.notificationNo && (
+                          <span style={{ fontSize: '11px', color: '#0369a1', fontWeight: 700 }}>#{cand.notificationNo}</span>
+                        )}
+                      </div>
+                      <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a', marginBottom: '6px' }}>
+                        {cand.service}
+                      </div>
+                      <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#475569' }}>
+                        <span>📅 தொடக்கம்: <strong>{cand.openingDate || 'அறிவிக்கப்படும்'}</strong></span>
+                        <span>⏳ கடைசி நாள்: <strong>{cand.closingDate || 'அறிவிக்கப்படும்'}</strong></span>
+                        {cand.detailsLink && (
+                          <a href={cand.detailsLink} target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span>அதிகாரப்பூர்வ ஆவணம்</span> <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        onClick={() => handleApprovePending(cand.id)}
+                        style={{
+                          background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '8px 14px',
+                          borderRadius: '8px',
+                          fontWeight: 800,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
+                        }}
+                      >
+                        <Check size={14} /> <span>ஒப்புதல் அளி (Approve)</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleRejectPending(cand.id)}
+                        style={{
+                          background: '#fee2e2',
+                          color: '#b91c1c',
+                          border: '1px solid #fca5a5',
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <Trash2 size={14} /> <span>நிராகரி</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

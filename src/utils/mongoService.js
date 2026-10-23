@@ -487,6 +487,42 @@ export const subscribeNotificationsMongo = (callback, intervalMs = 300000) => {
   };
 };
 
+export const fetchPendingNotificationsMongo = async () => {
+  const res = await fetchJson(`${API_BASE_URL}/notifications/pending`);
+  return res?.notifications || [];
+};
+
+export const approveNotificationMongo = async (id) => {
+  if (!id) return null;
+  const res = await fetchJson(`${API_BASE_URL}/notifications/${id}/approve`, {
+    method: 'POST'
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'notification', id, action: 'approve' } })); } catch (e) {}
+  return res;
+};
+
+export const rejectNotificationMongo = async (id) => {
+  if (!id) return null;
+  const res = await fetchJson(`${API_BASE_URL}/notifications/${id}/reject`, {
+    method: 'POST'
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'notification', id, action: 'reject' } })); } catch (e) {}
+  return res;
+};
+
+export const triggerIngestionJobMongo = async (sourceKey = '') => {
+  const query = sourceKey ? `?sourceKey=${encodeURIComponent(sourceKey)}` : '';
+  const res = await fetchJson(`${API_BASE_URL}/notifications/ingest-job${query}`, {
+    method: 'POST'
+  });
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'notification', action: 'ingest' } })); } catch (e) {}
+  return res;
+};
+
+export const fetchIngestionStatusMongo = async () => {
+  return await fetchJson(`${API_BASE_URL}/notifications/ingestion-status`);
+};
+
 // --- OTP AUTHENTICATION ---
 
 export const sendOtpMongo = async (phone, purpose = 'register') => {

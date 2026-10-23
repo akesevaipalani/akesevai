@@ -1,0 +1,48 @@
+name: Automated All-India Exam Notifications Ingestion
+
+on:
+  schedule:
+    # Runs every 4 hours daily (04:00, 08:00, 12:00, 16:00, 20:00, 00:00 UTC)
+    - cron: '0 */4 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  ingest-exam-notifications:
+    name: Crawl & Ingest Official Govt Exam Notifications
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Trigger Ingestion API Endpoint
+        env:
+          INGESTION_SECRET: ${{ secrets.INGESTION_SECRET_KEY }}
+        run: |
+          echo "Starting AK E-SEVAI All-India Exam Ingestion Job..."
+
+          # Fail-closed guard: Refuse execution if INGESTION_SECRET_KEY is not configured
+          if [ -z "$INGESTION_SECRET" ]; then
+            echo "::error::INGESTION_SECRET_KEY is missing or empty in GitHub Secrets. Request aborted."
+            exit 1
+          fi
+
+          # Curl with connection timeout (15s), maximum execution time (180s), and controlled retries for cold-boot/network blips
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "https://akesevai.onrender.com/api/notifications/ingest-job" \
+            --connect-timeout 15 \
+            --max-time 180 \
+            --retry 3 \
+            --retry-delay 10 \
+            --retry-connrefused \
+            -H "Content-Type: application/json" \
+            -H "x-ingestion-secret: $INGESTION_SECRET")
+
+          echo "Server responded with HTTP status: $HTTP_STATUS"
+          # Display response body safely (sanitized JSON without printing request headers)
+          cat response.json || true
+          echo ""
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Ingestion failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✅ All-India Exam Notifications Ingestion Succeeded!"
