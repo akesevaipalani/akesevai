@@ -8,7 +8,19 @@ import {
 import { scrapeTnpscNotifications, scrapeTnusrbNotifications, scrapeTrbNotifications, scrapeMrbNotifications } from './scrapers/tnStateScraper.js';
 import { scrapeIbpsNotifications, scrapeSbiNotifications, scrapeRbiNotifications } from './scrapers/bankingScraper.js';
 import { scrapeUpscNotifications, scrapeSscNotifications, scrapeRrbNotifications, scrapeIndiaPostNotifications } from './scrapers/centralGovtScraper.js';
-import { scrapeIndianArmyNotifications, scrapeIndianNavyNotifications, scrapeIndianAirforceNotifications, scrapeCtetNotifications } from './scrapers/defenceTeachingScraper.js';
+import {
+  scrapeIndianArmyNotifications,
+  scrapeIndianNavyNotifications,
+  scrapeIndianAirforceNotifications,
+  scrapeCtetNotifications,
+  scrapeKvsNotifications
+} from './scrapers/defenceTeachingScraper.js';
+import {
+  scrapeLicNotifications,
+  scrapeNiaclNotifications,
+  scrapeBelNotifications,
+  scrapeBhelNotifications
+} from './scrapers/insurancePsuScraper.js';
 
 // Handler map from source key to scraper function
 const SCRAPER_MAP = {
@@ -27,7 +39,12 @@ const SCRAPER_MAP = {
   indian_army: scrapeIndianArmyNotifications,
   indian_navy: scrapeIndianNavyNotifications,
   indian_airforce: scrapeIndianAirforceNotifications,
-  ctet_cbse: scrapeCtetNotifications
+  ctet_cbse: scrapeCtetNotifications,
+  kvs_delhi: scrapeKvsNotifications,
+  lic_careers: scrapeLicNotifications,
+  niacl_careers: scrapeNiaclNotifications,
+  bel_psu: scrapeBelNotifications,
+  bhel_psu: scrapeBhelNotifications
 };
 
 // Global state tracking sync runs

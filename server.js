@@ -4054,16 +4054,19 @@ app.post('/api/notifications/ingest-job', async (req, res) => {
   try {
     const auth = resolveAuthContext(req);
     const secretHeader = req.headers['x-ingestion-secret'] || req.headers['x-cron-secret'];
-    const rawEnvSecret = typeof process.env.INGESTION_SECRET_KEY === 'string'
+    const rawEnvSecret = typeof process.env.INGESTION_SECRET_KEY === 'string' && process.env.INGESTION_SECRET_KEY.trim().length > 0
       ? process.env.INGESTION_SECRET_KEY.trim()
-      : '';
-    // Fail-closed: Secret-based authentication is strictly prohibited if INGESTION_SECRET_KEY is not configured or empty
-    const isSecretValid = Boolean(
-      rawEnvSecret &&
-      rawEnvSecret.length > 0 &&
-      secretHeader &&
-      secretHeader.trim() === rawEnvSecret
-    );
+      : (typeof process.env.INGESTION_SECRET === 'string' ? process.env.INGESTION_SECRET.trim() : '');
+
+    // Constant-time comparison to prevent timing attacks, fail-closed if secret is unconfigured
+    let isSecretValid = false;
+    if (rawEnvSecret && rawEnvSecret.length > 0 && typeof secretHeader === 'string' && secretHeader.trim().length > 0) {
+      const headerBuf = Buffer.from(secretHeader.trim(), 'utf8');
+      const envBuf = Buffer.from(rawEnvSecret, 'utf8');
+      if (headerBuf.length === envBuf.length) {
+        isSecretValid = crypto.timingSafeEqual(headerBuf, envBuf);
+      }
+    }
 
     if (!auth.isAdmin && !isSecretValid) {
       return res.status(403).json({

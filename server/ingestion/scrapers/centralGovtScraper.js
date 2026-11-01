@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
 
 /**
- * Scrapes UPSC Active Examinations
+ * Scrapes UPSC Active Examinations & Notices
  */
 export async function scrapeUpscNotifications(sourceConfig) {
   const url = sourceConfig.url;
@@ -14,49 +14,52 @@ export async function scrapeUpscNotifications(sourceConfig) {
 
   const $ = cheerio.load(res.html);
   const items = [];
+  const seenTitles = new Set();
 
-  $('table tr').each((i, row) => {
-    if (i === 0) return;
-    const cols = $(row).find('td');
-    if (cols.length >= 3) {
-      const titleEl = $(cols[0]).find('a');
-      const service = titleEl.text().trim() || $(cols[0]).text().trim();
-      const openingDate = $(cols[1]).text().trim();
-      const closingDate = $(cols[2]).text().trim();
+  $('.views-row').each((_, row) => {
+    const a = $(row).find('a').first();
+    const rawTitle = $(row).text().replace(/\s+/g, ' ').trim();
+    let href = a.attr('href') || '';
+    if (!rawTitle || !href) return;
 
-      let link = titleEl.attr('href') || $(cols[cols.length - 1]).find('a').attr('href') || '';
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
-
-      if (service && service.length > 5) {
-        items.push({
-          sourceKey: 'upsc_active',
-          category: 'upsc',
-          organization: 'Union Public Service Commission (UPSC)',
-          service: service.replace(/\s+/g, ' '),
-          postName: service.replace(/\s+/g, ' '),
-          notificationNo: '',
-          openingDate: openingDate || '',
-          closingDate: closingDate || '',
-          examDate: 'As per UPSC Calendar',
-          qualification: 'Degree of a recognized University in relevant discipline',
-          ageLimit: '21 - 32 Years (Relaxation as per Rules)',
-          applicationFee: '₹100 (Female/SC/ST/PwBD Exempted)',
-          detailsLink: link || url,
-          applyLink: 'https://upsconline.nic.in/',
-          source: 'Official UPSC Examination Portal (upsc.gov.in)',
-          sourceUrl: url
-        });
-      }
+    const lower = rawTitle.toLowerCase();
+    // Exclude final marks, archived lists if not an active notice/exam
+    if (lower.startsWith('final result:') || lower.includes('marks of recommended candidates')) {
+      return;
     }
+
+    if (seenTitles.has(rawTitle)) return;
+    seenTitles.add(rawTitle);
+
+    let absLink = href.startsWith('http')
+      ? href
+      : `https://upsc.gov.in/${href.startsWith('/') ? href.slice(1) : href}`;
+
+    items.push({
+      sourceKey: 'upsc_active',
+      category: 'upsc',
+      organization: 'Union Public Service Commission (UPSC)',
+      service: rawTitle,
+      postName: rawTitle.replace(/^(Notice:|Written Result:|Interview Schedule:)\s*/i, '').trim(),
+      notificationNo: '',
+      openingDate: '',
+      closingDate: '',
+      examDate: 'As per UPSC Calendar',
+      qualification: 'Degree of a recognized University in relevant discipline',
+      ageLimit: '21 - 32 Years (Relaxation as per Rules)',
+      applicationFee: '₹100 (Female/SC/ST/PwBD Exempted)',
+      detailsLink: absLink,
+      applyLink: 'https://upsconline.nic.in/',
+      source: 'Official UPSC Examination Portal (upsc.gov.in)',
+      sourceUrl: url
+    });
   });
 
   return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
 /**
- * Scrapes SSC Notices / Announcements
+ * Scrapes SSC Official Notice Board (Direct REST API)
  */
 export async function scrapeSscNotifications(sourceConfig) {
   const url = sourceConfig.url;
@@ -65,50 +68,62 @@ export async function scrapeSscNotifications(sourceConfig) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
 
-  const $ = cheerio.load(res.html);
   const items = [];
+  try {
+    const payload = JSON.parse(res.html);
+    const notices = payload.rows || payload.data || (Array.isArray(payload) ? payload : []);
 
-  $('a').each((_, a) => {
-    const text = $(a).text().trim();
-    const href = $(a).attr('href');
-    if (
-      href &&
-      text &&
-      (text.toLowerCase().includes('combined graduate level') ||
-        text.toLowerCase().includes('cgl') ||
-        text.toLowerCase().includes('chsl') ||
-        text.toLowerCase().includes('multi tasking') ||
-        text.toLowerCase().includes('mts') ||
-        text.toLowerCase().includes('constable (gd)') ||
-        text.toLowerCase().includes('notice of examination'))
-    ) {
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+    for (const notice of notices) {
+      const headline = (notice.headline || '').replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!headline || headline.length < 5) continue;
+
+      let detailsLink = 'https://ssc.gov.in/notices';
+      if (notice.attachments && notice.attachments.length > 0 && notice.attachments[0].path) {
+        const cleanPath = notice.attachments[0].path.replace(/\\/g, '/');
+        detailsLink = `https://ssc.gov.in/api/attachment/${cleanPath}`;
+      } else if (notice.redirectUrl) {
+        detailsLink = notice.redirectUrl;
+      }
+
+      // Format date if ISO string
+      let publishedDate = '';
+      if (notice.createdAt) {
+        try {
+          const d = new Date(notice.createdAt);
+          publishedDate = !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : '';
+        } catch (_) {}
+      }
+
       items.push({
         sourceKey: 'ssc_notices',
         category: 'ssc',
-        organization: 'Staff Selection Commission (SSC)',
-        service: text.replace(/\s+/g, ' '),
-        postName: text.replace(/\s+/g, ' '),
-        notificationNo: '',
-        openingDate: '',
-        closingDate: '',
+        organization: 'Staff Selection Commission (SSC Central)',
+        service: headline,
+        postName: headline,
+        notificationNo: notice.id || '',
+        openingDate: notice.startDate || publishedDate || '',
+        closingDate: notice.endDate || '',
         examDate: 'Announced Soon',
         qualification: '10th / 12th / Any Degree (as per post)',
         ageLimit: '18 - 30 Years (Post wise)',
-        applicationFee: '₹100 (Women/SC/ST Exempted)',
-        detailsLink: absLink,
+        applicationFee: '₹100 (Women/SC/ST/ESM Exempted)',
+        detailsLink,
         applyLink: 'https://ssc.gov.in/',
         source: 'Official Staff Selection Commission Portal (ssc.gov.in)',
-        sourceUrl: url
+        sourceUrl: 'https://ssc.gov.in/'
       });
-    }
-  });
 
-  return { success: true, source: sourceConfig.key, items: items.slice(0, 6) };
+      if (items.length >= 8) break;
+    }
+  } catch (err) {
+    return { success: false, source: sourceConfig.key, error: `JSON Parse error: ${err.message}`, items: [] };
+  }
+
+  return { success: true, source: sourceConfig.key, items };
 }
 
 /**
- * Scrapes RRB (Railway Recruitment Board)
+ * Scrapes RRB (Railway Recruitment Board Chennai / CEN Notices)
  */
 export async function scrapeRrbNotifications(sourceConfig) {
   const url = sourceConfig.url;
@@ -119,46 +134,57 @@ export async function scrapeRrbNotifications(sourceConfig) {
 
   const $ = cheerio.load(res.html);
   const items = [];
+  const seenLinks = new Set();
 
-  $('table tr, li, p').each((_, el) => {
-    const a = $(el).find('a');
-    if (a.length > 0) {
-      const text = a.text().trim();
-      const href = a.attr('href');
-      if (
-        href &&
-        text &&
-        (text.toLowerCase().includes('cen') ||
-          text.toLowerCase().includes('ntpc') ||
-          text.toLowerCase().includes('alp') ||
-          text.toLowerCase().includes('technician') ||
-          text.toLowerCase().includes('level 1') ||
-          text.toLowerCase().includes('recruitment'))
-      ) {
-        let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
-        items.push({
-          sourceKey: 'rrb_chennai',
-          category: 'railway',
-          organization: 'Railway Recruitment Board (RRB / Indian Railways)',
-          service: text.replace(/\s+/g, ' '),
-          postName: text.replace(/\s+/g, ' '),
-          notificationNo: text.match(/CEN\s*\d+\/\d+/i)?.[0] || '',
-          openingDate: '',
-          closingDate: '',
-          examDate: 'Announced Soon',
-          qualification: '10th / ITI / Diploma / Degree as per post',
-          ageLimit: '18 - 33 Years (Relaxations Applicable)',
-          applicationFee: '₹500 (₹400 Refundable after CBT)',
-          detailsLink: absLink,
-          applyLink: 'https://www.rrbchennai.gov.in/',
-          source: 'Official Railway Recruitment Board Portal',
-          sourceUrl: url
-        });
-      }
+  $('a').each((_, a) => {
+    const rawText = $(a).text().trim().replace(/\s+/g, ' ');
+    const href = $(a).attr('href') || '';
+    if (!href || seenLinks.has(href)) return;
+
+    // Filter for CEN Notifications, Indicative Notices, or Application announcements
+    const isCenLink = href.includes('cenum=');
+    const isRecruitmentCat =
+      href.includes('category=Notification') ||
+      href.includes('category=Indicative+Notice') ||
+      href.includes('category=Indicative%20Notice') ||
+      href.includes('category=Application') ||
+      href.includes('category=Special+Notice');
+
+    if (isCenLink && isRecruitmentCat && rawText.length > 5) {
+      seenLinks.add(href);
+
+      // Extract CEN Number (e.g., "(09/2025)" -> "CEN 09/2025")
+      const cenMatch = rawText.match(/\((\d+\/\d+)\)/);
+      const cenNo = cenMatch ? `CEN ${cenMatch[1]}` : '';
+
+      // Extract date if present (e.g. "(21-10-2026)")
+      const dateMatch = rawText.match(/\((\d{2}-\d{2}-\d{4})\)/);
+      const notifDate = dateMatch ? dateMatch[1] : '';
+
+      let absLink = href.startsWith('http') ? href : `https://rrbchennai.gov.in${href.startsWith('/') ? '' : '/'}${href}`;
+
+      items.push({
+        sourceKey: 'rrb_chennai',
+        category: 'railway',
+        organization: 'Railway Recruitment Board (RRB / Indian Railways)',
+        service: `Indian Railways ${cenNo ? cenNo + ' ' : ''}Recruitment Notification: ${rawText}`,
+        postName: `${cenNo ? cenNo + ' - ' : ''}Railway Recruitment (NTPC / ALP / Technician / Group D)`,
+        notificationNo: cenNo,
+        openingDate: notifDate,
+        closingDate: '',
+        examDate: 'Announced Soon',
+        qualification: '10th / ITI / Diploma / Degree as per post',
+        ageLimit: '18 - 33 Years (Relaxations Applicable)',
+        applicationFee: '₹500 (₹400 Refundable after CBT)',
+        detailsLink: absLink,
+        applyLink: 'https://rrbchennai.gov.in/',
+        source: 'Official Railway Recruitment Board Portal (rrbchennai.gov.in)',
+        sourceUrl: url
+      });
     }
   });
 
-  return { success: true, source: sourceConfig.key, items: items.slice(0, 6) };
+  return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
 /**
@@ -173,23 +199,27 @@ export async function scrapeIndiaPostNotifications(sourceConfig) {
 
   const $ = cheerio.load(res.html);
   const items = [];
+  const seenHrefs = new Set();
 
   $('a').each((_, a) => {
-    const text = $(a).text().trim();
-    const href = $(a).attr('href');
+    const text = $(a).text().trim().replace(/\s+/g, ' ');
+    const href = $(a).attr('href') || '';
+    if (!href || href === '#' || href === 'javascript:void(0)' || seenHrefs.has(href)) return;
+
+    const lower = text.toLowerCase();
     if (
-      href &&
-      text &&
-      (text.toLowerCase().includes('gds') ||
-        text.toLowerCase().includes('gramin dak sevak') ||
-        text.toLowerCase().includes('engagement'))
+      lower.includes('descriptive notification') ||
+      lower.includes('gds online engagement') ||
+      lower.includes('gramin dak sevak') ||
+      lower.includes('special drive')
     ) {
+      seenHrefs.add(href);
       let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
       items.push({
         sourceKey: 'india_post_gds',
         category: 'psu',
         organization: 'India Post (Department of Posts)',
-        service: text.replace(/\s+/g, ' '),
+        service: text,
         postName: 'Gramin Dak Sevak (BPM / ABPM / Dak Sevak)',
         notificationNo: '',
         openingDate: '',
