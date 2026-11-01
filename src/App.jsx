@@ -85,6 +85,9 @@ const PhotoToolPage = lazy(() => import('./pages/PhotoToolPage'));
 const XeroxPrintingPage = lazy(() => import('./pages/XeroxPrintingPage'));
 const TypingServicesPage = lazy(() => import('./pages/TypingServicesPage'));
 const SpiralBindingPage = lazy(() => import('./pages/SpiralBindingPage'));
+const CertificateServicesPage = lazy(() => import('./pages/CertificateServicesPage'));
+const OnlineApplicationAssistancePage = lazy(() => import('./pages/OnlineApplicationAssistancePage'));
+const TnGovtServicesGuidePage = lazy(() => import('./pages/TnGovtServicesGuidePage'));
 const NotificationTables = lazy(() => import('./components/NotificationTables'));
 const AdminSevaiSmartDesk = lazy(() => import('./components/AdminSevaiSmartDesk'));
 const FirstTimeLoginModal = lazy(() => import('./components/FirstTimeLoginModal'));
@@ -487,7 +490,7 @@ const validPages = [
   'home', 'services', 'status-track', 'token-generator', 'notifications',
   'about', 'contact', 'customer', 'admin', 'weblink', 'useful-links', 'important-links', 'forms', 'software',
   'photo-maker', 'whatsapp-poster', 'photo-tools',
-  'xerox-printing', 'typing-services', 'spiral-binding'
+  'xerox-printing', 'typing-services', 'spiral-binding', 'certificate-services', 'online-application-assistance', 'tn-govt-services-guide'
 ];
 
 const getInitialPage = () => {
@@ -647,6 +650,9 @@ function App() {
       'xerox-printing': 'Xerox & Printing Services in Palani | AK E-SEVAI',
       'typing-services': 'Tamil & English Typing Centre in Palani | AK E-SEVAI',
       'spiral-binding': 'Spiral Binding & Lamination in Palani | AK E-SEVAI',
+      'certificate-services': 'சான்றிதழ் விண்ணப்ப உதவி | Certificate Assistance | AK E-SEVAI Palani',
+      'online-application-assistance': 'அரசு தேர்வு விண்ணப்ப உதவி | Online Application Assistance | AK E-SEVAI Palani',
+      'tn-govt-services-guide': 'அரசு சேவைகள் வழிகாட்டி | Citizen Services Guide | AK E-SEVAI Palani',
       'status-track': 'Track Application Status Online | AK E-SEVAI Palani | www.akesevai.com',
       'token-generator': 'Live Token Booking | AK E-SEVAI Palani Digital Centre | www.akesevai.com',
       notifications: 'Government Job & Exam Notifications | AK E-SEVAI Palani | www.akesevai.com',
@@ -1486,7 +1492,10 @@ function App() {
             {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
             {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
             {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
-            {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
+                        {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
+            {page === 'certificate-services' && <CertificateServicesPage navigate={navigate} lang={lang} />}
+            {page === 'online-application-assistance' && <OnlineApplicationAssistancePage navigate={navigate} lang={lang} />}
+            {page === 'tn-govt-services-guide' && <TnGovtServicesGuidePage navigate={navigate} lang={lang} />}
             {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
             {page === 'photo-maker' && <PhotoMakerPage notify={notify} lang={lang} />}
             {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
@@ -1539,6 +1548,20 @@ function App() {
               </div>
             </div>
 
+            {/* Tamil Nadu Online Assistance & Guides */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+              <strong style={{ fontSize: '12px', color: '#fde047', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                {lang === 'ta' ? '🏛️ தமிழ்நாடு இ-சேவை & விண்ணப்ப வழிகாட்டி:' : '🏛️ Tamil Nadu e-Sevai & Application Guides:'}
+              </strong>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
+                <button onClick={() => navigate('certificate-services')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'சான்றிதழ் விண்ணப்ப உதவி (வருமானம், ஜாதி, இருப்பிடம்)' : 'Certificate Assistance (Income, Community, Nativity)'}</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('online-application-assistance')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'அரசு தேர்வு விண்ணப்ப உதவி (TNPSC, SSC, RRB)' : 'Govt Exam & College Application Support'}</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tn-govt-services-guide')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'அரசு சேவைகள் வழிகாட்டி (பட்டா, ரேஷன், EC)' : 'TN Citizen Services Guide (Patta, Ration, EC)'}</button>
+              </div>
+            </div>
+
             {/* Photo Tools Footer Links */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
               <strong style={{ fontSize: '12px', color: '#93c5fd', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
@@ -1558,6 +1581,12 @@ function App() {
                 <button onClick={() => navigate('tools/photo-compress-100kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 100KB</button>
                 <span style={{ color: '#475569' }}>•</span>
                 <button onClick={() => navigate('tools/photo-crop')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Photo Crop</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/pdf-merge')} style={{ background: 'none', border: 'none', color: '#fcd34d', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PDF Merge</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/dimension-checker')} style={{ background: 'none', border: 'none', color: '#fcd34d', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Dimension & DPI Checker</button>
+                <span style={{ color: '#475569' }}>•</span>
+                <button onClick={() => navigate('tools/govt-exam-photo-tool')} style={{ background: 'none', border: 'none', color: '#fcd34d', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Govt Exam Photo Tool</button>
                 <span style={{ color: '#475569' }}>•</span>
                 <button onClick={() => navigate('tools/jpg-to-pdf')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>JPG to PDF</button>
                 <span style={{ color: '#475569' }}>•</span>

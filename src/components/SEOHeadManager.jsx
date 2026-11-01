@@ -70,6 +70,24 @@ const PAGE_SEO_MAP = {
     keywords: 'palani typing centre, tamil typing palani, english typing palani, govt petition typing palani, resume typing palani, பழனி தமிழ் டைப்பிங், akesevai typing',
     canonical: 'https://www.akesevai.com/typing-services'
   },
+    'certificate-services': {
+    title: 'Tamil Nadu e-Sevai Certificate Application Assistance | Income, Community, Nativity | AK E-SEVAI Palani',
+    description: 'Apply with assistance for Tamil Nadu Tahsildar Income, Community, Nativity, First Graduate, and Legal Heir certificates at AK E-SEVAI Palani. Accurate document guidance, CAN registration & status tracking.',
+    keywords: 'certificate services tamil nadu, income certificate apply online, community certificate palani, nativity certificate tamil nadu, first graduate certificate, legal heir certificate online, esevai certificate palani, சான்றிதழ் விண்ணப்ப உதவி',
+    canonical: 'https://www.akesevai.com/certificate-services'
+  },
+  'online-application-assistance': {
+    title: 'Government Exam & College Online Application Assistance | TNPSC, SSC, RRB, TNEA | AK E-SEVAI Palani',
+    description: 'Professional online application assistance for TNPSC Group 1, 2, 4, VAO, SSC CGL/CHSL, Railway RRB, Police, Teaching TRB, and TNEA engineering counselling at AK E-SEVAI Palani.',
+    keywords: 'online application assistance, tnpsc apply online palani, ssc online application help, rrb apply online, govt exam online application, college admission online apply, akesevai application assistance, அரசு தேர்வு விண்ணப்ப உதவி',
+    canonical: 'https://www.akesevai.com/online-application-assistance'
+  },
+  'tn-govt-services-guide': {
+    title: 'Tamil Nadu Government Citizen Services Guide | Patta Chitta, Smart Ration Card, EC | AK E-SEVAI',
+    description: 'Complete citizen guidance for Patta Chitta land records, TN PDS Smart Ration card changes, Encumbrance Certificate (EC), TNeGA CAN number, and social welfare schemes at AK E-SEVAI.',
+    keywords: 'tamil nadu govt services guide, patta chitta online, smart ration card apply online, encumbrance certificate ec online, can number registration, esevai citizen services guide, அரசு சேவைகள் வழிகாட்டி',
+    canonical: 'https://www.akesevai.com/tn-govt-services-guide'
+  },
   'spiral-binding': {
     title: 'Spiral Binding & Lamination in Palani | AK E-SEVAI',
     description: 'High-quality plastic coil spiral binding and 125/250 micron hot pouch lamination for college projects, certificates, marksheets, and records in Palani.',

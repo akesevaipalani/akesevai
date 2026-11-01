@@ -794,6 +794,122 @@ export const PHOTO_TOOLS_CATALOG = [
       { step: 3, title: 'Download Compact PDF', titleTa: 'சுருக்கிய PDF-ஐ பதிவிறக்கவும்', text: 'Save your compressed PDF ready for portal submission.', textTa: 'இணையதளத்தில் பதிவேற்ற தயாரான சிறிய PDF-ஐ சேமிக்கவும்.' }
     ],
     relatedTools: ['jpg-to-pdf', 'image-to-pdf', 'pdf-to-jpg', 'photo-compress-100kb', 'photo-compress']
+  },
+
+  // 21. PDF MERGE TOOL (CLIENT-SIDE PDF-LIB)
+  {
+    id: 'pdf-merge',
+    path: '/tools/pdf-merge',
+    category: 'pdf',
+    categoryTitle: 'PDF & Document Tools',
+    categoryTitleTa: 'PDF & ஆவணக் கருவிகள்',
+    title: 'PDF Merge Online – Combine Multiple PDF Files Free & Private | AK E-SEVAI Palani',
+    titleTa: 'PDF மெர்ஜ் ஆன்லைன் – பல PDF கோப்புகளை ஒன்றாக இணைக்க | AK E-SEVAI பழனி',
+    description: 'Merge multiple PDF files into one single PDF document online. 100% free, secure, and client-side processing in your browser. No server upload. Combine marksheets, certificates, and application forms.',
+    descriptionTa: 'பல PDF கோப்புகளை ஒரே ஆவணமாக நொடியில் இணைத்துக் கொள்ளுங்கள். 100% இலவசம், முழுமையான பாதுகாப்பு. உங்கள் கோப்புகள் உங்கள் பிரவுசரிலேயே இணையும்; எந்த சர்வர்க்கும் பதிவேற்றப்படாது.',
+    keywords: 'pdf merge, merge pdf online, combine pdf files, pdf joiner, pdf merge tamil, pdf merge online free, akesevai pdf merge',
+    mode: 'pdf-merge',
+    icon: 'Combine',
+    badge: '100% Client-Side Private',
+    badgeTa: '100% பிரைவேட் பிரவுசர் மெர்ஜ்',
+    shortDesc: 'Merge multiple PDF documents, marksheets, and certificates into a single consolidated file directly in your browser.',
+    shortDescTa: 'பல PDF ஆவணங்கள் மற்றும் சான்றிதழ்களை ஒரே கோப்பாக பிரவுசரிலேயே இணைத்து பதிவிறக்குங்கள்.',
+    faqs: [
+      {
+        q: 'Are my private PDF documents uploaded to your server when merging?',
+        qTa: 'PDF-களை இணைக்கும் போது எனது ஆவணங்கள் சர்வரில் சேமிக்கப்படுமா?',
+        a: 'No! All merging is executed 100% locally inside your web browser using WebAssembly/JavaScript (pdf-lib). Your sensitive documents never leave your mobile or computer.',
+        aTa: 'இல்லை! அனைத்து இணைப்புகளும் உங்கள் பிரவுசரிலேயே pdf-lib தொழில்நுட்பம் மூலம் பாதுகாப்பாக நடைபெறுகிறது. உங்கள் ஆவணங்கள் உங்கள் சாதனத்தை விட்டு வெளியேறாது.'
+      },
+      {
+        q: 'How many PDF files can I merge together?',
+        qTa: 'ஒரே நேரத்தில் எத்தனை PDF கோப்புகளை இணைக்கலாம்?',
+        a: 'You can combine 2 to 20+ PDF documents simultaneously, arrange their order, and download the unified PDF in seconds.',
+        aTa: '2 முதல் 20-க்கும் மேற்பட்ட PDF கோப்புகளை ஒரே நேரத்தில் வரிசைப்படுத்தி இணைத்து பதிவிறக்கலாம்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Select Multiple PDF Files', titleTa: 'PDF கோப்புகளைத் தேர்ந்தெடுக்கவும்', text: 'Click Upload or drag and drop 2 or more PDF documents.', textTa: 'ஒன்றிற்கு மேற்பட்ட PDF கோப்புகளை தேர்வு செய்யவும்.' },
+      { step: 2, title: 'Review & Merge', titleTa: 'சரிபார்த்து இணைக்கவும்', text: 'Confirm the file order and click "Merge All PDFs".', textTa: 'வரிசையை சரிபார்த்து "PDF-களை இணை" பொத்தானை அழுத்தவும்.' },
+      { step: 3, title: 'Download Merged PDF', titleTa: 'ஒருங்கிணைந்த PDF-ஐ பதிவிறக்கவும்', text: 'Instantly download your single combined PDF file.', textTa: 'இணைக்கப்பட்ட புதிய PDF கோப்பை உடனே சேமிக்கவும்.' }
+    ],
+    relatedTools: ['jpg-to-pdf', 'pdf-compress', 'image-to-pdf', 'dimension-checker']
+  },
+
+  // 22. PHOTO DIMENSION & FILE SIZE CHECKER
+  {
+    id: 'dimension-checker',
+    path: '/tools/dimension-checker',
+    category: 'crop-resize',
+    categoryTitle: 'Crop & Resize Tools',
+    categoryTitleTa: 'க்ராப் & ரீசைஸ் கருவிகள்',
+    title: 'Photo Dimension & File Size Checker – TNPSC, SSC, UPSC Compliance | AK E-SEVAI Palani',
+    titleTa: 'போட்டோ அளவு & KB சரிபார்ப்புக் கருவி – அரசுத் தேர்வு விதிகள் | AK E-SEVAI பழனி',
+    description: 'Instantly check photo and signature width, height, aspect ratio, DPI, and file size in KB. Verifies compatibility against official TNPSC, SSC, UPSC, Bank, and Police exam specifications with 1-click auto-fix.',
+    descriptionTa: 'உங்கள் புகைப்படம் மற்றும் கையொப்பத்தின் நீளம், அகலம், பிக்சல்கள் மற்றும் KB அளவை உடனடியாக சரிபார்க்கும் கருவி. TNPSC, SSC, UPSC தேர்வு விதிகளுக்கு ஏற்றதா என உடனே அறியலாம்.',
+    keywords: 'photo dimension checker, check image size in kb, photo size checker online, tnpsc photo size check, image pixel checker, check signature size',
+    mode: 'dimension-checker',
+    icon: 'FileCheck2',
+    badge: 'Instant Exam Compliance',
+    badgeTa: 'தேர்வு விதிகள் சரிபார்ப்பு',
+    shortDesc: 'Inspect image pixel dimensions, aspect ratio, and file size (KB) with automatic verification for government exam portals.',
+    shortDescTa: 'படத்தின் நீள, அகல பிக்சல்கள் மற்றும் KB அளவை அரசுத் தேர்வு விதிகளுடன் ஒப்பிட்டு சரிபாருங்கள்.',
+    faqs: [
+      {
+        q: 'Why do government portals reject photos during online application?',
+        qTa: 'அரசு இணையதளங்கள் புகைப்படங்களை ஏன் நிராகரிக்கின்றன?',
+        a: 'Rejections occur if the image exceeds maximum KB limits (e.g. over 50 KB for TNPSC), has an incorrect aspect ratio, or lacks the mandatory name & date stamp. Our checker alerts you before you upload to official portals.',
+        aTa: 'புகைப்படம் அனுமதிக்கப்பட்ட KB அளவுக்கு அதிகமாக இருந்தாலோ (எ.கா: 50 KB-க்கு மேல்), பிக்சல் விகிதம் தவறாக இருந்தாலோ நிராகரிக்கப்படும். எங்கள் கருவி மூலம் முன்கூட்டியே சரிபார்த்து பிழையைத் தவிர்க்கலாம்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Upload Image or Signature', titleTa: 'படத்தை பதிவேற்றவும்', text: 'Select your photo or signature file.', textTa: 'உங்கள் போட்டோ அல்லது கையொப்ப கோப்பை தேர்வு செய்யவும்.' },
+      { step: 2, title: 'Instant Metric Analysis', titleTa: 'அளவீடுகளை அறியவும்', text: 'View exact Width (px/cm), Height, Aspect Ratio, and File Size (KB).', textTa: 'துல்லியமான பிக்சல் அளவு மற்றும் KB அளவை திரையில் பார்க்கவும்.' },
+      { step: 3, title: 'Verify & Fix', titleTa: 'சரிபார்த்து மாற்றவும்', text: 'Check TNPSC/SSC compatibility tags and click to auto-resize if needed.', textTa: 'தேர்வு தகுதி பேட்ஜ்களைப் பார்த்து, தேவைப்பட்டால் ஒரே கிளிக்கில் ரீசைஸ் கருவிக்கு செல்லவும்.' }
+    ],
+    relatedTools: ['passport-size-photo', 'signature-resize', 'photo-compress-20kb', 'photo-compress-50kb']
+  },
+
+  // 23. GOVERNMENT EXAM PHOTO PREPARATION TOOL
+  {
+    id: 'govt-exam-photo-tool',
+    path: '/tools/govt-exam-photo-tool',
+    category: 'passport',
+    categoryTitle: 'Passport & Identity Photos',
+    categoryTitleTa: 'பாஸ்போர்ட் & அடையாளப் படங்கள்',
+    title: 'Government Exam Photo & Signature Preparation Tool (TNPSC / SSC / UPSC) | AK E-SEVAI Palani',
+    titleTa: 'அரசுத் தேர்வு போட்டோ & கையொப்ப தயாரிப்புக் கருவி | AK E-SEVAI பழனி',
+    description: 'All-in-one government competitive exam photo and signature maker. Pre-configured presets for TNPSC (350x450 px with name & date), SSC (200x230 px), UPSC, Bank PO, and Police recruitment.',
+    descriptionTa: 'TNPSC, SSC, UPSC, வங்கி மற்றும் காவலர் தேர்வுகளுக்கான அதிகாரப்பூர்வ புகைப்பட மற்றும் கையொப்ப தயாரிப்புக் கருவி. பெயர் மற்றும் தேதி முத்திரை வசதியுடன் கூடியது.',
+    keywords: 'govt exam photo maker, tnpsc photo generator with name date, ssc photo resize, upsc photo tool, exam signature maker, போட்டித் தேர்வு போட்டோ மேக்கர்',
+    mode: 'passport',
+    icon: 'Camera',
+    badge: 'All Govt Exams Ready',
+    badgeTa: 'அரசுத் தேர்வுகள் ஸ்பெஷல்',
+    shortDesc: 'One-stop photo preparation tool with official presets for TNPSC, SSC, UPSC, Bank, and Police recruitment portals.',
+    shortDescTa: 'TNPSC, SSC, UPSC, வங்கி மற்றும் காவலர் தேர்வுகளுக்கான பிரத்யேக போட்டோ தயாரிப்புக் கருவி.',
+    defaultTargetKb: 50,
+    presetSizes: [
+      { label: 'TNPSC Exam (350 × 450 px, 20–50 KB, Name & Date Stamp)', w: 350, h: 450, targetKb: 50, hasNameStamp: true, name: 'TNPSC Official' },
+      { label: 'SSC Staff Selection (200 × 230 px, 20–50 KB)', w: 200, h: 230, targetKb: 35, name: 'SSC Official' },
+      { label: 'UPSC Civil Services (350 × 350 px, 20–100 KB)', w: 350, h: 350, targetKb: 75, name: 'UPSC Square' },
+      { label: 'Bank IBPS / SBI (350 × 450 px, 20–50 KB)', w: 350, h: 450, targetKb: 45, name: 'Bank Official' },
+      { label: 'TN Police / TNUSRB (350 × 450 px, 20–50 KB)', w: 350, h: 450, targetKb: 40, name: 'TNUSRB Official' }
+    ],
+    faqs: [
+      {
+        q: 'How to add my Name and Date of Photo on my TNPSC application photo?',
+        qTa: 'TNPSC புகைப்படத்தில் பெயர் மற்றும் புகைப்படம் எடுத்த தேதியை சேர்ப்பது எப்படி?',
+        a: 'Select the TNPSC preset, enter your full name in the "Applicant Name" field and the date in the "Date of Photo" field. Our engine automatically generates the mandated white strip with bold black text at the bottom.',
+        aTa: 'TNPSC ஆப்ஷனை தேர்வு செய்து, உங்கள் பெயர் மற்றும் தேதியை உள்ளிட்டால், அரசு விதிகளின்படி புகைப்படத்தின் கீழே தானாகவே நேர்த்தியான வெள்ளை பட்டையில் பெயர் மற்றும் தேதி முத்திரையிடப்படும்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Select Exam Board', titleTa: 'தேர்வு வாரியத்தை தேர்வு செய்யவும்', text: 'Pick TNPSC, SSC, UPSC, or Bank PO preset.', textTa: 'TNPSC, SSC, UPSC அல்லது வங்கி தேர்வு அளவை தேர்வு செய்யவும்.' },
+      { step: 2, title: 'Upload & Add Name/Date', titleTa: 'போட்டோ & பெயர்/தேதி சேர்க்கவும்', text: 'Upload your photo, type your name & photo date if required.', textTa: 'போட்டோவை அப்லோடு செய்து பெயர் மற்றும் தேதியை டைப் செய்யவும்.' },
+      { step: 3, title: 'Download Compliant Photo', titleTa: 'சரியான போட்டோவை பதிவிறக்கவும்', text: 'Download the exact size JPG ready for upload on the official portal.', textTa: 'இணையதளத்தில் உடனே பதிவேற்ற தயாரான JPG படத்தை சேமிக்கவும்.' }
+    ],
+    relatedTools: ['signature-resize', 'dimension-checker', 'photo-compress-20kb', 'photo-compress-50kb']
   }
 ];
 
@@ -1017,7 +1133,7 @@ export const PHOTO_TOOLS_CATEGORIES = [
     titleTa: 'பாஸ்போர்ட் & அடையாள அட்டை கருவிகள்',
     desc: 'Make official 3.5x4.5 cm passport photos, resize for government exams, and print 4x6 / A4 photo sheets.',
     descTa: 'அரசு அங்கீகரிக்கப்பட்ட பாஸ்போர்ட் போட்டோக்கள் மற்றும் 4x6 / A4 அச்சிடும் தாள்களை தயார் செய்யுங்கள்.',
-    toolIds: ['passport-size-photo', 'passport-photo-resize', 'photo-crop']
+    toolIds: ['passport-size-photo', 'govt-exam-photo-tool', 'passport-photo-resize', 'photo-crop']
   },
   {
     id: 'compression',
@@ -1031,9 +1147,9 @@ export const PHOTO_TOOLS_CATEGORIES = [
     id: 'crop-resize',
     title: 'Crop & Dimension Resizers',
     titleTa: 'க்ராப் & பிக்சல் அளவீடு கருவிகள்',
-    desc: 'Crop to passport, square, or signature ratios and resize pixel width × height with DPI controls.',
-    descTa: 'போட்டோக்களை தேவையான நீள அகல பிக்சல்களுக்கு மாற்றி துல்லியமாக வெட்டி எடுங்கள்.',
-    toolIds: ['photo-crop', 'photo-resizer', 'passport-photo-resize']
+    desc: 'Crop to passport, square, or signature ratios, resize pixel dimensions, and inspect photo DPI/KB compliance.',
+    descTa: 'போட்டோக்களை தேவையான நீள அகல பிக்சல்களுக்கு மாற்றி துல்லியமாக வெட்டி எடுங்கள் மற்றும் KB அளவை சரிபாருங்கள்.',
+    toolIds: ['dimension-checker', 'photo-crop', 'photo-resizer', 'passport-photo-resize', 'signature-resize']
   },
   {
     id: 'editor',
@@ -1055,9 +1171,9 @@ export const PHOTO_TOOLS_CATEGORIES = [
     id: 'pdf',
     title: 'PDF & Document Converters',
     titleTa: 'PDF & ஆவணக் கருவிகள்',
-    desc: 'Convert JPG/PNG to A4 PDF, merge multi-image documents, extract PDF to JPG, and compress PDFs.',
-    descTa: 'படங்களை A4 PDF ஆவணமாக மாற்றவும், பல படங்களை இணைக்கவும் மற்றும் PDF அளவை குறைக்கவும் உதவும் கருவிகள்.',
-    toolIds: ['jpg-to-pdf', 'png-to-pdf', 'image-to-pdf', 'pdf-to-jpg', 'pdf-compress']
+    desc: 'Merge multiple PDFs, convert JPG/PNG to A4 PDF, extract PDF to JPG, and compress PDFs.',
+    descTa: 'பல PDF-களை இணைக்கவும், படங்களை A4 PDF ஆவணமாக மாற்றவும் மற்றும் PDF அளவை குறைக்கவும் உதவும் கருவிகள்.',
+    toolIds: ['pdf-merge', 'jpg-to-pdf', 'png-to-pdf', 'image-to-pdf', 'pdf-to-jpg', 'pdf-compress']
   }
 ];
 

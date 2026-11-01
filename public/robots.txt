@@ -49,6 +49,12 @@ Allow: /token-generator
 Allow: /notifications
 Allow: /about
 Allow: /contact
+Allow: /certificate-services
+Allow: /online-application-assistance
+Allow: /tn-govt-services-guide
+Allow: /tools/pdf-merge
+Allow: /tools/dimension-checker
+Allow: /tools/govt-exam-photo-tool
 
 # Explicitly Allow All Leading AI & Search Engine Crawlers
 User-agent: GPTBot

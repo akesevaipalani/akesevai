@@ -7,6 +7,7 @@ import {
   ChevronUp, Move, Image as ImageIcon, Sparkle, ExternalLink
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import { PDFDocument } from 'pdf-lib';
 import { PHOTO_TOOLS_CATALOG, EXAM_PHOTO_GUIDELINES } from '../../data/photoToolsData';
 
 export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }) {
@@ -18,6 +19,12 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
   const [processedSizeKb, setProcessedSizeKb] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeFaq, setActiveFaq] = useState(null);
+  // PDF Merge state
+  const [pdfMergeFiles, setPdfMergeFiles] = useState([]);
+  const [pdfMergeResultUrl, setPdfMergeResultUrl] = useState('');
+
+  // Dimension Checker state
+  const [detectedMetrics, setDetectedMetrics] = useState(null);
 
   // Tool-specific controls
   const [targetKb, setTargetKb] = useState(tool.defaultTargetKb || 50);
@@ -26,7 +33,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
   const [heightPx, setHeightPx] = useState(450);
   const [lockAspect, setLockAspect] = useState(true);
   const [aspectRatioVal, setAspectRatioVal] = useState(350 / 450);
-  
+
   // Passport specific
   const [sheetType, setSheetType] = useState('single'); // 'single', '4x6', 'a4'
   const [hasBorder, setHasBorder] = useState(true);
@@ -140,13 +147,36 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
           context.drawImage(image, sx, sy, sw, sh, dx, dy, dWidth, dHeight);
         };
 
+              if (tool.mode === 'dimension-checker') {
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
+        const aspect = (natW / natH).toFixed(2);
+        const sizeKb = Math.round(fileObj ? fileObj.size / 1024 : (dataUrl.length * 3) / 4 / 1024);
+        setDetectedMetrics({
+          widthPx: natW,
+          heightPx: natH,
+          widthCm: ((natW / 300) * 2.54).toFixed(1),
+          heightCm: ((natH / 300) * 2.54).toFixed(1),
+          aspectRatio: aspect,
+          sizeKb: sizeKb,
+          tnpscPhoto: natW >= 300 && natW <= 400 && natH >= 400 && natH <= 500 && sizeKb <= 50,
+          tnpscSig: natW >= 180 && natW <= 220 && natH >= 80 && natH <= 120 && sizeKb <= 20,
+          sscPhoto: natW >= 180 && natW <= 240 && natH >= 210 && natH <= 250 && sizeKb <= 50,
+          upscPhoto: Math.abs(natW - natH) <= 25 && sizeKb <= 100
+        });
+        setProcessedUrl(dataUrl);
+        setProcessedSizeKb(sizeKb);
+        setIsProcessing(false);
+        return;
+      }
+
         let targetW = img.naturalWidth || img.width;
         let targetH = img.naturalHeight || img.height;
 
         if (tool.mode === 'passport') {
           if (sheetType === 'single') {
-            targetW = 413; // 3.5cm at 300 DPI
-            targetH = 531; // 4.5cm at 300 DPI
+            targetW = (tool.presetSizes && widthPx) ? widthPx : 413;
+            targetH = (tool.presetSizes && heightPx) ? heightPx : 531;
             canvas.width = targetW;
             canvas.height = targetH;
 
@@ -156,7 +186,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
             // Apply filters
             ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`;
-            
+
             // Draw image with smart aspect-ratio cover crop (prevents face distortion)
             drawImageAspectCover(ctx, img, 0, 0, targetW, targetH);
             ctx.filter = 'none';
@@ -360,7 +390,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
           ctx.font = 'bold 36px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText('AkEsevai Document Studio', 600, 85);
-          
+
           ctx.fillStyle = '#f8fafc';
           ctx.fillRect(60, 200, 1080, 1340);
           ctx.strokeStyle = '#cbd5e1';
@@ -467,6 +497,37 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
   // PDF compression client-side
 // PDF compression client-side
+
+  // Client-side PDF Merge using pdf-lib (100% in-browser, 0 server upload)
+  const executePdfMerge = async () => {
+    if (!pdfMergeFiles || pdfMergeFiles.length < 2) {
+      if (notify) notify(isTa ? 'குறைந்தது 2 PDF கோப்புகளை தேர்ந்தெடுக்கவும்' : 'Please select at least 2 PDF files to merge');
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const mergedPdf = await PDFDocument.create();
+      for (const file of pdfMergeFiles) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await PDFDocument.load(arrayBuffer);
+        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+        copiedPages.forEach((page) => mergedPdf.addPage(page));
+      }
+      const mergedPdfBytes = await mergedPdf.save();
+      const blob = new Blob([mergedPdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      setPdfMergeResultUrl(url);
+      setProcessedUrl(url);
+      setProcessedSizeKb(Math.round(blob.size / 1024));
+      if (notify) notify(isTa ? '✅ PDF கோப்புகள் வெற்றிகரமாக இணைக்கப்பட்டன!' : '✅ PDFs merged successfully!');
+    } catch (err) {
+      console.error('PDF Merge Error:', err);
+      if (notify) notify(isTa ? 'PDF இணைப்பதில் பிழை: ' + err.message : 'Error merging PDFs: ' + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const compressPdfClient = async (file) => {
     // In client-side browser without backend, we create an optimized resampled PDF
     if (previewUrl) {
@@ -537,7 +598,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
   return (
     <div className="tool-engine-wrapper" style={{ maxWidth: '1180px', margin: '0 auto', padding: '16px' }}>
-      
+
       {/* Tool Header Banner */}
       <div style={{ background: 'linear-gradient(135deg, #022c7a 0%, #0052cc 100%)', borderRadius: '16px', padding: '28px 24px', color: 'white', marginBottom: '24px', boxShadow: '0 8px 24px rgba(2,44,122,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
@@ -558,7 +619,7 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
 
       {/* Main Interactive Studio Area */}
       <div className={`photo-tools-studio-grid ${previewUrl ? 'has-preview' : 'no-preview'}`}>
-        
+
         {/* Left Column: Upload & Controls */}
         <div style={{ background: 'white', border: '1.5px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 16px rgba(0,0,0,0.04)', minWidth: 0, boxSizing: 'border-box' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -609,6 +670,45 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
               <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', margin: '0', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Sliders size={18} color="#0052cc" /> {isTa ? '2. அளவு & கட்டுப்பாடுகள்' : '2. Tool Controls & Settings'}
               </h3>
+
+              {/* Exam Specification Presets */}
+              {tool.presetSizes && tool.presetSizes.length > 0 && (
+                <div style={{ background: '#eff6ff', padding: '14px', borderRadius: '10px', display: 'grid', gap: '8px', border: '1.5px solid #bfdbfe' }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e3a8a', display: 'block' }}>
+                    🎯 {isTa ? 'அரசுத் தேர்வு அளவு முறை (Select Exam Preset):' : 'Select Exam Board Preset:'}
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '6px' }}>
+                    {tool.presetSizes.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          if (preset.w) setWidthPx(preset.w);
+                          if (preset.h) setHeightPx(preset.h);
+                          if (preset.targetKb) setTargetKb(preset.targetKb);
+                          if (preset.hasNameStamp) {
+                            setIncludeStamp(true);
+                          }
+                          setTimeout(processImage, 60);
+                        }}
+                        style={{
+                          padding: '8px 10px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          borderRadius: '6px',
+                          border: (widthPx === preset.w && heightPx === preset.h) ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                          background: (widthPx === preset.w && heightPx === preset.h) ? '#dbeafe' : 'white',
+                          color: '#1e40af',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        📌 {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Passport Mode Controls */}
               {tool.mode === 'passport' && (
@@ -864,6 +964,127 @@ export default function PhotoToolsEngine({ tool, lang = 'ta', navigate, notify }
                       style={{ padding: '8px', fontSize: '12px', fontWeight: 700, borderRadius: '6px', border: pdfOrientation === 'landscape' ? '1.5px solid #0052cc' : '1px solid #cbd5e1', background: pdfOrientation === 'landscape' ? '#eff6ff' : 'white', color: pdfOrientation === 'landscape' ? '#0052cc' : '#334155', cursor: 'pointer' }}
                     >
                       📃 Landscape (கிடைமட்டம்)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+
+              {/* PDF Merge Controls */}
+              {tool.mode === 'pdf-merge' && (
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'grid', gap: '12px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
+                    📑 {isTa ? 'தேர்ந்தெடுக்கப்பட்ட PDF கோப்புகள்:' : 'Selected PDF Files:'}
+                  </label>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      setPdfMergeFiles(files);
+                      if (files.length > 0) {
+                        setOriginalSizeKb(Math.round(files.reduce((acc, f) => acc + f.size, 0) / 1024));
+                        setPreviewUrl('pdf-merge-ready');
+                      }
+                    }}
+                    style={{ fontSize: '13px', color: '#334155' }}
+                  />
+                  {pdfMergeFiles.length > 0 && (
+                    <div style={{ display: 'grid', gap: '6px', background: 'white', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', maxHeight: '160px', overflowY: 'auto' }}>
+                      {pdfMergeFiles.map((f, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#334155', padding: '4px 6px', background: '#f1f5f9', borderRadius: '4px' }}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }}>
+                            {idx + 1}. {f.name}
+                          </span>
+                          <strong>{Math.round(f.size / 1024)} KB</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={executePdfMerge}
+                    disabled={isProcessing || pdfMergeFiles.length < 2}
+                    style={{
+                      background: pdfMergeFiles.length >= 2 ? '#2563eb' : '#94a3b8',
+                      color: 'white',
+                      border: 'none',
+                      padding: '12px',
+                      borderRadius: '8px',
+                      fontWeight: 800,
+                      fontSize: '14px',
+                      cursor: pdfMergeFiles.length >= 2 ? 'pointer' : 'not-allowed',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <Layers size={18} />
+                    {isProcessing ? (isTa ? 'இணைக்கப்படுகிறது...' : 'Merging...') : (isTa ? 'PDF-களை உடனடியாக இணை (Merge PDFs)' : 'Merge All PDFs')}
+                  </button>
+                </div>
+              )}
+
+              {/* Dimension Checker Metrics Panel */}
+              {tool.mode === 'dimension-checker' && detectedMetrics && (
+                <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', display: 'grid', gap: '12px' }}>
+                  <h4 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>
+                    📊 {isTa ? 'படத்தின் அளவீட்டு விவரங்கள்:' : 'Detected Image Metrics:'}
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', fontSize: '12.5px' }}>
+                    <div style={{ background: 'white', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>WIDTH:</span>
+                      <strong>{detectedMetrics.widthPx} px ({detectedMetrics.widthCm} cm)</strong>
+                    </div>
+                    <div style={{ background: 'white', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>HEIGHT:</span>
+                      <strong>{detectedMetrics.heightPx} px ({detectedMetrics.heightCm} cm)</strong>
+                    </div>
+                    <div style={{ background: 'white', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>FILE SIZE:</span>
+                      <strong>{detectedMetrics.sizeKb} KB</strong>
+                    </div>
+                    <div style={{ background: 'white', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ color: '#64748b', fontSize: '11px', display: 'block' }}>ASPECT RATIO:</span>
+                      <strong>{detectedMetrics.aspectRatio}</strong>
+                    </div>
+                  </div>
+
+                  <h4 style={{ margin: '8px 0 2px', fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
+                    🎯 {isTa ? 'அரசுத் தேர்வு தகுதி சரிபார்ப்பு:' : 'Official Exam Compliance Status:'}
+                  </h4>
+                  <div style={{ display: 'grid', gap: '6px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: '6px', background: detectedMetrics.tnpscPhoto ? '#dcfce7' : '#fef2f2', color: detectedMetrics.tnpscPhoto ? '#166534' : '#991b1b' }}>
+                      <span>TNPSC Photo (350x450 px, ≤50 KB):</span>
+                      <strong>{detectedMetrics.tnpscPhoto ? '✅ COMPLIANT' : '⚠️ NON-COMPLIANT'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: '6px', background: detectedMetrics.tnpscSig ? '#dcfce7' : '#fef2f2', color: detectedMetrics.tnpscSig ? '#166534' : '#991b1b' }}>
+                      <span>TNPSC / SSC Signature (200x100 px, ≤20 KB):</span>
+                      <strong>{detectedMetrics.tnpscSig ? '✅ COMPLIANT' : '⚠️ NON-COMPLIANT'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: '6px', background: detectedMetrics.sscPhoto ? '#dcfce7' : '#fef2f2', color: detectedMetrics.sscPhoto ? '#166534' : '#991b1b' }}>
+                      <span>SSC Photo (200x230 px, ≤50 KB):</span>
+                      <strong>{detectedMetrics.sscPhoto ? '✅ COMPLIANT' : '⚠️ NON-COMPLIANT'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: '6px', background: detectedMetrics.upscPhoto ? '#dcfce7' : '#fef2f2', color: detectedMetrics.upscPhoto ? '#166534' : '#991b1b' }}>
+                      <span>UPSC Photo (Square 1:1, ≤100 KB):</span>
+                      <strong>{detectedMetrics.upscPhoto ? '✅ COMPLIANT' : '⚠️ NON-COMPLIANT'}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                    <button
+                      onClick={() => navigate('tools/passport-size-photo')}
+                      style={{ flex: 1, padding: '8px', background: '#0052cc', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {isTa ? 'TNPSC போட்டோவாக மாற்று' : 'Fix to TNPSC Photo'}
+                    </button>
+                    <button
+                      onClick={() => navigate('tools/signature-resize')}
+                      style={{ flex: 1, padding: '8px', background: '#0f766e', color: 'white', border: 'none', borderRadius: '6px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {isTa ? 'கையொப்பமாக மாற்று' : 'Fix to Signature (20KB)'}
                     </button>
                   </div>
                 </div>

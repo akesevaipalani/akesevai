@@ -4350,11 +4350,179 @@ if (fs.existsSync(publicPath)) {
 const distPath = path.join(__dirname, 'dist');
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
+
+  // Dynamic Server-Side SEO Meta Map for Instant Bot Indexing & Social Previews
+  const SEO_ROUTES_MAP = {
+    '/': {
+      title: 'AK E-SEVAI Palani | e-Sevai, Xerox, Printing & Online Services',
+      description: 'AK E-SEVAI Palani (பழனி இ-சேவை மையம்) - e-Sevai application assistance, Aadhaar & PAN support, Xerox, Colour Printing, Typing & online citizen services. Call 93423 18844.',
+      canonical: 'https://www.akesevai.com/'
+    },
+    '/services': {
+      title: 'All e-Sevai Services in Palani | Aadhaar, PAN, Certificates, Ration Card, Patta Chitta | AK E-SEVAI',
+      description: 'Explore 30+ Government e-Sevai application services at AK E-SEVAI Palani. Apply with assistance for Income, Community, Nativity, First Graduate, Legal Heir certificates, Smart Ration Card, Voter ID & Patta Chitta.',
+      canonical: 'https://www.akesevai.com/services'
+    },
+    '/certificate-services': {
+      title: 'Tamil Nadu e-Sevai Certificate Application Assistance | Income, Community, Nativity | AK E-SEVAI Palani',
+      description: 'Apply with assistance for Tamil Nadu Tahsildar Income, Community, Nativity, First Graduate, and Legal Heir certificates at AK E-SEVAI Palani. Accurate document guidance, CAN registration & status tracking.',
+      canonical: 'https://www.akesevai.com/certificate-services'
+    },
+    '/online-application-assistance': {
+      title: 'Government Exam & College Online Application Assistance | TNPSC, SSC, RRB, TNEA | AK E-SEVAI Palani',
+      description: 'Professional online application assistance for TNPSC Group 1, 2, 4, VAO, SSC CGL/CHSL, Railway RRB, Police, Teaching TRB, and TNEA engineering counselling at AK E-SEVAI Palani.',
+      canonical: 'https://www.akesevai.com/online-application-assistance'
+    },
+    '/tn-govt-services-guide': {
+      title: 'Tamil Nadu Government Citizen Services Guide | Patta Chitta, Smart Ration Card, EC | AK E-SEVAI',
+      description: 'Complete citizen guidance for Patta Chitta land records, TN PDS Smart Ration card changes, Encumbrance Certificate (EC), TNeGA CAN number, and social welfare schemes at AK E-SEVAI.',
+      canonical: 'https://www.akesevai.com/tn-govt-services-guide'
+    },
+    '/photo-tools': {
+      title: 'Free Online Photo & Document Tools – AK E-SEVAI Palani',
+      description: '100% Free & private photo and document tools by AK E-SEVAI: Passport photo maker, photo compressor (20KB, 50KB, 100KB), resizer, cropper, PDF merge, JPG to PDF converter.',
+      canonical: 'https://www.akesevai.com/photo-tools'
+    },
+    '/tools/pdf-merge': {
+      title: 'PDF Merge Online Free – Combine Multiple PDF Files | AK E-SEVAI',
+      description: 'Merge multiple PDF documents into a single PDF file online for free. 100% client-side, private, no file upload to server. Fast & secure.',
+      canonical: 'https://www.akesevai.com/tools/pdf-merge'
+    },
+    '/tools/dimension-checker': {
+      title: 'Image Dimension & DPI Checker Online – Exam Compliance Tool | AK E-SEVAI',
+      description: 'Inspect image pixel dimensions (width x height), aspect ratio, DPI resolution, and file size in KB. Instant compliance check for TNPSC, SSC, UPSC, and Railway applications.',
+      canonical: 'https://www.akesevai.com/tools/dimension-checker'
+    },
+    '/tools/govt-exam-photo-tool': {
+      title: 'Govt Exam Photo & Signature Maker Online – TNPSC, SSC, UPSC, RRB | AK E-SEVAI',
+      description: 'All-in-one photo and signature preparation tool for Indian government exam applications. Exact dimensions and file size compression in seconds.',
+      canonical: 'https://www.akesevai.com/tools/govt-exam-photo-tool'
+    },
+    '/tools/passport-size-photo': {
+      title: 'Free Online Passport Size Photo Maker (3.5x4.5 cm) | AK E-SEVAI',
+      description: 'Create 3.5 x 4.5 cm standard passport size photos online for free. Adjust crop, add date/name label, and generate 4x6 / A4 print sheets.',
+      canonical: 'https://www.akesevai.com/tools/passport-size-photo'
+    },
+    '/tools/signature-resize': {
+      title: 'Signature Resizer Online (Under 20KB) | AK E-SEVAI',
+      description: 'Resize and compress signature images under 20KB for TNPSC, SSC, UPSC, IBPS, and state government exam portals.',
+      canonical: 'https://www.akesevai.com/tools/signature-resize'
+    },
+    '/tools/photo-compress-20kb': {
+      title: 'Compress Photo to 20KB Online Free | AK E-SEVAI',
+      description: 'Compress image size to 20KB or less without losing quality for online application forms. 100% browser private.',
+      canonical: 'https://www.akesevai.com/tools/photo-compress-20kb'
+    },
+    '/tools/photo-compress-50kb': {
+      title: 'Compress Photo to 50KB Online Free | AK E-SEVAI',
+      description: 'Compress JPG and PNG images under 50KB for government application forms, college admissions, and job portals.',
+      canonical: 'https://www.akesevai.com/tools/photo-compress-50kb'
+    },
+    '/tools/photo-compress-100kb': {
+      title: 'Compress Photo to 100KB Online Free | AK E-SEVAI',
+      description: 'Compress photo and document images to 100KB online for free. High quality preservation.',
+      canonical: 'https://www.akesevai.com/tools/photo-compress-100kb'
+    },
+    '/tools/jpg-to-pdf': {
+      title: 'JPG to PDF Converter Online Free | AK E-SEVAI',
+      description: 'Convert JPG images to PDF document online in seconds. Free, secure, client-side conversion.',
+      canonical: 'https://www.akesevai.com/tools/jpg-to-pdf'
+    },
+    '/tools/pdf-compress': {
+      title: 'PDF Compressor Online Free | AK E-SEVAI',
+      description: 'Compress PDF file size online for free for job applications, scholarship uploads, and portal requirements.',
+      canonical: 'https://www.akesevai.com/tools/pdf-compress'
+    },
+    '/xerox-printing': {
+      title: 'Xerox & Printing Services in Palani | AK E-SEVAI',
+      description: 'High-speed B/W Xerox, laser colour printing, A4 & Legal document copies, and HD scanning at AK E-SEVAI Palani (Mill Road near Bus Stand). Direct WhatsApp print available.',
+      canonical: 'https://www.akesevai.com/xerox-printing'
+    },
+    '/typing-services': {
+      title: 'Tamil & English Typing Centre in Palani | AK E-SEVAI',
+      description: 'Professional Tamil (Unicode/Bamini) and English typing in Palani for government petitions, Tahsildar applications, project reports, and resumes.',
+      canonical: 'https://www.akesevai.com/typing-services'
+    },
+    '/spiral-binding': {
+      title: 'Spiral Binding & Lamination in Palani | AK E-SEVAI',
+      description: 'High-quality plastic coil spiral binding and 125/250 micron hot pouch lamination for college projects, certificates, marksheets, and records in Palani.',
+      canonical: 'https://www.akesevai.com/spiral-binding'
+    },
+    '/notifications': {
+      title: 'Latest Tamil Nadu Govt Notifications & Exam Updates | AK E-SEVAI Palani',
+      description: 'Get real-time updates on TNPSC, TNUSRB, SSC, Railway exams, welfare schemes, college admissions, and government job application deadlines.',
+      canonical: 'https://www.akesevai.com/notifications'
+    },
+    '/status-track': {
+      title: 'Track e-Sevai Application Status Palani | AK E-SEVAI Live Status Tracker',
+      description: 'Check live status of your Tamil Nadu e-Sevai application (TN-AK-2026), certificate approvals, and Government processing stage at AK E-SEVAI Palani.',
+      canonical: 'https://www.akesevai.com/status-track'
+    },
+    '/token-generator': {
+      title: 'Online Token Generator Palani | Live Counter Queue Slot Booking | AK E-SEVAI',
+      description: 'Book live queue token online for AK E-SEVAI Digital Centre Palani. Skip the line and get instant token slip on your mobile.',
+      canonical: 'https://www.akesevai.com/token-generator'
+    },
+    '/contact': {
+      title: 'Contact AK E-SEVAI Digital Centre Palani | Mill Road | Phone 93423 18844',
+      description: 'Location, phone number, WhatsApp contact and Google Maps address of AK E-SEVAI Digital Service Centre on Mill Road, Palani. Call 93423 18844.',
+      canonical: 'https://www.akesevai.com/contact'
+    },
+    '/about': {
+      title: 'About AK E-SEVAI Palani | Trusted e-Sevai & Digital Citizen Services',
+      description: 'Learn about AK E-SEVAI Palani digital service center mission, authentic certification assistance, Xerox, typing and customer support standards.',
+      canonical: 'https://www.akesevai.com/about'
+    }
+  };
+
+  let cachedDistIndexHtml = null;
+
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) {
       return next();
     }
-    res.sendFile(path.join(distPath, 'index.html'));
+    const indexPath = path.join(distPath, 'index.html');
+    if (!fs.existsSync(indexPath)) {
+      return res.status(404).send('Not Found');
+    }
+
+    const normPath = req.path.length > 1 && req.path.endsWith('/') ? req.path.slice(0, -1) : req.path;
+    const meta = SEO_ROUTES_MAP[normPath];
+
+    if (!meta) {
+      return res.sendFile(indexPath);
+    }
+
+    try {
+      if (!cachedDistIndexHtml) {
+        cachedDistIndexHtml = fs.readFileSync(indexPath, 'utf8');
+      }
+      let html = cachedDistIndexHtml;
+
+      if (meta.title) {
+        html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${meta.title}</title>`);
+        html = html.replace(/<meta\s+name="title"\s+content="[^"]*"\s*\/?>/i, `<meta name="title" content="${meta.title}" />`);
+        html = html.replace(/<meta\s+property="og:title"\s+content="[^"]*"\s*\/?>/i, `<meta property="og:title" content="${meta.title}" />`);
+        html = html.replace(/<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:title" content="${meta.title}" />`);
+      }
+
+      if (meta.description) {
+        html = html.replace(/<meta\s+name="description"\s+content="[^"]*"\s*\/?>/i, `<meta name="description" content="${meta.description}" />`);
+        html = html.replace(/<meta\s+property="og:description"\s+content="[^"]*"\s*\/?>/i, `<meta property="og:description" content="${meta.description}" />`);
+        html = html.replace(/<meta\s+name="twitter:description"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:description" content="${meta.description}" />`);
+      }
+
+      if (meta.canonical) {
+        html = html.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${meta.canonical}" />`);
+        html = html.replace(/<meta\s+property="og:url"\s+content="[^"]*"\s*\/?>/i, `<meta property="og:url" content="${meta.canonical}" />`);
+        html = html.replace(/<meta\s+name="twitter:url"\s+content="[^"]*"\s*\/?>/i, `<meta name="twitter:url" content="${meta.canonical}" />`);
+      }
+
+      res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+      res.send(html);
+    } catch (err) {
+      res.sendFile(indexPath);
+    }
   });
 }
 
