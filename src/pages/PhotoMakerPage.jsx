@@ -644,7 +644,7 @@ export default function PhotoMakerPage({ notify, lang = 'ta' }) {
     </style>
   </head>
   <body>
-    <img src="${dataUrl}" onload="setTimeout(() => { window.focus(); window.print(); }, 200);" />
+    <img src="${dataUrl}" alt="AK E-SEVAI Passport Photo Print Sheet" onload="setTimeout(() => { window.focus(); window.print(); }, 200);" />
   </body>
 </html>`;
 

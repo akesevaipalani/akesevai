@@ -5,6 +5,7 @@ import {
   ShieldCheck, Sparkles, Layers, FileCheck, Share2, Download
 } from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
+import SpaLink from '../components/SpaLink';
 
 export const pageMeta = { id: 'xerox-printing', title: 'Palani Xerox & Colour Printing Centre' };
 
@@ -98,13 +99,13 @@ export default function XeroxPrintingPage({ navigate, lang = 'ta' }) {
     <div className="inner-page-shell" style={{ maxWidth: '1180px', margin: '0 auto', padding: '24px 16px 60px' }}>
       {/* 1. BREADCRUMB */}
       <nav aria-label="Breadcrumb" style={{ display: 'flex', gap: '8px', fontSize: '13px', color: '#64748b', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => navigate('home')} style={{ background: 'none', border: 'none', color: '#0052cc', cursor: 'pointer', padding: 0, fontWeight: 700 }}>
+        <SpaLink to="/" navigate={navigate} scrollToTop style={{ color: '#0052cc', fontWeight: 700, textDecoration: 'none' }}>
           {isTa ? 'முகப்பு' : 'Home'}
-        </button>
+        </SpaLink>
         <span>/</span>
-        <button onClick={() => navigate('services')} style={{ background: 'none', border: 'none', color: '#0052cc', cursor: 'pointer', padding: 0, fontWeight: 700 }}>
+        <SpaLink to="/services" navigate={navigate} scrollToTop style={{ color: '#0052cc', fontWeight: 700, textDecoration: 'none' }}>
           {isTa ? 'சேவைகள்' : 'Services'}
-        </button>
+        </SpaLink>
         <span>/</span>
         <span style={{ color: '#0f172a', fontWeight: 800 }}>
           {isTa ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Printing'}
@@ -284,30 +285,38 @@ export default function XeroxPrintingPage({ navigate, lang = 'ta' }) {
           🔗 {isTa ? 'தொடர்புடைய ஆவண & அச்சிடும் சேவைகள்:' : 'Explore Related Document & Online Services:'}
         </h3>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-          <button
-            onClick={() => navigate('typing-services')}
-            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          <SpaLink
+            to="/typing-services"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             ⌨️ {isTa ? 'தமிழ் & ஆங்கில டைப்பிங்' : 'Tamil & English Typing'} <ArrowRight size={14} />
-          </button>
-          <button
-            onClick={() => navigate('spiral-binding')}
-            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          </SpaLink>
+          <SpaLink
+            to="/spiral-binding"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             📚 {isTa ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'} <ArrowRight size={14} />
-          </button>
-          <button
-            onClick={() => navigate('tools/passport-size-photo')}
-            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          </SpaLink>
+          <SpaLink
+            to="/tools/passport-size-photo"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             📷 {isTa ? 'பாஸ்போர்ட் போட்டோ மேக்கர்' : 'Passport Photo Maker'} <ArrowRight size={14} />
-          </button>
-          <button
-            onClick={() => navigate('tools/image-to-pdf')}
-            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          </SpaLink>
+          <SpaLink
+            to="/tools/image-to-pdf"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             📄 {isTa ? 'படங்களை PDF-ஆக மாற்ற' : 'Image to PDF Tool'} <ArrowRight size={14} />
-          </button>
+          </SpaLink>
         </div>
       </section>
 
@@ -399,8 +408,10 @@ export default function XeroxPrintingPage({ navigate, lang = 'ta' }) {
           >
             <Phone size={15} /> 93423 18844
           </a>
-          <button
-            onClick={() => navigate('contact')}
+          <SpaLink
+            to="/contact"
+            navigate={navigate}
+            scrollToTop
             style={{
               background: 'white',
               color: '#0052cc',
@@ -409,11 +420,11 @@ export default function XeroxPrintingPage({ navigate, lang = 'ta' }) {
               borderRadius: '10px',
               fontSize: '13px',
               fontWeight: 800,
-              cursor: 'pointer'
+              textDecoration: 'none'
             }}
           >
             {isTa ? 'வரைபடம் & வழிகாட்டுதல்' : 'Map & Directions'}
-          </button>
+          </SpaLink>
         </div>
       </section>
     </div>

@@ -11,10 +11,10 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'passport',
     categoryTitle: 'Passport & Identity Photos',
     categoryTitleTa: 'பாஸ்போர்ட் & அடையாளப் படங்கள்',
-    title: 'Passport Size Photo Maker Online (3.5x4.5 cm) – Studio Quality | AK E-SEVAI Palani',
-    titleTa: 'பாஸ்போர்ட் சைஸ் போட்டோ மேக்கர் ஆன்லைன் (3.5x4.5 cm) | AK E-SEVAI பழனி',
-    description: 'Create official 3.5 x 4.5 cm (35 x 45 mm) passport size photos online. Generate 4x6 (8 copies) and A4 (32+ copies) printable sheets with borders, name & date stamps. Need physical photo prints in Palani? Visit AK E-SEVAI near Palani Bus Stand.',
-    descriptionTa: 'அரசு அங்கீகரிக்கப்பட்ட 3.5 x 4.5 cm பாஸ்போர்ட் சைஸ் போட்டோக்களை ஆன்லைனில் உருவாக்குங்கள். 4x6 (8 போட்டோ) மற்றும் A4 (32+ போட்டோ) அச்சிடும் தாள்கள், பார்டர் மற்றும் பெயர்/தேதி முத்திரையுடன் தயார் செய்யுங்கள். பழனியில் உடனே அச்சிட AK E-SEVAI மையத்திற்கு வரவும்.',
+    title: 'Passport Size Photo Maker Online (3.5x4.5 cm / 2x2 in) | AK E-SEVAI',
+    titleTa: 'பாஸ்போர்ட் சைஸ் போட்டோ மேக்கர் ஆன்லைன் (3.5x4.5 cm) | AK E-SEVAI',
+    description: 'Create 3.5 x 4.5 cm (35 x 45 mm) and 2 x 2 inch passport-style photos online across Tamil Nadu. Generate 4x6 (8 copies) and A4 printable sheets locally in your browser. Verify exact portal rules before submission.',
+    descriptionTa: 'பாஸ்போர்ட் அளவு (3.5 x 4.5 cm) மற்றும் 4x6 / A4 அச்சிடும் தாள்களை உங்கள் பிரவுசரிலேயே இலவசமாக உருவாக்குங்கள். பழனியில் நேரடி அச்சு வசதியும், தமிழ்நாடு முழுவதும் ஆன்லைன் பயன்பாட்டிற்கும் உகந்தது. பதிவேற்றும் முன் அதிகாரப்பூர்வ விதிகளை சரிபார்க்கவும்.',
     keywords: 'passport size photo maker, passport size photo online, passport size photo 35x45, passport photo 3.5 x 4.5 cm, passport size photo செய்ய, passport size photo online maker, passport sheet maker, akesevai passport photo, palani passport photo studio',
     mode: 'passport',
     icon: 'Camera',
@@ -70,12 +70,12 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'crop-resize',
     categoryTitle: 'Crop & Resize Tools',
     categoryTitleTa: 'க்ராப் & ரீசைஸ் கருவிகள்',
-    title: 'Signature Resize & Compressor Online (Under 20 KB / 2:1 Ratio) | AK E-SEVAI Palani',
-    titleTa: 'கையொப்பம் ரீசைஸ் & கம்ப்ரஸர் ஆன்லைன் (20 KB-க்குள்) | AK E-SEVAI பழனி',
-    description: 'Crop, resize, and compress signature photos online to under 20 KB (200x100 px / 2:1 aspect ratio) for TNPSC, SSC, UPSC, IBPS, Police, and government exam applications. Free & 100% client-side privacy.',
-    descriptionTa: 'கையொப்பப் படத்தை 20 KB-க்குள் (200x100 பிக்சல் / 2:1 விகிதம்) துல்லியமாக க்ராப் செய்து சுருக்குங்கள். TNPSC, SSC, UPSC, காவலர் மற்றும் அரசுத் தேர்வு விண்ணப்பங்களுக்கு ஏற்றது. 100% இலவசம் & பிரைவேட்.',
+    title: 'Signature Resize & Compressor Online (Under 20 KB) | AK E-SEVAI',
+    titleTa: 'கையொப்பம் ரீசைஸ் & கம்ப்ரஸர் ஆன்லைன் (20 KB-க்குள்) | AK E-SEVAI',
+    description: 'Resize and compress signature images locally in your browser to target under 20 KB (configurable width/height presets like 200x100 px or 140x60 px) for online applications across Tamil Nadu. Verify exact notification rules before uploading.',
+    descriptionTa: 'கையொப்பப் படத்தை 20 KB-க்குள் (200x100 அல்லது 140x60 பிக்சல் விருப்பங்களுடன்) உங்கள் பிரவுசரிலேயே பாதுகாப்பாக சுருக்குங்கள். பதிவேற்றும் முன் தேர்வு அறிவிப்பின் அதிகாரப்பூர்வ விதிகளை சரிபார்க்கவும்.',
     keywords: 'signature resize, signature resize online, signature compress 20kb, crop signature online, tnpsc signature resize, signature resize செய்ய, ssc signature 20kb, akesevai signature tool',
-    mode: 'crop',
+    mode: 'signature-compress',
     icon: 'PenTool',
     badge: 'Govt Exam 2:1 Ratio (20 KB)',
     badgeTa: 'அரசு தேர்வு 2:1 அளவு (20 KB)',
@@ -843,31 +843,31 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'crop-resize',
     categoryTitle: 'Crop & Resize Tools',
     categoryTitleTa: 'க்ராப் & ரீசைஸ் கருவிகள்',
-    title: 'Photo Dimension & File Size Checker – TNPSC, SSC, UPSC Compliance | AK E-SEVAI Palani',
-    titleTa: 'போட்டோ அளவு & KB சரிபார்ப்புக் கருவி – அரசுத் தேர்வு விதிகள் | AK E-SEVAI பழனி',
-    description: 'Instantly check photo and signature width, height, aspect ratio, DPI, and file size in KB. Verifies compatibility against official TNPSC, SSC, UPSC, Bank, and Police exam specifications with 1-click auto-fix.',
-    descriptionTa: 'உங்கள் புகைப்படம் மற்றும் கையொப்பத்தின் நீளம், அகலம், பிக்சல்கள் மற்றும் KB அளவை உடனடியாக சரிபார்க்கும் கருவி. TNPSC, SSC, UPSC தேர்வு விதிகளுக்கு ஏற்றதா என உடனே அறியலாம்.',
+    title: 'Photo Dimension & File Size Checker Online | AK E-SEVAI',
+    titleTa: 'போட்டோ அளவு & KB சரிபார்ப்புக் கருவி | AK E-SEVAI',
+    description: 'Instantly inspect image width, height, format, aspect ratio, and file size in KB locally in your browser. Compare against configurable exam reference targets; always verify the official notification before uploading.',
+    descriptionTa: 'உங்கள் புகைப்படம் மற்றும் கையொப்பத்தின் நீளம், அகலம், வடிவம் மற்றும் KB அளவை உங்கள் பிரவுசரிலேயே சரிபாருங்கள். பதிவேற்றும் முன் சமீபத்திய தேர்வு அறிவிப்பை சரிபார்க்கவும்.',
     keywords: 'photo dimension checker, check image size in kb, photo size checker online, tnpsc photo size check, image pixel checker, check signature size',
     mode: 'dimension-checker',
     icon: 'FileCheck2',
-    badge: 'Instant Exam Compliance',
-    badgeTa: 'தேர்வு விதிகள் சரிபார்ப்பு',
-    shortDesc: 'Inspect image pixel dimensions, aspect ratio, and file size (KB) with automatic verification for government exam portals.',
-    shortDescTa: 'படத்தின் நீள, அகல பிக்சல்கள் மற்றும் KB அளவை அரசுத் தேர்வு விதிகளுடன் ஒப்பிட்டு சரிபாருங்கள்.',
+    badge: 'Dimension & KB Check',
+    badgeTa: 'அளவு & KB சரிபார்ப்பு',
+    shortDesc: 'Inspect image pixel dimensions, format, aspect ratio, and file size (KB) against configurable reference ranges.',
+    shortDescTa: 'படத்தின் நீள, அகல பிக்சல்கள், வடிவம் மற்றும் KB அளவை பிரவுசரிலேயே சரிபாருங்கள்.',
     faqs: [
       {
         q: 'Why do government portals reject photos during online application?',
         qTa: 'அரசு இணையதளங்கள் புகைப்படங்களை ஏன் நிராகரிக்கின்றன?',
-        a: 'Rejections occur if the image exceeds maximum KB limits (e.g. over 50 KB for TNPSC), has an incorrect aspect ratio, or lacks the mandatory name & date stamp. Our checker alerts you before you upload to official portals.',
-        aTa: 'புகைப்படம் அனுமதிக்கப்பட்ட KB அளவுக்கு அதிகமாக இருந்தாலோ (எ.கா: 50 KB-க்கு மேல்), பிக்சல் விகிதம் தவறாக இருந்தாலோ நிராகரிக்கப்படும். எங்கள் கருவி மூலம் முன்கூட்டியே சரிபார்த்து பிழையைத் தவிர்க்கலாம்.'
+        a: 'Common rejections occur when file size (KB), pixel dimensions, or aspect ratio fall outside a portal’s listed range. Check width, height, format, and file size here, and confirm visual criteria (like background color or name/date strips) manually against the latest official notification.',
+        aTa: 'அனுமதிக்கப்பட்ட KB அளவு, பிக்சல் பரிமாணம் அல்லது விகிதம் இணையதள விதிகளோடு பொருந்தாதபோது நிராகரிக்கப்படலாம். இங்கு அளவுகளைச் சரிபார்த்து, சமீபத்திய அதிகாரப்பூர்வ அறிவிப்பையும் உறுதிப்படுத்தவும்.'
       }
     ],
     howTo: [
       { step: 1, title: 'Upload Image or Signature', titleTa: 'படத்தை பதிவேற்றவும்', text: 'Select your photo or signature file.', textTa: 'உங்கள் போட்டோ அல்லது கையொப்ப கோப்பை தேர்வு செய்யவும்.' },
-      { step: 2, title: 'Instant Metric Analysis', titleTa: 'அளவீடுகளை அறியவும்', text: 'View exact Width (px/cm), Height, Aspect Ratio, and File Size (KB).', textTa: 'துல்லியமான பிக்சல் அளவு மற்றும் KB அளவை திரையில் பார்க்கவும்.' },
-      { step: 3, title: 'Verify & Fix', titleTa: 'சரிபார்த்து மாற்றவும்', text: 'Check TNPSC/SSC compatibility tags and click to auto-resize if needed.', textTa: 'தேர்வு தகுதி பேட்ஜ்களைப் பார்த்து, தேவைப்பட்டால் ஒரே கிளிக்கில் ரீசைஸ் கருவிக்கு செல்லவும்.' }
+      { step: 2, title: 'Instant Metric Analysis', titleTa: 'அளவீடுகளை அறியவும்', text: 'View exact Width, Height, Format, Aspect Ratio, and File Size (KB).', textTa: 'துல்லியமான பிக்சல் அளவு மற்றும் KB அளவை திரையில் பார்க்கவும்.' },
+      { step: 3, title: 'Adjust if Needed', titleTa: 'தேவைப்பட்டால் மாற்றவும்', text: 'Use our resize or compression tools if you need different dimensions or smaller KB.', textTa: 'தேவைப்பட்டால் ரீசைஸ் அல்லது கம்ப்ரஸ் கருவிகள் மூலம் அளவை மாற்றவும்.' }
     ],
-    relatedTools: ['passport-size-photo', 'signature-resize', 'photo-compress-20kb', 'photo-compress-50kb']
+    relatedTools: ['document-size-checker', 'passport-size-photo', 'signature-resize', 'photo-compress-50kb']
   },
 
   // 23. GOVERNMENT EXAM PHOTO PREPARATION TOOL
@@ -877,39 +877,329 @@ export const PHOTO_TOOLS_CATALOG = [
     category: 'passport',
     categoryTitle: 'Passport & Identity Photos',
     categoryTitleTa: 'பாஸ்போர்ட் & அடையாளப் படங்கள்',
-    title: 'Government Exam Photo & Signature Preparation Tool (TNPSC / SSC / UPSC) | AK E-SEVAI Palani',
-    titleTa: 'அரசுத் தேர்வு போட்டோ & கையொப்ப தயாரிப்புக் கருவி | AK E-SEVAI பழனி',
-    description: 'All-in-one government competitive exam photo and signature maker. Pre-configured presets for TNPSC (350x450 px with name & date), SSC (200x230 px), UPSC, Bank PO, and Police recruitment.',
-    descriptionTa: 'TNPSC, SSC, UPSC, வங்கி மற்றும் காவலர் தேர்வுகளுக்கான அதிகாரப்பூர்வ புகைப்பட மற்றும் கையொப்ப தயாரிப்புக் கருவி. பெயர் மற்றும் தேதி முத்திரை வசதியுடன் கூடியது.',
+    title: 'Government Exam Photo & Signature Resizer Online | AK E-SEVAI',
+    titleTa: 'அரசுத் தேர்வு போட்டோ & கையொப்ப ரீசைஸ் கருவி | AK E-SEVAI',
+    description: 'Configure pixel dimensions and target KB size for competitive exam photos and signatures locally in your browser. Includes reference presets for TNPSC, SSC, UPSC, Bank, and Police; verify latest official notification rules.',
+    descriptionTa: 'அரசுப் போட்டித் தேர்வுகளுக்கான புகைப்பட மற்றும் கையொப்ப அளவுகளை பிரவுசரிலேயே தயாரிக்கும் கருவி. TNPSC, SSC, UPSC, வங்கி மற்றும் காவலர் தேர்வு மாதிரி அளவுகள் உள்ளன; விண்ணப்பிக்கும் முன் அதிகாரப்பூர்வ அறிவிப்பை சரிபார்க்கவும்.',
     keywords: 'govt exam photo maker, tnpsc photo generator with name date, ssc photo resize, upsc photo tool, exam signature maker, போட்டித் தேர்வு போட்டோ மேக்கர்',
-    mode: 'passport',
+    mode: 'exam-resizer',
     icon: 'Camera',
-    badge: 'All Govt Exams Ready',
-    badgeTa: 'அரசுத் தேர்வுகள் ஸ்பெஷல்',
-    shortDesc: 'One-stop photo preparation tool with official presets for TNPSC, SSC, UPSC, Bank, and Police recruitment portals.',
-    shortDescTa: 'TNPSC, SSC, UPSC, வங்கி மற்றும் காவலர் தேர்வுகளுக்கான பிரத்யேக போட்டோ தயாரிப்புக் கருவி.',
+    badge: 'Configurable Exam Presets',
+    badgeTa: 'தேர்வு மாதிரி அளவுகள்',
+    shortDesc: 'Resize and compress photos/signatures with configurable reference presets for TNPSC, SSC, UPSC, Bank & Police portals.',
+    shortDescTa: 'TNPSC, SSC, UPSC, வங்கி மற்றும் காவலர் தேர்வு மாதிரி அளவுகளுக்கு ஏற்ப படங்களை மாற்ற உதவும் கருவி.',
     defaultTargetKb: 50,
     presetSizes: [
-      { label: 'TNPSC Exam (350 × 450 px, 20–50 KB, Name & Date Stamp)', w: 350, h: 450, targetKb: 50, hasNameStamp: true, name: 'TNPSC Official' },
-      { label: 'SSC Staff Selection (200 × 230 px, 20–50 KB)', w: 200, h: 230, targetKb: 35, name: 'SSC Official' },
-      { label: 'UPSC Civil Services (350 × 350 px, 20–100 KB)', w: 350, h: 350, targetKb: 75, name: 'UPSC Square' },
-      { label: 'Bank IBPS / SBI (350 × 450 px, 20–50 KB)', w: 350, h: 450, targetKb: 45, name: 'Bank Official' },
-      { label: 'TN Police / TNUSRB (350 × 450 px, 20–50 KB)', w: 350, h: 450, targetKb: 40, name: 'TNUSRB Official' }
+      { label: 'TNPSC Photo Reference (350 × 450 px, ≤50 KB, Optional Stamp)', w: 350, h: 450, targetKb: 50, hasNameStamp: true, name: 'TNPSC Photo Ref' },
+      { label: 'TNPSC / Govt Signature Reference (200 × 100 px, ≤20 KB)', w: 200, h: 100, targetKb: 20, hasNameStamp: false, name: 'Signature Ref' },
+      { label: 'SSC Photo Reference (200 × 230 px, ≤35 KB)', w: 200, h: 230, targetKb: 35, hasNameStamp: false, name: 'SSC Photo Ref' },
+      { label: 'UPSC Square Reference (350 × 350 px, ≤75 KB)', w: 350, h: 350, targetKb: 75, hasNameStamp: false, name: 'UPSC Square Ref' },
+      { label: 'Bank / TNUSRB Reference (350 × 450 px, ≤45 KB)', w: 350, h: 450, targetKb: 45, hasNameStamp: false, name: 'Bank/Police Ref' }
     ],
     faqs: [
       {
-        q: 'How to add my Name and Date of Photo on my TNPSC application photo?',
-        qTa: 'TNPSC புகைப்படத்தில் பெயர் மற்றும் புகைப்படம் எடுத்த தேதியை சேர்ப்பது எப்படி?',
-        a: 'Select the TNPSC preset, enter your full name in the "Applicant Name" field and the date in the "Date of Photo" field. Our engine automatically generates the mandated white strip with bold black text at the bottom.',
-        aTa: 'TNPSC ஆப்ஷனை தேர்வு செய்து, உங்கள் பெயர் மற்றும் தேதியை உள்ளிட்டால், அரசு விதிகளின்படி புகைப்படத்தின் கீழே தானாகவே நேர்த்தியான வெள்ளை பட்டையில் பெயர் மற்றும் தேதி முத்திரையிடப்படும்.'
+        q: 'How to add an optional Name and Date strip on a TNPSC application photo?',
+        qTa: 'புகைப்படத்தில் விருப்பத்திற்கேற்ப பெயர் மற்றும் தேதியை சேர்ப்பது எப்படி?',
+        a: 'If the current official exam notification requires a Name and Photo Date on the photograph, check the "Add Name & Date Stamp" option and enter the details. Always verify exact dimensions and stamp rules in the official exam notification before uploading.',
+        aTa: 'தற்போதைய தேர்வு அறிவிப்பில் பெயர் மற்றும் தேதி கட்டாயம் எனக் குறிப்பிட்டிருந்தால் மட்டும் அந்த விருப்பத்தைத் தேர்ந்தெடுத்து விவரங்களை உள்ளிடவும். பதிவேற்றும் முன் சமீபத்திய அறிவிப்பை கட்டாயம் சரிபார்க்கவும்.'
       }
     ],
     howTo: [
-      { step: 1, title: 'Select Exam Board', titleTa: 'தேர்வு வாரியத்தை தேர்வு செய்யவும்', text: 'Pick TNPSC, SSC, UPSC, or Bank PO preset.', textTa: 'TNPSC, SSC, UPSC அல்லது வங்கி தேர்வு அளவை தேர்வு செய்யவும்.' },
-      { step: 2, title: 'Upload & Add Name/Date', titleTa: 'போட்டோ & பெயர்/தேதி சேர்க்கவும்', text: 'Upload your photo, type your name & photo date if required.', textTa: 'போட்டோவை அப்லோடு செய்து பெயர் மற்றும் தேதியை டைப் செய்யவும்.' },
-      { step: 3, title: 'Download Compliant Photo', titleTa: 'சரியான போட்டோவை பதிவிறக்கவும்', text: 'Download the exact size JPG ready for upload on the official portal.', textTa: 'இணையதளத்தில் உடனே பதிவேற்ற தயாரான JPG படத்தை சேமிக்கவும்.' }
+      { step: 1, title: 'Pick Reference Preset or Custom Size', titleTa: 'அளவைத் தேர்ந்தெடுக்கவும்', text: 'Pick an exam preset or enter the exact pixels and KB required by your notification.', textTa: 'தேர்வு மாதிரி அளவு அல்லது அறிவிப்பில் உள்ள பிக்சல்/KB அளவை அமைக்கவும்.' },
+      { step: 2, title: 'Upload & Optional Stamp', titleTa: 'படம் & விருப்ப விவரங்கள்', text: 'Upload your photo, add optional name/date strip if needed.', textTa: 'படத்தை பதிவேற்றி, தேவைப்பட்டால் பெயர்/தேதி சேர்க்கவும்.' },
+      { step: 3, title: 'Verify Output & Download', titleTa: 'சரிபார்த்து பதிவிறக்கவும்', text: 'Confirm output pixels and KB size meet your official notification, then download JPG.', textTa: 'அவுட்புட் பிக்சல் மற்றும் KB அளவை சரிபார்த்து JPG-ஐ பதிவிறக்கவும்.' }
     ],
-    relatedTools: ['signature-resize', 'dimension-checker', 'photo-compress-20kb', 'photo-compress-50kb']
+    relatedTools: ['tnpsc-photo-resizer', 'ssc-photo-resizer', 'rrb-photo-resizer', 'signature-resize', 'dimension-checker']
+  },
+
+  // 24. PDF SPLIT TOOL
+  {
+    id: 'pdf-split',
+    path: '/tools/pdf-split',
+    category: 'pdf',
+    categoryTitle: 'PDF & Document Tools',
+    categoryTitleTa: 'PDF & ஆவணக் கருவிகள்',
+    title: 'Split PDF Online Free – Separate PDF Pages Locally | AK E-SEVAI',
+    titleTa: 'PDF பக்கங்களை பிரிக்க (Split PDF) – ஆன்லைன் இலவசக் கருவி | AK E-SEVAI',
+    description: 'Split a multi-page PDF into individual pages or custom page groups (e.g. 1-2; 3-4) 100% locally in your browser using pdf-lib. Zero server uploads.',
+    descriptionTa: 'பல பக்கங்கள் கொண்ட PDF ஆவணத்தை தனித்தனி பக்கங்களாகவோ அல்லது குறிப்பிட்ட குழுக்களாகவோ உங்கள் பிரவுசரிலேயே பிரிக்கலாம். கோப்புகள் சர்வருக்கு அனுப்பப்படாது.',
+    keywords: 'split pdf online, pdf split, separate pdf pages, pdf splitter free, PDF பக்கங்களை பிரிக்க',
+    mode: 'pdf-split',
+    icon: 'Layers',
+    badge: '100% Client-Side Split',
+    badgeTa: 'பிரவுசர் PDF பிரிப்பு',
+    shortDesc: 'Split multi-page PDF files into separate single-page PDFs or custom page-range parts in browser memory.',
+    shortDescTa: 'பல பக்க PDF கோப்புகளை தனித்தனி பக்கங்களாகவோ பிரிவுகளாகவோ பிரிக்க உதவும் இலவசக் கருவி.',
+    faqs: [
+      {
+        q: 'Can I split specific page groups from a PDF?',
+        qTa: 'குறிப்பிட்ட பக்க எண்களைத் தொகுப்பாக பிரிக்க முடியுமா?',
+        a: 'Yes! Choose "Split every page" or choose "Custom range groups" and enter ranges separated by semicolons like "1-2; 3-5".',
+        aTa: 'ஆம்! அனைத்துப் பக்கங்களையும் தனித்தனியாகவோ அல்லது "1-2; 3-5" என குழுக்களாகவோ பிரிக்கலாம்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Select PDF File', titleTa: 'PDF கோப்பை தேர்ந்தெடுக்கவும்', text: 'Upload an unencrypted PDF file (up to 40 MB).', textTa: '40 MB வரை உள்ள PDF கோப்பை தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Choose Split Mode', titleTa: 'பிரிக்கும் முறையை அமைக்கவும்', text: 'Split every page individually or enter custom ranges like 1-2; 3-4.', textTa: 'ஒவ்வொரு பக்கத்தையும் தனியாகவோ வரம்பாகவோ தேர்ந்தெடுக்கவும்.' },
+      { step: 3, title: 'Download Split PDFs', titleTa: 'பிரித்த PDF-களை சேமிக்கவும்', text: 'Download each generated PDF segment immediately.', textTa: 'உருவாக்கப்பட்ட PDF கோப்புகளை உடனே பதிவிறக்கவும்.' }
+    ],
+    relatedTools: ['pdf-extract', 'pdf-merge', 'pdf-rotate', 'pdf-compress']
+  },
+
+  // 25. PDF ROTATE PAGES
+  {
+    id: 'pdf-rotate',
+    path: '/tools/pdf-rotate',
+    category: 'pdf',
+    categoryTitle: 'PDF & Document Tools',
+    categoryTitleTa: 'PDF & ஆவணக் கருவிகள்',
+    title: 'Rotate PDF Pages Online Free – Fix Sideways PDFs | AK E-SEVAI',
+    titleTa: 'PDF பக்கங்களை சுழற்ற (Rotate PDF) – ஆன்லைன் கருவி | AK E-SEVAI',
+    description: 'Rotate sideways or upside-down PDF pages permanently (90°, 180°, 270°) locally in your browser with pdf-lib. Rotate all pages or selected page numbers without server upload.',
+    descriptionTa: 'சாய்வாக அல்லது தலைகீழாக உள்ள PDF பக்கங்களை 90°, 180°, 270° கோணத்தில் நிரந்தரமாக சுழற்றி சரிசெய்யுங்கள். 100% பிரவுசரிலேயே பாதுகாப்பாக நடைபெறும்.',
+    keywords: 'rotate pdf, pdf rotate pages, rotate pdf online free, turn pdf page 90 degrees',
+    mode: 'pdf-rotate',
+    icon: 'RotateCw',
+    badge: 'Permanent Page Rotation',
+    badgeTa: 'நிரந்தர PDF சுழற்சி',
+    shortDesc: 'Fix sideways scanned documents by rotating all or specific PDF pages 90°, 180°, or 270° directly in your browser.',
+    shortDescTa: 'சாய்வாக ஸ்கேன் செய்யப்பட்ட PDF பக்கங்களை 90°, 180°, 270° சுழற்றி நேராக்குங்கள்.',
+    faqs: [
+      {
+        q: 'Can I rotate only specific pages instead of the entire PDF?',
+        qTa: 'முழு PDF-ஐயும் சுழற்றாமல் குறிப்பிட்ட பக்கத்தை மட்டும் சுழற்ற முடியுமா?',
+        a: 'Yes! Leave page range blank to rotate all pages, or specify pages like "2, 4-5" to rotate only those pages.',
+        aTa: 'ஆம்! அனைத்து பக்கங்களுக்கும் காலியாக விடவும், அல்லது "2, 4-5" என பக்க எண்களைக் குறிப்பிட்டு சுழற்றலாம்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Select PDF File', titleTa: 'PDF கோப்பை பதிவேற்றவும்', text: 'Select the scanned PDF document from your device.', textTa: 'சாய்வாக உள்ள PDF கோப்பை தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Pick Angle & Pages', titleTa: 'கோணம் & பக்கங்களை தேர்ந்தெடுக்கவும்', text: 'Pick 90° clockwise, 180°, or 270° (counter-clockwise).', textTa: '90°, 180° அல்லது 270° சுழற்சி கோணத்தைத் தேர்ந்தெடுக்கவும்.' },
+      { step: 3, title: 'Download Corrected PDF', titleTa: 'சரியான PDF-ஐ பதிவிறக்கவும்', text: 'Download the permanently rotated PDF file.', textTa: 'நேராக்கப்பட்ட PDF கோப்பை உடனே சேமிக்கவும்.' }
+    ],
+    relatedTools: ['pdf-merge', 'pdf-split', 'pdf-extract', 'pdf-compress']
+  },
+
+  // 26. PDF PAGE EXTRACTOR
+  {
+    id: 'pdf-extract',
+    path: '/tools/pdf-extract',
+    category: 'pdf',
+    categoryTitle: 'PDF & Document Tools',
+    categoryTitleTa: 'PDF & ஆவணக் கருவிகள்',
+    title: 'Extract PDF Pages Online Free – Save Selected Pages | AK E-SEVAI',
+    titleTa: 'தேவையான PDF பக்கங்களை மட்டும் பிரித்தெடுக்க (Extract PDF) | AK E-SEVAI',
+    description: 'Extract exact pages (e.g. 1, 3, 5-8) from a large PDF into one clean new PDF locally in your browser using pdf-lib. Private, fast & zero server uploads.',
+    descriptionTa: 'பெரிய PDF ஆவணத்திலிருந்து உங்களுக்கு தேவையான குறிப்பிட்ட பக்கங்களை (எ.கா: 1, 3, 5-8) மட்டும் தனியாக எடுத்து புதிய PDF-ஆக சேமியுங்கள்.',
+    keywords: 'pdf page extractor, extract pages from pdf, extract pdf pages online free, remove unwanted pdf pages',
+    mode: 'pdf-extract',
+    icon: 'FileText',
+    badge: 'Select & Extract Pages',
+    badgeTa: 'குறிப்பிட்ட பக்க பிரிப்பு',
+    shortDesc: 'Extract chosen page numbers or ranges from a multi-page PDF into a new single clean PDF document.',
+    shortDescTa: 'பல பக்க PDF-ல் இருந்து குறிப்பிட்ட பக்கங்களை மட்டும் தேர்ந்தெடுத்து புதிய PDF உருவாக்குங்கள்.',
+    faqs: [
+      {
+        q: 'How do I format page ranges for extraction?',
+        qTa: 'பக்க எண்களை எவ்வாறு உள்ளிட வேண்டும்?',
+        a: 'Type comma-separated numbers and ranges such as "1, 4, 6-9". Pages are extracted in the exact order entered.',
+        aTa: '"1, 4, 6-9" போன்ற வடிவத்தில் கமா மற்றும் ஹைபன் பயன்படுத்தி தேவையான பக்கங்களைப் பிரிக்கலாம்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Upload Multi-Page PDF', titleTa: 'PDF கோப்பை பதிவேற்றவும்', text: 'Select the PDF file containing extra pages.', textTa: 'பக்கங்களை எடுக்க வேண்டிய PDF கோப்பை தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Enter Page Numbers', titleTa: 'பக்க எண்களை உள்ளிடவும்', text: 'Specify exact pages to keep, such as "1, 3-5".', textTa: '"1, 3-5" என தேவைப்படும் பக்க எண்களை உள்ளிடவும்.' },
+      { step: 3, title: 'Download Extracted PDF', titleTa: 'புதிய PDF-ஐ பதிவிறக்கவும்', text: 'Download a single PDF containing only your chosen pages.', textTa: 'தேர்ந்தெடுக்கப்பட்ட பக்கங்கள் மட்டும் கொண்ட PDF-ஐ சேமிக்கவும்.' }
+    ],
+    relatedTools: ['pdf-split', 'pdf-merge', 'pdf-rotate', 'pdf-compress']
+  },
+
+  // 27. COMPRESS PHOTO TO 200KB
+  {
+    id: 'photo-compress-200kb',
+    path: '/tools/photo-compress-200kb',
+    category: 'compression',
+    categoryTitle: 'Compression Tools',
+    categoryTitleTa: 'கம்ப்ரஷன் கருவிகள்',
+    title: 'Compress Image & Photo to 200 KB Online Free | AK E-SEVAI',
+    titleTa: 'போட்டோவை 200 KB-க்குள் சுருக்க – ஆன்லைன் கருவி | AK E-SEVAI',
+    description: 'Compress scanned certificates, marksheets, and photos cleanly under 200 KB locally in your browser without sacrificing text readability for portal uploads across Tamil Nadu.',
+    descriptionTa: 'மார்க்ஷீட், சான்றிதழ் படங்கள் மற்றும் புகைப்படங்களை எழுத்துத் தெளிவு குறையாமல் 200 KB-க்குள் உங்கள் பிரவுசரிலேயே சுருக்குங்கள்.',
+    keywords: 'compress photo to 200kb, compress image to 200kb, reduce image under 200kb, 200kb image compressor',
+    mode: 'compress-target',
+    icon: 'Minimize2',
+    badge: 'Target: ≤ 200 KB',
+    badgeTa: 'இலக்கு: ≤ 200 KB',
+    shortDesc: 'Compress high-resolution documents and scanned marksheets cleanly under 200 KB for portal uploads.',
+    shortDescTa: 'ஸ்கேன் செய்யப்பட்ட சான்றிதழ் மற்றும் ஆவணப் படங்களை 200 KB-க்குள் தெளிவாக சுருக்க உதவும் கருவி.',
+    defaultTargetKb: 200,
+    faqs: [
+      {
+        q: 'When is a 200 KB image file limit required?',
+        qTa: '200 KB புகைப்பட வரம்பு எங்கு பயன்படுத்தப்படுகிறது?',
+        a: 'Many Tamil Nadu e-Sevai, scholarship, and college admission portals limit scanned marksheet or document image uploads to 200 KB. Check your portal upload instructions carefully.',
+        aTa: 'பல கல்வி உதவித்தொகை, கல்லூரி சேர்க்கை மற்றும் ஆன்லைன் போர்ட்டல்கள் ஆவணப் படங்களுக்கு 200 KB வரம்பை நிர்ணயிக்கின்றன.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Upload Document Photo', titleTa: 'ஆவணப் படத்தை பதிவேற்றவும்', text: 'Select the scanned marksheet, certificate, or photo.', textTa: 'பெரிய அளவிலான மார்க்ஷீட் அல்லது சான்றிதழ் படத்தைத் தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Compress to ≤200 KB', titleTa: '200 KB-க்கு சுருக்கவும்', text: 'Engine preserves legibility while bringing file size under 200 KB.', textTa: 'எழுத்துத் தெளிவுடன் 200 KB-க்குள் தானாகச் சுருக்கப்படும்.' },
+      { step: 3, title: 'Download JPG', titleTa: 'JPG-ஐ பதிவிறக்கவும்', text: 'Save the compact JPG ready for form upload.', textTa: 'பதிவேற்ற தயாரான JPG கோப்பை சேமிக்கவும்.' }
+    ],
+    relatedTools: ['photo-compress-100kb', 'photo-compress-50kb', 'photo-compress', 'document-size-checker']
+  },
+
+  // 28. DOCUMENT SIZE CHECKER (PDF + IMAGE)
+  {
+    id: 'document-size-checker',
+    path: '/tools/document-size-checker',
+    category: 'crop-resize',
+    categoryTitle: 'Crop & Resize Tools',
+    categoryTitleTa: 'க்ராப் & ரீசைஸ் கருவிகள்',
+    title: 'Document Size Checker Online (PDF Page Count & Image KB) | AK E-SEVAI',
+    titleTa: 'ஆவண அளவு சரிபார்ப்புக் கருவி (PDF & Image KB Checker) | AK E-SEVAI',
+    description: 'Check file size in KB/MB, MIME format, PDF page count & paper size (A4/Legal), or image pixel dimensions 100% locally in your browser before uploading to online portals.',
+    descriptionTa: 'அரசு அல்லது தேர்வு இணையதளங்களில் பதிவேற்றும் முன் PDF பக்க எண்ணிக்கை, தாள் அளவு (A4/Legal), படப் பிக்சல் மற்றும் KB/MB அளவை உடனடியாக பிரவுசரிலேயே சரிபாருங்கள்.',
+    keywords: 'document size checker, check pdf file size and pages, check document kb online, verify pdf dimensions',
+    mode: 'document-checker',
+    icon: 'FileCheck2',
+    badge: 'PDF & Image Inspector',
+    badgeTa: 'PDF & பட சரிபார்ப்பு',
+    shortDesc: 'Inspect PDF page count, page size (A4/Letter), encryption status, and image pixel/KB metrics locally.',
+    shortDescTa: 'PDF பக்க எண்ணிக்கை, A4 அளவு மற்றும் படங்களின் KB/பிக்சல் அளவை உடனே அறிய உதவும் கருவி.',
+    faqs: [
+      {
+        q: 'What does Document Size Checker inspect for PDF vs Images?',
+        qTa: 'இந்தக் கருவி PDF மற்றும் படங்களில் எதைச் சரிபார்க்கிறது?',
+        a: 'For PDFs, it checks exact byte/KB size, page count, each page’s physical dimensions (e.g., A4/Legal), and whether it is encrypted. For images, it reports format, width x height pixels, aspect ratio, and exact KB size.',
+        aTa: 'PDF கோப்புகளில் KB அளவு, பக்கங்களின் எண்ணிக்கை, தாள் அளவு (A4/Legal) ஆகியவற்றையும், படங்களில் பிக்சல் அளவு மற்றும் KB அளவையும் சரிபார்க்கிறது.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Select PDF or Image', titleTa: 'PDF அல்லது படத்தை தேர்ந்தெடுக்கவும்', text: 'Upload any PDF document or JPG/PNG/WEBP image.', textTa: 'PDF ஆவணம் அல்லது படத்தை தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Inspect Verified Metrics', titleTa: 'துல்லிய விவரங்களைப் பார்க்கவும்', text: 'Read exact KB size, format, page dimensions, and page count.', textTa: 'KB அளவு, வடிவம் மற்றும் பக்க விவரங்களைப் பார்க்கவும்.' },
+      { step: 3, title: 'Fix Size if Needed', titleTa: 'தேவைப்பட்டால் சுருக்கவும்', text: 'Jump straight to PDF Compressor or Photo Compressor if too large.', textTa: 'அளவு அதிகமாக இருந்தால் கம்ப்ரஸர் கருவிக்கு நேரடியாக செல்லவும்.' }
+    ],
+    relatedTools: ['dimension-checker', 'pdf-compress', 'photo-compress-100kb', 'photo-compress-200kb']
+  },
+
+  // 29. TNPSC PHOTO & SIGNATURE RESIZER
+  {
+    id: 'tnpsc-photo-resizer',
+    path: '/tools/tnpsc-photo-resizer',
+    category: 'passport',
+    categoryTitle: 'Passport & Identity Photos',
+    categoryTitleTa: 'பாஸ்போர்ட் & அடையாளப் படங்கள்',
+    title: 'TNPSC Photo & Signature Resizer Online (Name & Date Option) | AK E-SEVAI',
+    titleTa: 'TNPSC போட்டோ & கையொப்ப ரீசைஸ் கருவி (பெயர் & தேதி) | AK E-SEVAI',
+    description: 'Prepare photos and signatures for TNPSC Group 1, 2, 4, and VAO applications locally in your browser with configurable dimensions, KB compression, and optional Name & Date strip. Check official TNPSC OTR guidelines before uploading.',
+    descriptionTa: 'TNPSC தேர்வு விண்ணப்பங்களுக்கு உதவும் வகையில் புகைப்படம் & கையொப்பத்தை உங்கள் பிரவுசரிலேயே சரிசெய்யும் கருவி. பதிவேற்றும் முன் அதிகாரப்பூர்வ TNPSC அறிவிப்பு விதிகளை சரிபார்க்கவும்.',
+    keywords: 'tnpsc photo resizer, tnpsc photo resize online, tnpsc photo compressor, tnpsc photo with name and date, tnpsc signature resize 20kb',
+    mode: 'exam-resizer',
+    icon: 'Camera',
+    badge: 'TNPSC Reference Presets',
+    badgeTa: 'TNPSC மாதிரி கருவி',
+    shortDesc: 'Configurable browser resizer with TNPSC photo/signature reference presets and optional Name/Date strip.',
+    shortDescTa: 'TNPSC தேர்வுகளுக்கான மாதிரி அளவுகள் மற்றும் விருப்பப் பெயர்/தேதி முத்திரை வசதி கொண்ட கருவி.',
+    defaultTargetKb: 50,
+    presetSizes: [
+      { label: 'TNPSC Photo Ref (350 × 450 px, ≤50 KB, Name/Date Option)', w: 350, h: 450, targetKb: 50, hasNameStamp: true, name: 'TNPSC Photo' },
+      { label: 'TNPSC Signature Ref (200 × 100 px, ≤20 KB)', w: 200, h: 100, targetKb: 20, hasNameStamp: false, name: 'TNPSC Signature' }
+    ],
+    faqs: [
+      {
+        q: 'Do TNPSC photo and signature specifications vary between notifications?',
+        qTa: 'TNPSC தேர்வு அறிவிப்புகளுக்கு இடையே போட்டோ விதிகள் மாறுபடுமா?',
+        a: 'Yes, official commissions occasionally update pixel, KB, background, or name-date requirements across exam notifications. Always verify the active TNPSC official brochure before uploading.',
+        aTa: 'ஆம், ஒவ்வொரு தேர்வு அறிவிப்பிலும் விதிகளில் சிறிய மாற்றங்கள் இருக்கலாம். எனவே பதிவேற்றும் முன் சமீபத்திய TNPSC அதிகாரப்பூர்வ அறிவிப்பைக் கட்டாயம் சரிபார்க்கவும்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Select Photo or Signature Preset', titleTa: 'போட்டோ / கையொப்பம் தேர்வு செய்யவும்', text: 'Pick the Photo preset or Signature preset (or customize width/height/KB).', textTa: 'போட்டோ அல்லது கையொப்ப அளவைத் தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Optional Name & Date Strip', titleTa: 'பெயர் & தேதி (தேவையெனில்)', text: 'Enable Name & Date strip if specified in your notification.', textTa: 'அறிவிப்பில் தேவைப்பட்டால் பெயர் மற்றும் தேதி சேர்க்கவும்.' },
+      { step: 3, title: 'Verify & Download JPG', titleTa: 'சரிபார்த்து பதிவிறக்கவும்', text: 'Check result KB and pixels, then download locally.', textTa: 'KB அளவை உறுதிசெய்து பதிவிறக்கவும்.' }
+    ],
+    relatedTools: ['govt-exam-photo-tool', 'signature-resize', 'ssc-photo-resizer', 'dimension-checker']
+  },
+
+  // 30. SSC PHOTO & SIGNATURE RESIZER
+  {
+    id: 'ssc-photo-resizer',
+    path: '/tools/ssc-photo-resizer',
+    category: 'passport',
+    categoryTitle: 'Passport & Identity Photos',
+    categoryTitleTa: 'பாஸ்போர்ட் & அடையாளப் படங்கள்',
+    title: 'SSC Photo & Signature Resizer Online (CGL, CHSL, MTS, GD) | AK E-SEVAI',
+    titleTa: 'SSC தேர்வு போட்டோ & கையொப்ப ரீசைஸ் கருவி | AK E-SEVAI',
+    description: 'Resize and compress photos and signatures for SSC OTR, CGL, CHSL, MTS, and Constable GD portal requirements locally in your browser. Verify exact dimensions against the latest SSC notice.',
+    descriptionTa: 'SSC CGL, CHSL, MTS தேர்வுகளுக்கான மாதிரி அளவுகளில் போட்டோ & கையொப்பத்தை உங்கள் பிரவுசரிலேயே சரிசெய்யுங்கள். பதிவேற்றும் முன் அதிகாரப்பூர்வ SSC அறிவிப்பை சரிபார்க்கவும்.',
+    keywords: 'ssc photo resizer, ssc photo resize online, ssc photo compressor, ssc signature size converter',
+    mode: 'exam-resizer',
+    icon: 'Camera',
+    badge: 'SSC Reference Presets',
+    badgeTa: 'SSC மாதிரி கருவி',
+    shortDesc: 'Configurable browser resizer with SSC CGL/CHSL/MTS photo & signature reference presets.',
+    shortDescTa: 'SSC தேர்வுகளுக்கான மாதிரி போட்டோ & கையொப்ப அளவுக் கருவி.',
+    defaultTargetKb: 35,
+    presetSizes: [
+      { label: 'SSC Photo Ref (200 × 230 px, ≤35 KB)', w: 200, h: 230, targetKb: 35, hasNameStamp: false, name: 'SSC Photo' },
+      { label: 'SSC Passport Ratio Ref (350 × 450 px, ≤50 KB)', w: 350, h: 450, targetKb: 50, hasNameStamp: false, name: 'SSC 3.5x4.5' },
+      { label: 'SSC Signature Ref (140 × 60 px, ≤20 KB)', w: 140, h: 60, targetKb: 20, hasNameStamp: false, name: 'SSC Signature' }
+    ],
+    faqs: [
+      {
+        q: 'Does SSC now require live webcam capture during OTR?',
+        qTa: 'SSC OTR-ல் நேரடி கேமரா புகைப்படம் உள்ளதா?',
+        a: 'Recent SSC notifications introduced live photo capture in addition to/instead of file upload for certain portals, while signature upload remains active. Always check the official SSC notice for current rules.',
+        aTa: 'சமீபத்திய SSC விண்ணப்பங்களில் நேரடி வெப்கேம் புகைப்பட முறை அறிமுகப்படுத்தப்பட்டுள்ளது; கையொப்பம் மற்றும் சில பிரிவுகளுக்கு கோப்பு பதிவேற்றம் தொடர்கிறது.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Select SSC Reference Size', titleTa: 'SSC அளவைத் தேர்ந்தெடுக்கவும்', text: 'Pick SSC Photo or Signature reference or customize target KB.', textTa: 'SSC போட்டோ அல்லது கையொப்ப மாதிரி அளவைத் தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Process in Browser', titleTa: 'பிரவுசரில் மாற்றவும்', text: 'Image is cropped/resized cleanly on HTML5 Canvas.', textTa: 'உங்கள் சாதனத்திலேயே அளவு மாற்றப்படும்.' },
+      { step: 3, title: 'Check Notification & Save', titleTa: 'சரிபார்த்து சேமிக்கவும்', text: 'Verify output KB and download JPG.', textTa: 'அவுட்புட் KB-ஐ சரிபார்த்து சேமிக்கவும்.' }
+    ],
+    relatedTools: ['tnpsc-photo-resizer', 'rrb-photo-resizer', 'signature-resize', 'dimension-checker']
+  },
+
+  // 31. RRB EXAM PHOTO & SIGNATURE RESIZER
+  {
+    id: 'rrb-photo-resizer',
+    path: '/tools/rrb-photo-resizer',
+    category: 'passport',
+    categoryTitle: 'Passport & Identity Photos',
+    categoryTitleTa: 'பாஸ்போர்ட் & அடையாளப் படங்கள்',
+    title: 'RRB Exam Photo & Signature Resizer (NTPC, ALP, Group D) | AK E-SEVAI',
+    titleTa: 'ரயில்வே (RRB) தேர்வு போட்டோ & கையொப்ப ரீசைஸ் கருவி | AK E-SEVAI',
+    description: 'Resize and compress photos & signatures locally for Railway Recruitment Board (RRB NTPC, ALP, Technician, Group D) applications across Tamil Nadu. Verify exact notification limits before upload.',
+    descriptionTa: 'ரயில்வே RRB (NTPC, ALP, Group D) தேர்வுகளுக்கான மாதிரி அளவுகளில் போட்டோ மற்றும் கையொப்பத்தை உங்கள் பிரவுசரிலேயே தயாரித்திடுங்கள். சமீபத்திய RRB அறிவிப்பை சரிபார்க்கவும்.',
+    keywords: 'rrb photo resizer, rrb exam photo size converter, railway exam photo resize, rrb signature size reducer',
+    mode: 'exam-resizer',
+    icon: 'Camera',
+    badge: 'RRB Reference Presets',
+    badgeTa: 'ரயில்வே மாதிரி கருவி',
+    shortDesc: 'Configurable resizer and compressor with RRB NTPC/ALP/Group D photo & signature reference presets.',
+    shortDescTa: 'ரயில்வே RRB தேர்வுகளுக்கான மாதிரி போட்டோ மற்றும் கையொப்ப அளவீட்டுக் கருவி.',
+    defaultTargetKb: 50,
+    presetSizes: [
+      { label: 'RRB Photo Ref (350 × 450 px / 35×45 mm, ≤50 KB)', w: 350, h: 450, targetKb: 50, hasNameStamp: false, name: 'RRB Photo' },
+      { label: 'RRB Larger KB Ref (350 × 450 px, ≤70 KB)', w: 350, h: 450, targetKb: 70, hasNameStamp: false, name: 'RRB 70KB' },
+      { label: 'RRB Signature Ref (140 × 60 px, ≤30 KB)', w: 140, h: 60, targetKb: 30, hasNameStamp: false, name: 'RRB Signature' }
+    ],
+    faqs: [
+      {
+        q: 'What background color is commonly mentioned in RRB notifications?',
+        qTa: 'ரயில்வே தேர்வுப் புகைப்படத்திற்கு என்ன பின்னணி நிறம் தேவை?',
+        a: 'RRB notifications typically require a clear color photograph against a plain white background without dark glasses or caps. Verify the exact CEN notification rules before uploading.',
+        aTa: 'பொதுவாக வெற்று வெள்ளை பின்னணியுடன் கூடிய தெளிவான புகைப்படம் கோரப்படுகிறது. பதிவேற்றும் முன் சமீபத்திய CEN அறிவிப்பைச் சரிபார்க்கவும்.'
+      }
+    ],
+    howTo: [
+      { step: 1, title: 'Pick RRB Preset', titleTa: 'RRB அளவைத் தேர்ந்தெடுக்கவும்', text: 'Select RRB Photo or Signature reference.', textTa: 'RRB போட்டோ அல்லது கையொப்ப மாதிரி அளவைத் தேர்ந்தெடுக்கவும்.' },
+      { step: 2, title: 'Upload & Adjust', titleTa: 'படத்தை பதிவேற்றவும்', text: 'Upload from your mobile or computer cleanly.', textTa: 'மொபைல் அல்லது கணினியிலிருந்து பதிவேற்றவும்.' },
+      { step: 3, title: 'Download Locally', titleTa: 'உடனே பதிவிறக்கவும்', text: 'Save the resized file locally without any server upload.', textTa: 'சர்வருக்கு அனுப்பாமல் உங்கள் சாதனத்தில் உடனே சேமிக்கவும்.' }
+    ],
+    relatedTools: ['govt-exam-photo-tool', 'tnpsc-photo-resizer', 'ssc-photo-resizer', 'signature-resize']
   }
 ];
 
@@ -1101,21 +1391,30 @@ export function getToolBySlugOrId(identifier) {
   const direct = PHOTO_TOOLS_CATALOG.find(t => t.id === clean || t.path === `/${clean}` || t.path === `/tools/${clean}`);
   if (direct) return direct;
 
-  // 2. Search Intent Alias Match
+  // Quick canonical redirects map for slugs without duplicating blocks
+  const EXTRA_ALIAS_PARENTS = {
+    'image-resizer': 'photo-resizer',
+    'signature-resizer': 'signature-resize'
+  };
+
+  if (EXTRA_ALIAS_PARENTS[clean]) {
+    const parent = PHOTO_TOOLS_CATALOG.find(t => t.id === EXTRA_ALIAS_PARENTS[clean]);
+    if (parent) {
+      return {
+        ...parent,
+        canonical: `https://www.akesevai.com${parent.path}`
+      };
+    }
+  }
+
+  // 2. Search Intent Alias Match (points canonical cleanly to parent canonical tool)
   if (SEARCH_INTENT_TOOL_ALIASES[clean]) {
     const aliasInfo = SEARCH_INTENT_TOOL_ALIASES[clean];
     const parent = PHOTO_TOOLS_CATALOG.find(t => t.id === aliasInfo.parentId);
     if (parent) {
       return {
         ...parent,
-        id: clean,
-        path: `/tools/${clean}`,
-        title: aliasInfo.title,
-        titleTa: aliasInfo.titleTa,
-        description: aliasInfo.description,
-        descriptionTa: aliasInfo.descriptionTa,
-        keywords: aliasInfo.keywords,
-        canonical: aliasInfo.canonical,
+        canonical: `https://www.akesevai.com${parent.path}`,
         ...(aliasInfo.overrideMode ? { mode: aliasInfo.overrideMode } : {}),
         ...(aliasInfo.defaultAspect ? { presetSizes: [{ label: 'Passport 3.5:4.5', aspect: aliasInfo.defaultAspect, name: 'Passport 3.5:4.5' }, ...(parent.presetSizes || [])] } : {})
       };
@@ -1129,51 +1428,51 @@ export function getToolBySlugOrId(identifier) {
 export const PHOTO_TOOLS_CATEGORIES = [
   {
     id: 'passport',
-    title: 'Passport & Identity Studio',
-    titleTa: 'பாஸ்போர்ட் & அடையாள அட்டை கருவிகள்',
-    desc: 'Make official 3.5x4.5 cm passport photos, resize for government exams, and print 4x6 / A4 photo sheets.',
-    descTa: 'அரசு அங்கீகரிக்கப்பட்ட பாஸ்போர்ட் போட்டோக்கள் மற்றும் 4x6 / A4 அச்சிடும் தாள்களை தயார் செய்யுங்கள்.',
-    toolIds: ['passport-size-photo', 'govt-exam-photo-tool', 'passport-photo-resize', 'photo-crop']
+    title: 'Passport & Government Exam Photos',
+    titleTa: 'பாஸ்போர்ட் & அரசுத் தேர்வு போட்டோ கருவிகள்',
+    desc: 'Make 3.5x4.5 cm or 2x2 inch passport photos, configure TNPSC, SSC & RRB sizes, and generate 4x6 / A4 print sheets.',
+    descTa: 'பாஸ்போர்ட் போட்டோக்கள், TNPSC, SSC, RRB மாதிரி அளவுகள் மற்றும் 4x6 / A4 அச்சிடும் தாள்களை தயார் செய்யுங்கள்.',
+    toolIds: ['passport-size-photo', 'govt-exam-photo-tool', 'tnpsc-photo-resizer', 'ssc-photo-resizer', 'rrb-photo-resizer', 'passport-photo-resize']
   },
   {
     id: 'compression',
     title: 'Precision Photo Size Reducers',
     titleTa: 'புகைப்பட அளவு குறைப்பான் (KB)',
-    desc: 'Compress images strictly under 20 KB, 50 KB, or 100 KB with instant before/after size previews.',
-    descTa: 'புகைப்படங்களை சரியாக 20 KB, 50 KB அல்லது 100 KB அளவிற்கு தரம் குறையாமல் சுருக்குங்கள்.',
-    toolIds: ['photo-compress', 'photo-compress-20kb', 'photo-compress-50kb', 'photo-compress-100kb']
+    desc: 'Compress images under 20 KB, 50 KB, 100 KB, or 200 KB locally in your browser with real size validation.',
+    descTa: 'புகைப்படங்களை 20 KB, 50 KB, 100 KB அல்லது 200 KB அளவிற்கு பிரவுசரிலேயே சுருக்குங்கள்.',
+    toolIds: ['photo-compress', 'photo-compress-20kb', 'photo-compress-50kb', 'photo-compress-100kb', 'photo-compress-200kb']
   },
   {
     id: 'crop-resize',
-    title: 'Crop & Dimension Resizers',
-    titleTa: 'க்ராப் & பிக்சல் அளவீடு கருவிகள்',
-    desc: 'Crop to passport, square, or signature ratios, resize pixel dimensions, and inspect photo DPI/KB compliance.',
-    descTa: 'போட்டோக்களை தேவையான நீள அகல பிக்சல்களுக்கு மாற்றி துல்லியமாக வெட்டி எடுங்கள் மற்றும் KB அளவை சரிபாருங்கள்.',
-    toolIds: ['dimension-checker', 'photo-crop', 'photo-resizer', 'passport-photo-resize', 'signature-resize']
+    title: 'Crop, Signature & Dimension Checkers',
+    titleTa: 'க்ராப், கையொப்பம் & அளவீடு சரிபார்ப்பு',
+    desc: 'Crop & compress signatures under 20 KB, resize pixels, inspect dimensions, and check PDF/image file sizes.',
+    descTa: 'கையொப்பத்தை 20 KB-க்குள் சுருக்கவும், பிக்சல்களை மாற்றவும், PDF/பட அளவுகளைச் சரிபார்க்கவும்.',
+    toolIds: ['signature-resize', 'dimension-checker', 'document-size-checker', 'photo-crop', 'photo-resizer']
   },
   {
     id: 'editor',
     title: 'Photo Enhancer & Backgrounds',
     titleTa: 'போட்டோ எடிட்டிங் & பின்னணி நிறம்',
-    desc: 'Brighten dark photos, enhance clarity, and change background to official white or light blue.',
-    descTa: 'வெளிச்சத்தை அதிகரித்து, பின்னணி நிறத்தை பாஸ்போர்ட் வெள்ளை அல்லது நீலமாக மாற்றுங்கள்.',
+    desc: 'Adjust brightness/contrast, rotate images, and replace solid portrait backdrops cleanly to white or light blue.',
+    descTa: 'வெளிச்சத்தை சரிசெய்து, பின்னணி நிறத்தை வெள்ளை அல்லது வெளிர் நீலமாக மாற்றுங்கள்.',
     toolIds: ['photo-editor', 'photo-background-change']
   },
   {
     id: 'converter',
     title: 'Image Format Converters',
     titleTa: 'பட வடிவ மாற்றிகள் (JPG / PNG)',
-    desc: 'Convert any image between JPG, PNG, WEBP, and BMP with lossless quality.',
-    descTa: 'JPG, PNG மற்றும் WEBP படங்களை ஒன்றுக்கொன்று உடனடியாக மாற்றிக் கொள்ளுங்கள்.',
+    desc: 'Convert images cleanly between JPG, PNG, WEBP, and BMP locally in browser.',
+    descTa: 'JPG, PNG மற்றும் WEBP படங்களை உடனடியாக மாற்றுங்கள்.',
     toolIds: ['photo-to-jpg', 'photo-to-png', 'jpg-to-png', 'png-to-jpg']
   },
   {
     id: 'pdf',
-    title: 'PDF & Document Converters',
+    title: 'PDF & Document Utilities',
     titleTa: 'PDF & ஆவணக் கருவிகள்',
-    desc: 'Merge multiple PDFs, convert JPG/PNG to A4 PDF, extract PDF to JPG, and compress PDFs.',
-    descTa: 'பல PDF-களை இணைக்கவும், படங்களை A4 PDF ஆவணமாக மாற்றவும் மற்றும் PDF அளவை குறைக்கவும் உதவும் கருவிகள்.',
-    toolIds: ['pdf-merge', 'jpg-to-pdf', 'png-to-pdf', 'image-to-pdf', 'pdf-to-jpg', 'pdf-compress']
+    desc: 'Merge, split, extract, rotate, compress PDFs, render PDF pages to JPG, and create PDFs from JPG/PNG images.',
+    descTa: 'PDF-களை இணைக்க, பிரிக்க, சுழற்ற, சுருக்க, மற்றும் JPG/PDF மாற்ற உதவும் 100% பிரவுசர் கருவிகள்.',
+    toolIds: ['pdf-merge', 'pdf-split', 'pdf-extract', 'pdf-rotate', 'pdf-compress', 'pdf-to-jpg', 'jpg-to-pdf', 'png-to-pdf', 'image-to-pdf']
   }
 ];
 

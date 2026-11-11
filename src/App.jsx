@@ -70,8 +70,14 @@ import AdminRevenueDashboard from './components/AdminRevenueDashboard';
 import DarkModeToggle, { useDarkMode } from './components/DarkModeToggle';
 import ServiceOfTheDayBanner from './components/ServiceOfTheDayBanner';
 import DocumentReadinessScore from './components/DocumentReadinessScore';
-import PhotoBackgroundRemover from './components/PhotoBackgroundRemover';
 import BrowserNotificationOptIn from './components/BrowserNotificationOptIn';
+import SpaLink from './components/SpaLink';
+import {
+  resolveRouteSeo,
+  resolveQueryRedirect,
+  VALID_PAGE_IDS
+} from './data/seoRoutesConfig';
+import { CITY_DEDICATED_GUIDES } from './data/regionalCitiesData';
 
 // Lazy-loaded secondary route pages & heavy tool components
 const StatusTrackPage = lazy(() => import('./pages/StatusTrackPage'));
@@ -88,6 +94,14 @@ const SpiralBindingPage = lazy(() => import('./pages/SpiralBindingPage'));
 const CertificateServicesPage = lazy(() => import('./pages/CertificateServicesPage'));
 const OnlineApplicationAssistancePage = lazy(() => import('./pages/OnlineApplicationAssistancePage'));
 const TnGovtServicesGuidePage = lazy(() => import('./pages/TnGovtServicesGuidePage'));
+const EsevaiServicesHubPage = lazy(() => import('./pages/EsevaiServicesHubPage'));
+const PdfToolsHubPage = lazy(() => import('./pages/PdfToolsHubPage'));
+const GovtExamToolsHubPage = lazy(() => import('./pages/GovtExamToolsHubPage'));
+const PassportPhotoServicesPage = lazy(() => import('./pages/PassportPhotoServicesPage'));
+const OnlineDocumentServicesPage = lazy(() => import('./pages/OnlineDocumentServicesPage'));
+const TamilNaduRegionalGuidePage = lazy(() => import('./pages/TamilNaduRegionalGuidePage'));
+const CityOnlineGuidePage = lazy(() => import('./pages/CityOnlineGuidePage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const NotificationTables = lazy(() => import('./components/NotificationTables'));
 const AdminSevaiSmartDesk = lazy(() => import('./components/AdminSevaiSmartDesk'));
 const FirstTimeLoginModal = lazy(() => import('./components/FirstTimeLoginModal'));
@@ -486,46 +500,58 @@ function PageLoadingFallback({ lang = 'ta' }) {
   );
 }
 
-const validPages = [
-  'home', 'services', 'status-track', 'token-generator', 'notifications',
-  'about', 'contact', 'customer', 'admin', 'weblink', 'useful-links', 'important-links', 'forms', 'software',
-  'photo-maker', 'whatsapp-poster', 'photo-tools',
-  'xerox-printing', 'typing-services', 'spiral-binding', 'certificate-services', 'online-application-assistance', 'tn-govt-services-guide'
-];
+const validPages = VALID_PAGE_IDS;
+
+const resolveClientRoutePage = (pathnameStr = '/', searchStr = '', hashStr = '') => {
+  const searchParams = new URLSearchParams(searchStr || '');
+  const queryTool = searchParams.get('tool');
+  const queryPage = searchParams.get('page');
+
+  if (queryTool || queryPage) {
+    const queryTarget = resolveQueryRedirect({ tool: queryTool || '', page: queryPage || '' });
+    if (queryTarget) {
+      const targetResolved = resolveRouteSeo(queryTarget);
+      if (targetResolved?.pageId && targetResolved.pageId !== 'redirect') {
+        return targetResolved.pageId;
+      }
+    }
+    if (queryPage) {
+      const cleanQueryPage = queryPage.replace(/^\/+/, '').replace(/\/$/, '').toLowerCase();
+      if (validPages.includes(cleanQueryPage)) return cleanQueryPage;
+    }
+  }
+
+  const rawPath = pathnameStr || '/';
+  const direct = resolveRouteSeo(rawPath);
+  if (direct.status === 301 && direct.redirectTo) {
+    const target = resolveRouteSeo(direct.redirectTo);
+    return target.pageId || 'not-found';
+  }
+  if (direct.status === 200 && direct.pageId) {
+    return direct.pageId;
+  }
+
+  const hash = String(hashStr || '').replace('#', '').replace(/^\/+/, '').replace(/\/$/, '').trim().toLowerCase();
+  if (hash) {
+    const hashResolved = resolveRouteSeo(`/${hash}`);
+    if (hashResolved.status === 301 && hashResolved.redirectTo) {
+      return resolveRouteSeo(hashResolved.redirectTo).pageId || 'not-found';
+    }
+    if (hashResolved.status === 200 && hashResolved.pageId) {
+      return hashResolved.pageId;
+    }
+  }
+
+  return 'not-found';
+};
 
 const getInitialPage = () => {
   if (typeof window === 'undefined') return 'home';
-  const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').toLowerCase();
-  const searchParams = new URLSearchParams(window.location.search);
-  const queryPage = searchParams.get('page');
-  const queryTool = searchParams.get('tool');
-
-  if (queryTool) return `tools/${queryTool}`;
-  if (queryPage) {
-    if (queryPage === 'tools' && queryTool) return `tools/${queryTool}`;
-    if (queryPage === 'tools') return 'photo-tools';
-    if (queryPage === 'esevai' || queryPage === 'online-services') return 'services';
-    if (queryPage === 'palani-esevai-centre') return 'about';
-    if (queryPage === 'useful-links' || queryPage === 'important-links') return 'weblink';
-    return queryPage;
-  }
-
-  if (pathname === 'tools' || pathname === 'photo-tools') return 'photo-tools';
-  if (pathname === 'esevai' || pathname === 'online-services') return 'services';
-  if (pathname === 'palani-esevai-centre') return 'about';
-  if (pathname.startsWith('tools/')) return pathname;
-  if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') return 'weblink';
-  if (pathname && validPages.includes(pathname)) return pathname;
-
-  const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim().toLowerCase();
-  if (hash === 'tools' || hash === 'photo-tools') return 'photo-tools';
-  if (hash === 'esevai' || hash === 'online-services') return 'services';
-  if (hash === 'palani-esevai-centre') return 'about';
-  if (hash.startsWith('tools/')) return hash;
-  if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') return 'weblink';
-  if (hash && validPages.includes(hash)) return hash;
-
-  return 'home';
+  return resolveClientRoutePage(
+    window.location.pathname,
+    window.location.search,
+    window.location.hash
+  );
 };
 
 function App() {
@@ -589,31 +615,11 @@ function App() {
       if (event.state && event.state.page) {
         targetPage = event.state.page;
       } else {
-        const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').trim().toLowerCase();
-        if (pathname === 'tools' || pathname === 'photo-tools') {
-          targetPage = 'photo-tools';
-        } else if (pathname === 'esevai' || pathname === 'online-services') {
-          targetPage = 'services';
-        } else if (pathname === 'palani-esevai-centre') {
-          targetPage = 'about';
-        } else if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') {
-          targetPage = 'weblink';
-        } else if (pathname.startsWith('tools/') || validPages.includes(pathname)) {
-          targetPage = pathname;
-        } else {
-          const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim().toLowerCase();
-          if (hash === 'tools' || hash === 'photo-tools') {
-            targetPage = 'photo-tools';
-          } else if (hash === 'esevai' || hash === 'online-services') {
-            targetPage = 'services';
-          } else if (hash === 'palani-esevai-centre') {
-            targetPage = 'about';
-          } else if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') {
-            targetPage = 'weblink';
-          } else if (hash.startsWith('tools/') || validPages.includes(hash)) {
-            targetPage = hash;
-          }
-        }
+        targetPage = resolveClientRoutePage(
+          window.location.pathname,
+          window.location.search,
+          window.location.hash
+        );
       }
       setPage(targetPage);
       setMenuOpen(false);
@@ -627,8 +633,10 @@ function App() {
       if ((urlLang === 'en' || urlLang === 'ta') && urlLang !== lang) {
         setLang(urlLang);
       }
-      const cleanPath = (initial === 'home' ? '/' : `/${initial}`) + search;
-      window.history.replaceState({ page: initial }, '', cleanPath);
+      if (initial !== 'not-found') {
+        const cleanPath = (initial === 'home' ? '/' : `/${initial}`) + search;
+        window.history.replaceState({ page: initial }, '', cleanPath);
+      }
     } catch (e) {
       console.warn('History replaceState notice:', e);
     }
@@ -643,27 +651,6 @@ function App() {
       window.history.scrollRestoration = 'manual';
     }
     window.scrollTo(0, 0);
-
-    const pageTitles = {
-      home: 'AK E-SEVAI Palani | e-Sevai, Xerox, Printing & Online Services',
-      services: 'All eSevai Services in Palani | Aadhaar, Income & Community | www.akesevai.com',
-      'xerox-printing': 'Xerox & Printing Services in Palani | AK E-SEVAI',
-      'typing-services': 'Tamil & English Typing Centre in Palani | AK E-SEVAI',
-      'spiral-binding': 'Spiral Binding & Lamination in Palani | AK E-SEVAI',
-      'certificate-services': 'சான்றிதழ் விண்ணப்ப உதவி | Certificate Assistance | AK E-SEVAI Palani',
-      'online-application-assistance': 'அரசு தேர்வு விண்ணப்ப உதவி | Online Application Assistance | AK E-SEVAI Palani',
-      'tn-govt-services-guide': 'அரசு சேவைகள் வழிகாட்டி | Citizen Services Guide | AK E-SEVAI Palani',
-      'status-track': 'Track Application Status Online | AK E-SEVAI Palani | www.akesevai.com',
-      'token-generator': 'Live Token Booking | AK E-SEVAI Palani Digital Centre | www.akesevai.com',
-      notifications: 'Government Job & Exam Notifications | AK E-SEVAI Palani | www.akesevai.com',
-      about: 'About AK E-SEVAI Palani | Trusted Digital Service Centre | www.akesevai.com',
-      contact: 'Contact Us | AK E-SEVAI Palani Office Location & Phone | www.akesevai.com',
-      weblink: 'முக்கியமான இணைப்புகள் | Important Official Govt Links | AK E-SEVAI Palani'
-    };
-
-    if (!page.startsWith('tools/')) {
-      document.title = pageTitles[page] || 'AK E-SEVAI Palani | Digital Service Centre | www.akesevai.com';
-    }
   }, [page]);
 
   useEffect(() => {
@@ -1024,16 +1011,17 @@ function App() {
     };
 
     const navigate = (nextPage) => {
+      const normalizedNext = String(nextPage || 'home').replace(/^\/+/, '').replace(/\/$/, '') || 'home';
       setPage((prevPage) => {
-        if (prevPage !== nextPage) {
+        if (prevPage !== normalizedNext) {
           try {
-            const cleanPath = nextPage === 'home' ? '/' : `/${nextPage}`;
-            window.history.pushState({ page: nextPage }, '', cleanPath);
+            const cleanPath = normalizedNext === 'home' ? '/' : `/${normalizedNext}`;
+            window.history.pushState({ page: normalizedNext }, '', cleanPath);
           } catch (e) {
             console.warn('History pushState notice:', e);
           }
         }
-        return nextPage;
+        return normalizedNext;
       });
       setMenuOpen(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1290,7 +1278,7 @@ function App() {
         </Suspense>
         <header className="site-header">
           <div className="header-inner">
-            <button className="brand" onClick={() => navigate('home')} aria-label="AK e-Sevai home">
+            <SpaLink to="/" navigate={navigate} scrollToTop className="brand" aria-label="AK e-Sevai home" style={{ textDecoration: 'none' }}>
               <div className="brand-logo-container">
                 <img src="/logo.png" alt="AK e-Sevai Logo" className="brand-logo-img" />
               </div>
@@ -1302,7 +1290,7 @@ function App() {
                   {lang === 'ta' ? 'நம்பகமான இ-சேவை மையம்' : 'Your Trusted e-Sevai Centre'}
                 </small>
               </div>
-            </button>
+            </SpaLink>
 
             {/* MAIN NAVIGATION (DESKTOP & MOBILE DRAWER) */}
             <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'} id="site-navigation-drawer">
@@ -1329,17 +1317,43 @@ function App() {
 
               {/* NAVIGATION LINKS */}
               <div className="nav-links-container">
-                {menuItems.map(([id, label]) => (
-                  <button
-                    key={id}
-                    id={`nav-item-${id.replace(':', '-')}`}
-                    className={`nav-link-btn ${(page === id || (id === 'photo-tools' && page.startsWith('tools/')) || (id.startsWith('customer:') && page === 'customer' && customerTab === id.replace('customer:', '')) || (id.startsWith('admin:') && page === 'admin' && adminNavTab === id.replace('admin:', ''))) ? 'nav-active' : ''}`}
-                    onClick={() => handleNavClick(id)}
-                  >
-                    <span className="nav-link-text">{label}</span>
-                    <ChevronRight size={16} className="mobile-nav-arrow" />
-                  </button>
-                ))}
+                {menuItems.map(([id, label]) => {
+                  const isActive =
+                    page === id ||
+                    (id === 'photo-tools' && page.startsWith('tools/')) ||
+                    (id.startsWith('customer:') && page === 'customer' && customerTab === id.replace('customer:', '')) ||
+                    (id.startsWith('admin:') && page === 'admin' && adminNavTab === id.replace('admin:', ''));
+
+                  if (id.includes(':')) {
+                    return (
+                      <button
+                        key={id}
+                        id={`nav-item-${id.replace(':', '-')}`}
+                        className={`nav-link-btn ${isActive ? 'nav-active' : ''}`}
+                        onClick={() => handleNavClick(id)}
+                      >
+                        <span className="nav-link-text">{label}</span>
+                        <ChevronRight size={16} className="mobile-nav-arrow" />
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <SpaLink
+                      key={id}
+                      to={id === 'home' ? '/' : `/${id}`}
+                      navigate={navigate}
+                      scrollToTop
+                      id={`nav-item-${id}`}
+                      className={`nav-link-btn ${isActive ? 'nav-active' : ''}`}
+                      onClick={() => setMenuOpen(false)}
+                      style={{ textDecoration: 'none' }}
+                    >
+                      <span className="nav-link-text">{label}</span>
+                      <ChevronRight size={16} className="mobile-nav-arrow" />
+                    </SpaLink>
+                  );
+                })}
               </div>
 
               {/* MOBILE ACTION GRID (Row 1: Language & Customer Login, Row 2: Admin) */}
@@ -1488,11 +1502,18 @@ function App() {
           <Suspense fallback={<PageLoadingFallback lang={lang} />}>
             {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
             {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
+            {page === 'esevai-services' && <EsevaiServicesHubPage navigate={navigate} lang={lang} />}
             {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
+            {page === 'pdf-tools' && <PdfToolsHubPage navigate={navigate} lang={lang} />}
+            {page === 'government-exam-tools' && <GovtExamToolsHubPage navigate={navigate} lang={lang} />}
+            {page === 'passport-photo-services' && <PassportPhotoServicesPage navigate={navigate} lang={lang} />}
+            {page === 'online-document-services' && <OnlineDocumentServicesPage navigate={navigate} lang={lang} />}
+            {page === 'tamil-nadu-district-esevai-guides' && <TamilNaduRegionalGuidePage navigate={navigate} lang={lang} />}
+            {CITY_DEDICATED_GUIDES[page] && <CityOnlineGuidePage citySlug={page} navigate={navigate} lang={lang} />}
             {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
             {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
             {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
-                        {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
+            {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
             {page === 'certificate-services' && <CertificateServicesPage navigate={navigate} lang={lang} />}
             {page === 'online-application-assistance' && <OnlineApplicationAssistancePage navigate={navigate} lang={lang} />}
             {page === 'tn-govt-services-guide' && <TnGovtServicesGuidePage navigate={navigate} lang={lang} />}
@@ -1509,18 +1530,19 @@ function App() {
             {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} customerRecords={customerRecords} onClose={() => navigate('home')} />}
             {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} activeTab={customerTab} setActiveTab={setCustomerTab} lang={lang} navigate={navigate} />}
             {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} changeAdminPassword={changeAdminPassword} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
+            {page === 'not-found' && <NotFoundPage navigate={navigate} lang={lang} requestedPath={typeof window !== 'undefined' ? window.location.pathname : ''} />}
           </Suspense>
         </main>
 
         <footer className="site-footer">
           <div>
-            <button className="brand footer-brand" onClick={() => navigate('home')} style={{ gap: '12px' }}>
+            <SpaLink to="/" navigate={navigate} scrollToTop className="brand footer-brand" style={{ gap: '12px', textDecoration: 'none' }}>
               <img src="/logo.png" alt="AK E-SEVAI Logo" className="brand-logo-img" style={{ height: '44px', background: 'white', padding: '4px', borderRadius: '8px' }} />
               <div>
                 <strong className="brand-name" style={{ fontSize: '18px', color: 'white' }}>AK E-SEVAI CENTRE</strong>
                 <small style={{ color: '#86efac', display: 'block', fontSize: '9px', fontWeight: 700, lineHeight: 1.25 }}>{t.tagline}</small>
               </div>
-            </button>
+            </SpaLink>
             <p>{t.footerDesc}</p>
             <div className="footer-social-links" style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
               <a href={siteConfig.youtube} target="_blank" rel="noreferrer" title="YouTube: @AkEsevai" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#FF0000', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(255,0,0,0.3)' }}>
@@ -1534,65 +1556,99 @@ function App() {
               </a>
             </div>
 
-            {/* In-Centre Document Services Links */}
+            {/* In-Centre Document Services Links (Palani Only) */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
               <strong style={{ fontSize: '12px', color: '#fde047', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                {lang === 'ta' ? '🖨️ நேரடி ஜெராக்ஸ், தட்டச்சு & ஸ்பைரல் பைண்டிங்:' : '🖨️ In-Centre Xerox, Typing & Binding Services:'}
+                {lang === 'ta' ? '🖨️ பழனி நேரடி ஜெராக்ஸ், தட்டச்சு & ஸ்பைரல் பைண்டிங்:' : '🖨️ Palani Walk-In Xerox, Typing & Binding Services:'}
               </strong>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
-                <button onClick={() => navigate('xerox-printing')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Colour Printing'}</button>
+                <SpaLink to="/xerox-printing" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Colour Printing'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('typing-services')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'தமிழ் & ஆங்கில தட்டச்சு' : 'Tamil & English Typing'}</button>
+                <SpaLink to="/typing-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'தமிழ் & ஆங்கில தட்டச்சு' : 'Tamil & English Typing'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('spiral-binding')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'}</button>
+                <SpaLink to="/spiral-binding" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'}</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/token-generator" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'பழனி டோக்கன்' : 'Palani Queue Token'}</SpaLink>
               </div>
             </div>
 
-            {/* Tamil Nadu Online Assistance & Guides */}
+            {/* Tamil Nadu Statewide Online Assistance & City Guides */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
               <strong style={{ fontSize: '12px', color: '#fde047', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                {lang === 'ta' ? '🏛️ தமிழ்நாடு இ-சேவை & விண்ணப்ப வழிகாட்டி:' : '🏛️ Tamil Nadu e-Sevai & Application Guides:'}
+                {lang === 'ta' ? '🏛️ தமிழ்நாடு ஆன்லைன் இ-சேவை & மாவட்ட வழிகாட்டிகள்:' : '🏛️ Tamil Nadu Online e-Sevai, Category Hubs & City Guides:'}
               </strong>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
-                <button onClick={() => navigate('certificate-services')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'சான்றிதழ் விண்ணப்ப உதவி (வருமானம், ஜாதி, இருப்பிடம்)' : 'Certificate Assistance (Income, Community, Nativity)'}</button>
+                <SpaLink to="/esevai-services" navigate={navigate} scrollToTop style={{ color: '#86efac', textDecoration: 'underline' }}>TN e-Sevai Hub</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('online-application-assistance')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'அரசு தேர்வு விண்ணப்ப உதவி (TNPSC, SSC, RRB)' : 'Govt Exam & College Application Support'}</button>
+                <SpaLink to="/certificate-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'சான்றிதழ் உதவி' : 'Certificate Services'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tn-govt-services-guide')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'அரசு சேவைகள் வழிகாட்டி (பட்டா, ரேஷன், EC)' : 'TN Citizen Services Guide (Patta, Ration, EC)'}</button>
+                <SpaLink to="/online-application-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'தேர்வு விண்ணப்ப உதவி' : 'Exam Application Support'}</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tn-govt-services-guide" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'பட்டா, ரேஷன் & EC' : 'Patta, Ration & EC Guide'}</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/online-document-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Online Document Services</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/passport-photo-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Passport Photo Guide</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tamil-nadu-district-esevai-guides" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>16-City Regional Guide</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/chennai-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Chennai</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/coimbatore-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Coimbatore</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/madurai-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Madurai</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/trichy-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Trichy</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/salem-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Salem</SpaLink>
               </div>
             </div>
 
-            {/* Photo Tools Footer Links */}
+            {/* Photo & PDF Tools Footer Links */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
               <strong style={{ fontSize: '12px', color: '#93c5fd', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                {lang === 'ta' ? '📸 இலவச போட்டோ & ஆவணக் கருவிகள்:' : '📸 Free Photo & Document Tools:'}
+                {lang === 'ta' ? '📸 இலவச போட்டோ & PDF கருவிகள்:' : '📸 Free Photo & PDF Browser Tools:'}
               </strong>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
-                <button onClick={() => navigate('photo-tools')} style={{ background: 'none', border: 'none', color: '#86efac', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>All Tools Hub</button>
+                <SpaLink to="/photo-tools" navigate={navigate} scrollToTop style={{ color: '#86efac', textDecoration: 'underline' }}>All 31 Tools</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/passport-size-photo')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Passport Photo</button>
+                <SpaLink to="/pdf-tools" navigate={navigate} scrollToTop style={{ color: '#93c5fd', textDecoration: 'underline' }}>PDF Tools Hub</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/signature-resize')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Signature Resize (20KB)</button>
+                <SpaLink to="/government-exam-tools" navigate={navigate} scrollToTop style={{ color: '#93c5fd', textDecoration: 'underline' }}>Exam Photo Hub</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-compress-20kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 20KB</button>
+                <SpaLink to="/tools/passport-size-photo" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Passport Photo</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-compress-50kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 50KB</button>
+                <SpaLink to="/tools/signature-resize" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Signature Resize (20KB)</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-compress-100kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 100KB</button>
+                <SpaLink to="/tools/tnpsc-photo-resizer" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>TNPSC Resizer</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-crop')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Photo Crop</button>
+                <SpaLink to="/tools/ssc-photo-resizer" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>SSC Resizer</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/pdf-merge')} style={{ background: 'none', border: 'none', color: '#fcd34d', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PDF Merge</button>
+                <SpaLink to="/tools/rrb-photo-resizer" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>RRB Resizer</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/dimension-checker')} style={{ background: 'none', border: 'none', color: '#fcd34d', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Dimension & DPI Checker</button>
+                <SpaLink to="/tools/photo-compress-20kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 20KB</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/govt-exam-photo-tool')} style={{ background: 'none', border: 'none', color: '#fcd34d', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Govt Exam Photo Tool</button>
+                <SpaLink to="/tools/photo-compress-50kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 50KB</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/jpg-to-pdf')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>JPG to PDF</button>
+                <SpaLink to="/tools/photo-compress-100kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 100KB</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/png-to-jpg')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PNG to JPG</button>
+                <SpaLink to="/tools/photo-compress-200kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 200KB</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/pdf-compress')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PDF Compress</button>
+                <SpaLink to="/tools/document-size-checker" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>Document Size Checker</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-merge" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Merge</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-split" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Split</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-rotate" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Rotate</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-extract" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Extract</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-to-jpg" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>PDF to JPG</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/jpg-to-pdf" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>JPG to PDF</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-compress" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>PDF Compress</SpaLink>
               </div>
             </div>
           </div>

@@ -5,6 +5,7 @@ import {
   Sparkles, AlignLeft, Send, Check
 } from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
+import SpaLink from '../components/SpaLink';
 
 export const pageMeta = { id: 'typing-services', title: 'Palani Tamil & English Typing Services' };
 
@@ -98,13 +99,13 @@ export default function TypingServicesPage({ navigate, lang = 'ta' }) {
     <div className="inner-page-shell" style={{ maxWidth: '1180px', margin: '0 auto', padding: '24px 16px 60px' }}>
       {/* 1. BREADCRUMB */}
       <nav aria-label="Breadcrumb" style={{ display: 'flex', gap: '8px', fontSize: '13px', color: '#64748b', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => navigate('home')} style={{ background: 'none', border: 'none', color: '#0052cc', cursor: 'pointer', padding: 0, fontWeight: 700 }}>
+        <SpaLink to="/" navigate={navigate} scrollToTop style={{ color: '#0052cc', fontWeight: 700, textDecoration: 'none' }}>
           {isTa ? 'முகப்பு' : 'Home'}
-        </button>
+        </SpaLink>
         <span>/</span>
-        <button onClick={() => navigate('services')} style={{ background: 'none', border: 'none', color: '#0052cc', cursor: 'pointer', padding: 0, fontWeight: 700 }}>
+        <SpaLink to="/services" navigate={navigate} scrollToTop style={{ color: '#0052cc', fontWeight: 700, textDecoration: 'none' }}>
           {isTa ? 'சேவைகள்' : 'Services'}
-        </button>
+        </SpaLink>
         <span>/</span>
         <span style={{ color: '#0f172a', fontWeight: 800 }}>
           {isTa ? 'தமிழ் & ஆங்கில டைப்பிங்' : 'Tamil & English Typing'}
@@ -283,24 +284,30 @@ export default function TypingServicesPage({ navigate, lang = 'ta' }) {
           🔗 {isTa ? 'தொடர்புடைய ஆவண சேவைகள்:' : 'Explore Related Document Services:'}
         </h3>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-          <button
-            onClick={() => navigate('xerox-printing')}
-            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          <SpaLink
+            to="/xerox-printing"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             🖨️ {isTa ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Colour Printing'} <ArrowRight size={14} />
-          </button>
-          <button
-            onClick={() => navigate('spiral-binding')}
-            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          </SpaLink>
+          <SpaLink
+            to="/spiral-binding"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             📚 {isTa ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'} <ArrowRight size={14} />
-          </button>
-          <button
-            onClick={() => navigate('services')}
-            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          </SpaLink>
+          <SpaLink
+            to="/services"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             🏛️ {isTa ? 'அனைத்து இ-சேவை சான்றிதழ்கள்' : 'All e-Sevai Services'} <ArrowRight size={14} />
-          </button>
+          </SpaLink>
         </div>
       </section>
 
@@ -392,8 +399,10 @@ export default function TypingServicesPage({ navigate, lang = 'ta' }) {
           >
             <Phone size={15} /> 93423 18844
           </a>
-          <button
-            onClick={() => navigate('contact')}
+          <SpaLink
+            to="/contact"
+            navigate={navigate}
+            scrollToTop
             style={{
               background: 'white',
               color: '#0052cc',
@@ -402,11 +411,11 @@ export default function TypingServicesPage({ navigate, lang = 'ta' }) {
               borderRadius: '10px',
               fontSize: '13px',
               fontWeight: 800,
-              cursor: 'pointer'
+              textDecoration: 'none'
             }}
           >
             {isTa ? 'வரைபடம் & வழிகாட்டுதல்' : 'Map & Directions'}
-          </button>
+          </SpaLink>
         </div>
       </section>
     </div>

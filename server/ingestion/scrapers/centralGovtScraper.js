@@ -145,6 +145,7 @@ export async function scrapeRrbNotifications(sourceConfig) {
     const isCenLink = href.includes('cenum=');
     const isRecruitmentCat =
       href.includes('category=Notification') ||
+      href.includes('category=Indicative Notice') ||
       href.includes('category=Indicative+Notice') ||
       href.includes('category=Indicative%20Notice') ||
       href.includes('category=Application') ||
@@ -161,7 +162,15 @@ export async function scrapeRrbNotifications(sourceConfig) {
       const dateMatch = rawText.match(/\((\d{2}-\d{2}-\d{4})\)/);
       const notifDate = dateMatch ? dateMatch[1] : '';
 
-      let absLink = href.startsWith('http') ? href : `https://rrbchennai.gov.in${href.startsWith('/') ? '' : '/'}${href}`;
+      let absLink;
+      try {
+        absLink = new URL(href.trim(), 'https://rrbchennai.gov.in/').toString();
+      } catch {
+        const trimmedHref = href.trim();
+        absLink = trimmedHref.startsWith('http')
+          ? trimmedHref.replace(/\s+/g, '%20')
+          : `https://rrbchennai.gov.in${trimmedHref.startsWith('/') ? '' : '/'}${trimmedHref}`.replace(/\s+/g, '%20');
+      }
 
       items.push({
         sourceKey: 'rrb_chennai',
