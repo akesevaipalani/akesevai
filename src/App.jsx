@@ -45,7 +45,8 @@ import {
   authenticateAdminApi,
   changeAdminPasswordApi,
   logoutAdminApi,
-  verifyAdminSessionApi
+  verifyAdminSessionApi,
+  hasCustomerAuthToken
 } from './utils/mongoService';
 import { saveDocBinary, getDocBinary, deleteDocBinary, getAllDocBinaries } from './utils/idbDocStore';
 import AdvertisementBannerSection from './components/AdvertisementBannerSection';
@@ -102,6 +103,13 @@ const OnlineDocumentServicesPage = lazy(() => import('./pages/OnlineDocumentServ
 const TamilNaduRegionalGuidePage = lazy(() => import('./pages/TamilNaduRegionalGuidePage'));
 const CityOnlineGuidePage = lazy(() => import('./pages/CityOnlineGuidePage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const PanCardServicePage = lazy(() => import('./pages/PanCardServicePage'));
+const IncomeCertificatePage = lazy(() => import('./pages/IncomeCertificatePage'));
+const CommunityCertificatePage = lazy(() => import('./pages/CommunityCertificatePage'));
+const SmartRationCardPage = lazy(() => import('./pages/SmartRationCardPage'));
+const PattaChittaPage = lazy(() => import('./pages/PattaChittaPage'));
+const AadhaarGuidancePage = lazy(() => import('./pages/AadhaarGuidancePage'));
+const EsevaiApplicationAssistancePage = lazy(() => import('./pages/EsevaiApplicationAssistancePage'));
 const NotificationTables = lazy(() => import('./components/NotificationTables'));
 const AdminSevaiSmartDesk = lazy(() => import('./components/AdminSevaiSmartDesk'));
 const FirstTimeLoginModal = lazy(() => import('./components/FirstTimeLoginModal'));
@@ -340,6 +348,171 @@ const appointmentSlots = APPOINTMENT_SLOTS_30MIN;
 const isFirebaseConfigured = () => false;
 import { setInStoreApplications } from './utils/statusStore';
 
+function formatUploadFailureMessage(err) {
+  const status = err?.status || 0;
+  const code = err?.code || '';
+  if (status === 401 || code === 'SESSION_EXPIRED' || code === 'UNAUTHORIZED') {
+    return '🔐 உங்கள் அமர்வு காலாவதியானது. மீண்டும் உள்நுழையவும் (401 Session expired — please login again).';
+  }
+  if (status === 403 || code === 'FORBIDDEN') {
+    return '⛔ இந்த கணக்கில் பதிவேற்ற அனுமதி இல்லை (403 Access denied).';
+  }
+  if (status === 404 || code === 'DOCUMENT_NOT_FOUND') {
+    return '⚠️ ஆவணப் பதிவு கிடைக்கவில்லை (404 Not found).';
+  }
+  if (status === 413 || code === 'PAYLOAD_TOO_LARGE') {
+    return '⚠️ கோப்பு அளவு மிக அதிகம் (413 File too large — reduce file size and retry).';
+  }
+  if (status === 429 || code === 'RATE_LIMITED') {
+    return '⏳ அதிக கோரிக்கைகள் (429). சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.';
+  }
+  if (status >= 500 || code === 'SERVER_UNAVAILABLE') {
+    return '⚠️ சர்வர் தற்காலிகமாக கிடைக்கவில்லை (5xx). மீண்டும் முயற்சிக்கவும்.';
+  }
+  if (err?.retryable || status === 0 || code === 'TIMEOUT' || code === 'NETWORK_ERROR') {
+    return '⏳ சர்வர் பதிலளிக்க நேரம் எடுத்தது (Timeout/Network). மீண்டும் முயற்சிக்கவும் (Please retry).';
+  }
+  return `❌ Upload failed: ${err?.message || String(err || 'Unknown error')}`;
+}
+
+async function prepareFilePayloadForUpload(file, { maxPdfKb = 100, maxImageKb = 100, maxRawBytes = 15 * 1024 * 1024 } = {}) {
+  if (!file) {
+    return { ok: false, error: '⚠️ கோப்பு தேர்ந்தெடுக்கப்படவில்லை (No file selected).' };
+  }
+  if (typeof file.size === 'number' && file.size > maxRawBytes) {
+    return { ok: false, error: '⚠️ கோப்பு அளவு 15 MB-க்கு மேல் இருக்கக்கூடாது (413 File exceeds max upload limit).' };
+  }
+
+  const fileName = file.name || '';
+  const fileExt = fileName.split('.').pop().toLowerCase();
+  const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+  const isAllowedType = validExts.includes(fileExt) || file.type?.startsWith('image/') || file.type === 'application/pdf';
+  if (!isAllowedType) {
+    return { ok: false, error: '❌ தவறான கோப்பு வகை (Invalid file format)! PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும்.' };
+  }
+
+  const rawKb = Math.round((file.size || 0) / 1024);
+  const isImage = Boolean(file.type?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt));
+
+  if (!isImage && rawKb > maxPdfKb) {
+    return { ok: false, error: `⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! PDF ஆவணம் கண்டிப்பாக ${maxPdfKb} KB-க்குள் இருக்க வேண்டும்.` };
+  }
+
+  const rawDataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result || '');
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+
+  if (!rawDataUrl) {
+    return { ok: false, error: '❌ கோப்பைப் படிக்க முடியவில்லை (Failed to read file). மீண்டும் முயற்சிக்கவும்.' };
+  }
+
+  let finalDataUrl = rawDataUrl;
+  if (isImage) {
+    try {
+      finalDataUrl = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          const maxDim = 800;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+
+          let quality = 0.70;
+          let result = canvas.toDataURL('image/jpeg', quality);
+          let calcKb = Math.round((result.length * 3) / 4 / 1024);
+
+          while (calcKb > maxImageKb && quality > 0.15) {
+            quality -= 0.10;
+            result = canvas.toDataURL('image/jpeg', quality);
+            calcKb = Math.round((result.length * 3) / 4 / 1024);
+          }
+          resolve(result);
+        };
+        img.onerror = () => resolve(rawDataUrl);
+        img.src = rawDataUrl;
+      });
+    } catch (e) {
+      finalDataUrl = rawDataUrl;
+    }
+  }
+
+  const finalKb = Math.round((finalDataUrl.length * 3) / 4 / 1024);
+  if (!isImage && finalKb > maxPdfKb) {
+    return { ok: false, error: `⚠️ கோப்பின் அளவு அதிகம் (${finalKb} KB)! ஆவணம் ${maxPdfKb} KB-க்குள் இருக்க வேண்டும்.` };
+  }
+
+  return {
+    ok: true,
+    dataUrl: finalDataUrl,
+    finalKb,
+    isImage,
+    mime: file.type || (isImage ? 'image/jpeg' : 'application/pdf')
+  };
+}
+
+async function performCanonicalDocumentUpload({
+  file,
+  customerPhone,
+  requirement,
+  applicationId = '',
+  maxPdfKb = 100,
+  maxImageKb = 100
+}) {
+  const prep = await prepareFilePayloadForUpload(file, { maxPdfKb, maxImageKb });
+  if (!prep.ok) {
+    const err = new Error(prep.error);
+    err.status = 400;
+    err.code = 'CLIENT_VALIDATION_FAILED';
+    throw err;
+  }
+
+  const clientRequestId = `REQ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const serverDoc = await saveExpiryDocumentCloud({
+    applicationId,
+    requirement,
+    name: file.name,
+    type: prep.mime,
+    customerPhone,
+    data: prep.dataUrl,
+    url: '',
+    clientRequestId,
+    uploadedAt: new Date().toISOString()
+  });
+
+  if (!serverDoc || !serverDoc.id) {
+    const err = new Error('Server did not return canonical document ID.');
+    err.status = 500;
+    err.code = 'MISSING_SERVER_DOC_ID';
+    throw err;
+  }
+
+  return {
+    canonicalDoc: {
+      id: serverDoc.id,
+      applicationId: serverDoc.applicationId || applicationId || '',
+      requirement: serverDoc.requirement || requirement,
+      name: serverDoc.name || file.name,
+      type: serverDoc.type || prep.mime,
+      uploadedAt: new Date().toLocaleDateString('en-IN'),
+      data: prep.dataUrl,
+      url: prep.dataUrl,
+      customerPhone
+    },
+    finalKb: prep.finalKb
+  };
+}
+
 const readCustomerRecords = () => {
   try {
     const raw1 = localStorage.getItem(CUSTOMER_RECORDS_KEY);
@@ -368,7 +541,6 @@ const saveCustomerRecord = (record) => {
     localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(current));
     localStorage.setItem('akesevai-customers', JSON.stringify(current));
   } catch (e) {}
-  saveCustomerProfileCloud(cleanPhone, normalizedRecord);
 };
 
 const readTokenBookings = () => {
@@ -572,7 +744,7 @@ function App() {
   });
   const [customer, setCustomer] = useState(() => {
     const phone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
-    if (!phone) return null;
+    if (!phone || !hasCustomerAuthToken()) return null;
     const records = readCustomerRecords();
     return records[phone] || { phone, profile: { name: 'Customer' }, applications: [], documents: [] };
   });
@@ -594,7 +766,7 @@ function App() {
 
   const t = translations[lang] || translations.en;
 
-  // Verify Admin Session with Backend on Mount
+  // Verify Admin Session with Backend on Mount & Handle 401 Auth Expiration
   useEffect(() => {
     if (adminLoggedIn) {
       verifyAdminSessionApi().then((isValid) => {
@@ -607,6 +779,28 @@ function App() {
         }
       }).catch(() => {});
     }
+
+    const handleAuthExpired = (evt) => {
+      const role = evt?.detail?.role;
+      if (role === 'admin' && sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true') {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        sessionStorage.removeItem('akesevai-admin-token');
+        setAdminLoggedIn(false);
+        setToast('🔐 Admin session expired. Please log in again.');
+        return;
+      }
+      if (sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY)) {
+        sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
+        localStorage.removeItem(CUSTOMER_SESSION_KEY);
+        sessionStorage.removeItem('akesevai-customer-token');
+        localStorage.removeItem('akesevai-customer-token');
+        setCustomer(null);
+        setToast('🔐 உங்கள் உள்நுழைவு அமர்வு காலாவதியாகிவிட்டது. மீண்டும் உள்நுழையவும் (Session expired — please login again).');
+      }
+    };
+
+    window.addEventListener('akesevai-auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('akesevai-auth-expired', handleAuthExpired);
   }, []);
 
   useEffect(() => {
@@ -1136,9 +1330,19 @@ function App() {
       setCustomer(record);
       setCustomerRecords((prev) => ({ ...prev, [cleanPhone || phone]: record }));
 
-      if (isComplete) {
-        saveCustomerProfileCloud(cleanPhone, record);
+      if (regDetails) {
+        saveCustomerProfileCloud(cleanPhone, { ...record, explicitDocumentsReplace: false });
       }
+      fetchAllCloudRecords().then((cloudData) => {
+        if (cloudData) {
+          if (cloudData.customers && typeof cloudData.customers === 'object') {
+            setCustomerRecords(cloudData.customers);
+          }
+          if (Array.isArray(cloudData.documents)) {
+            setCloudExpiryDocs(cloudData.documents);
+          }
+        }
+      }).catch(() => {});
 
       recordLoginEventCloud({
         type: 'customer_login',
@@ -1152,16 +1356,21 @@ function App() {
       notify(isNew ? 'Account created. Your details will be saved for your next login.' : `Welcome back ${custName}! Your saved details are ready.`);
     };
 
-    const updateCustomer = (updater) => {
+    const updateCustomer = (updater, options = {}) => {
       setCustomer((current) => {
         const updated = typeof updater === 'function' ? updater(current) : updater;
         if (!updated) return current;
         try {
           saveCustomerRecord(updated);
         } catch (e) {}
-        if (updated.phone) {
+        if (updated.phone && options.skipRemoteSync !== true) {
           try {
-            saveCustomerProfileCloud(updated.phone, updated);
+            saveCustomerProfileCloud(updated.phone, {
+              ...updated,
+              explicitDocumentsReplace: options.explicitDocumentsReplace === true,
+              deletedDocIds: options.deletedDocIds,
+              allowClearDocuments: options.allowClearDocuments === true
+            });
           } catch (e) {}
         }
         return updated;
@@ -1202,6 +1411,17 @@ function App() {
           localStorage.removeItem('akesevai-admin-password');
           sessionStorage.removeItem('akesevai-admin-password');
           setAdminLoggedIn(true);
+          fetchAllCloudRecords().then((cloudData) => {
+            if (cloudData) {
+              if (cloudData.customers && typeof cloudData.customers === 'object') setCustomerRecords(cloudData.customers);
+              if (Array.isArray(cloudData.tokens)) setTokenBookings(cloudData.tokens);
+              if (cloudData.applications && typeof cloudData.applications === 'object') {
+                setApplicationRecords(cloudData.applications);
+                setInStoreApplications(cloudData.applications);
+              }
+              if (Array.isArray(cloudData.documents)) setCloudExpiryDocs(cloudData.documents);
+            }
+          }).catch(() => {});
           recordLoginEventCloud({
             type: 'admin_login',
             role: 'Administrator'
@@ -1517,6 +1737,13 @@ function App() {
             {page === 'certificate-services' && <CertificateServicesPage navigate={navigate} lang={lang} />}
             {page === 'online-application-assistance' && <OnlineApplicationAssistancePage navigate={navigate} lang={lang} />}
             {page === 'tn-govt-services-guide' && <TnGovtServicesGuidePage navigate={navigate} lang={lang} />}
+            {page === 'pan-card-service' && <PanCardServicePage navigate={navigate} lang={lang} />}
+            {page === 'income-certificate' && <IncomeCertificatePage navigate={navigate} lang={lang} />}
+            {page === 'community-certificate' && <CommunityCertificatePage navigate={navigate} lang={lang} />}
+            {page === 'smart-ration-card' && <SmartRationCardPage navigate={navigate} lang={lang} />}
+            {page === 'patta-chitta' && <PattaChittaPage navigate={navigate} lang={lang} />}
+            {page === 'aadhaar-guidance' && <AadhaarGuidancePage navigate={navigate} lang={lang} />}
+            {page === 'esevai-application-assistance' && <EsevaiApplicationAssistancePage navigate={navigate} lang={lang} />}
             {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
             {page === 'photo-maker' && <PhotoMakerPage notify={notify} lang={lang} />}
             {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
@@ -2629,91 +2856,65 @@ const getServiceVisual = (group, title = '') => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploading, setUploading] = useState(false);
 
+    const uploadingAdminRef = useRef(false);
+
     const handleAdminUpload = async (e) => {
       e.preventDefault();
+      if (uploading || uploadingAdminRef.current) return;
       if (!selectedFile) {
         notify('❌ Please select a PDF or Image file to upload.');
         return;
       }
-      const cleanPhone = String(customerPhone).replace(/\D/g, '');
-      if (!cleanPhone) {
+      const cleanPhone = String(customerPhone).replace(/\D/g, '').slice(-10);
+      if (!cleanPhone || cleanPhone.length !== 10) {
         notify('❌ Invalid customer phone number.');
         return;
       }
 
-      const fileName = selectedFile.name || '';
-      const fileExt = fileName.split('.').pop().toLowerCase();
-      const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-      const isAllowedType = validExts.includes(fileExt) || selectedFile.type.startsWith('image/') || selectedFile.type === 'application/pdf';
-
-      if (!isAllowedType) {
-        notify('❌ தவறான கோப்பு வகை (Invalid file format)! PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும்.');
-        return;
-      }
-
-      const rawKb = Math.round(selectedFile.size / 1024);
-      const isImage = selectedFile.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt);
-
-      if (!isImage && rawKb > 100) {
-        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ஆவணம் கண்டிப்பாக 100 KB-க்குள் இருக்க வேண்டும். (PDF must be <= 100 KB)`);
-        return;
-      }
-
       const requirementName = docCategory === 'Other' ? (customRequirement.trim() || 'Uploaded Document') : docCategory;
-      
+
+      uploadingAdminRef.current = true;
       setUploading(true);
       notify(`⏳ Processing & Uploading ${selectedFile.name}...`);
 
       try {
-        const docRecord = await uploadFileToFirebaseStorage(selectedFile, 'customer_documents', cleanPhone);
-        if (docRecord && docRecord.url) {
-          const docId = `AK-${cleanPhone}-${requirementName.replace(/[^a-zA-Z0-9]/g, '_')}`;
-          const newDocument = {
-            id: docId,
-            applicationId: `ADMIN-${Date.now()}`,
-            requirement: requirementName,
-            name: selectedFile.name,
-            type: selectedFile.type || 'File',
-            uploadedAt: new Date().toLocaleDateString('en-IN'),
-            data: docRecord.url,
-            url: docRecord.url,
-            customerPhone: cleanPhone,
-            storagePath: docRecord.storagePath || ''
-          };
+        const { canonicalDoc } = await performCanonicalDocumentUpload({
+          file: selectedFile,
+          customerPhone: cleanPhone,
+          requirement: requirementName,
+          applicationId: `ADMIN-${Date.now()}`,
+          maxPdfKb: 100,
+          maxImageKb: 150
+        });
 
-          // Save to 'documents' collection in Firestore
-          await saveExpiryDocumentCloud(newDocument);
+        let currentCust = readCustomerRecords()[cleanPhone] || { phone: cleanPhone, profile: { name: customerName } };
+        const existingDocs = Array.isArray(currentCust.documents) ? currentCust.documents : [];
+        const filteredDocs = existingDocs.filter((d) => d && d.id !== canonicalDoc.id);
+        const updatedCust = {
+          ...currentCust,
+          phone: cleanPhone,
+          documents: [...filteredDocs, canonicalDoc],
+          updatedAt: new Date().toISOString()
+        };
 
-          // Update customer profile in 'customers' collection in Firestore
-          let currentCust = readCustomerRecords()[cleanPhone] || { phone: cleanPhone, profile: { name: customerName } };
-          const existingDocs = Array.isArray(currentCust.documents) ? currentCust.documents : [];
-          const filteredDocs = existingDocs.filter(d => d.requirement !== requirementName && d.id !== docId);
-          const updatedCust = {
-            ...currentCust,
-            phone: cleanPhone,
-            documents: [...filteredDocs, newDocument],
-            updatedAt: new Date().toISOString()
-          };
-          await saveCustomerProfileCloud(cleanPhone, updatedCust);
+        // Sync lightweight local/cloud record without downgrading canonical DOC- ID
+        await saveCustomerProfileCloud(cleanPhone, updatedCust);
 
-          // Update React state
-          if (setCustomerRecords) {
-            setCustomerRecords(prev => ({
-              ...prev,
-              [cleanPhone]: updatedCust
-            }));
-          }
-
-          setSelectedFile(null);
-          setCustomRequirement('');
-          notify(`🎉 Document "${requirementName}" uploaded and saved successfully!`);
-        } else {
-          notify('❌ Upload failed. Please try again.');
+        if (setCustomerRecords) {
+          setCustomerRecords((prev) => ({
+            ...prev,
+            [cleanPhone]: updatedCust
+          }));
         }
+
+        setSelectedFile(null);
+        setCustomRequirement('');
+        notify(`🎉 Document "${requirementName}" uploaded and saved successfully! (${canonicalDoc.id})`);
       } catch (err) {
-        notify(`❌ Upload error: ${err.message || String(err)}`);
+        notify(formatUploadFailureMessage(err));
       } finally {
         setUploading(false);
+        uploadingAdminRef.current = false;
       }
     };
 
@@ -3000,13 +3201,13 @@ const getServiceVisual = (group, title = '') => {
       if (!docIdKey) return;
 
       const docEntry = {
-        id: d.id || d.url || d.data || docIdKey,
+        id: d.id || d.docId || '',
         applicationId: d.applicationId || '',
         requirement: d.requirement || d.title || d.name,
         name: d.name || d.title || d.requirement || 'Uploaded Document',
         uploadedAt: d.uploadedAt ? (typeof d.uploadedAt === 'string' && d.uploadedAt.includes('T') ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : d.uploadedAt) : 'Recently',
-        data: d.url || d.data,
-        url: d.url || d.data,
+        data: d.url || d.data || '',
+        url: d.url || d.data || '',
         type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
       };
 
@@ -3195,10 +3396,11 @@ const getServiceVisual = (group, title = '') => {
 
     const isDocValidAndActive = (d) => {
       if (!d) return false;
-      // Must have actual file payload or valid URL reference (skip empty checklist slots & placeholders)
+      // Must have actual file payload or canonical document ID reference (skip empty checklist slots)
       const hasContent = Boolean(
         d.url || d.data || d.storagePath || d.fileData || d.binaryId ||
-        (typeof d.dataUrl === 'string' && d.dataUrl.length > 50)
+        (typeof d.dataUrl === 'string' && d.dataUrl.length > 50) ||
+        (typeof d.id === 'string' && /^(DOC|AK)-/.test(d.id))
       );
       if (!hasContent) return false;
 
@@ -4396,7 +4598,7 @@ const getServiceVisual = (group, title = '') => {
                                       const updatedDocs = (custObj.documents || []).filter(
                                         (d) => String(d.id) !== String(docId) && d.requirement !== reqName && String(d.url || d.data) !== String(docId) && String(d.name) !== String(document.name)
                                       );
-                                      const updatedCust = { ...custObj, documents: updatedDocs, updatedAt: new Date().toISOString() };
+                                      const updatedCust = { ...custObj, documents: updatedDocs, explicitDocumentsReplace: true, deletedDocIds: [docId], updatedAt: new Date().toISOString() };
                                       saveCustomerProfileCloud(cleanPhone, updatedCust);
                                       return {
                                         ...prev,
@@ -6439,19 +6641,21 @@ const getServiceVisual = (group, title = '') => {
     const cleanPhone = String(customer.phone || '').replace(/\D/g, '');
 
     const allCustomerDocsMap = new Map();
+    const makeDocMapKey = (d) => String(d.id || d.legacyId || (d.url && d.url.length > 20 ? d.url : '') || `${d.applicationId || ''}::${d.requirement || ''}::${d.name || ''}`).trim();
+
     customerDocs.forEach((d) => {
       if (!d) return;
-      const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+      const k = makeDocMapKey(d);
       if (k && !allCustomerDocsMap.has(k)) {
         allCustomerDocsMap.set(k, {
           ...d,
-          id: d.id || k,
+          id: d.id || d.docId || '',
           applicationId: d.applicationId || '',
           requirement: d.requirement || d.title || d.name,
           name: d.name || d.title || d.requirement || 'Uploaded Document',
           uploadedAt: d.uploadedAt || 'Recently',
-          data: d.url || d.data,
-          url: d.url || d.data,
+          data: d.url || d.data || '',
+          url: d.url || d.data || '',
           type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
         });
       }
@@ -6461,16 +6665,16 @@ const getServiceVisual = (group, title = '') => {
       if (!d) return;
       const docPhone = String(d.customerPhone || '').replace(/\D/g, '');
       if (cleanPhone && docPhone && cleanPhone === docPhone) {
-        const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+        const k = makeDocMapKey(d);
         if (k && !allCustomerDocsMap.has(k)) {
           allCustomerDocsMap.set(k, {
-            id: d.id || d.url || k,
+            id: d.id || d.docId || '',
             applicationId: d.applicationId || '',
             requirement: d.requirement || d.title || d.name,
             name: d.name || d.title || d.requirement || 'Uploaded Document',
             uploadedAt: d.uploadedAt ? (typeof d.uploadedAt === 'string' && d.uploadedAt.includes('T') ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : d.uploadedAt) : 'Recently',
-            data: d.url || d.data,
-            url: d.url || d.data,
+            data: d.url || d.data || '',
+            url: d.url || d.data || '',
             type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
           });
         }
@@ -6478,153 +6682,61 @@ const getServiceVisual = (group, title = '') => {
     });
 
     const allCustomerDocsList = Array.from(allCustomerDocsMap.values());
+    const uploadingReqsRef = useRef(new Set());
 
     const uploadDocument = async (event, requirement) => {
       const file = event.target.files?.[0];
       if (!file || !application) return;
 
-      const fileName = file.name || '';
-      const fileExt = fileName.split('.').pop().toLowerCase();
-      const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-      const isAllowedType = validExts.includes(fileExt) || file.type.startsWith('image/') || file.type === 'application/pdf';
-
-      if (!isAllowedType) {
-        notify('❌ தவறான கோப்பு வகை (Invalid file format)! தயவுசெய்து PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும் (Select PDF or JPG/PNG).');
-        event.target.value = '';
+      const lockKey = `${application.id || 'app'}::${requirement}`;
+      if (uploadingReqsRef.current.has(lockKey)) {
+        notify('⏳ இந்த ஆவணம் ஏற்கனவே பதிவேற்றப்படுகிறது... (Upload already in progress)');
         return;
       }
 
-      const targetMaxKb = 100;
-      const rawKb = Math.round(file.size / 1024);
-      const isImage = file.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt);
+      uploadingReqsRef.current.add(lockKey);
+      notify(`⏳ Processing & Uploading ${file.name}...`);
 
-      // PDF validation: Must be <= 100 KB
-      if (!isImage && rawKb > targetMaxKb) {
-        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ஆவணத்தின் அளவு கண்டிப்பாக 100 KB-க்குள் மட்டுமே இருக்க வேண்டும். (PDF must be <= 100 KB)`);
-        event.target.value = '';
-        return;
-      }
-
-      if (rawKb > targetMaxKb && isImage) {
-        notify(`⏳ கோப்பின் அளவு ${rawKb} KB. 100 KB வரம்பிற்குள் தானாக அமுக்கப்படுகிறது (Auto-compressing image under 100 KB)...`);
-      } else {
-        notify(`⏳ Processing ${file.name}...`);
-      }
-
-      // 1. Read file as Data URL INSTANTLY & Compress Images strictly <= 100 KB!
-      const rawDataUrl = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result || '');
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(file);
-      });
-
-      if (!rawDataUrl) {
-        notify('❌ Failed to read file. Please try again.');
-        event.target.value = '';
-        return;
-      }
-
-      let localDataUrl = rawDataUrl;
-      if (isImage) {
-        try {
-          localDataUrl = await new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => {
-              let w = img.width;
-              let h = img.height;
-              const maxDim = 800;
-              if (w > maxDim || h > maxDim) {
-                if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-                else { w = Math.round((w * maxDim) / h); h = maxDim; }
-              }
-              const canvas = document.createElement('canvas');
-              canvas.width = w;
-              canvas.height = h;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, w, h);
-              
-              let quality = 0.70;
-              let result = canvas.toDataURL('image/jpeg', quality);
-              let calcKb = Math.round((result.length * 3) / 4 / 1024);
-              
-              // Incrementally reduce quality if needed to ensure <= 100 KB
-              while (calcKb > 100 && quality > 0.15) {
-                quality -= 0.10;
-                result = canvas.toDataURL('image/jpeg', quality);
-                calcKb = Math.round((result.length * 3) / 4 / 1024);
-              }
-              resolve(result);
-            };
-            img.onerror = () => resolve(rawDataUrl);
-            img.src = rawDataUrl;
-          });
-        } catch (e) {
-          localDataUrl = rawDataUrl;
-        }
-      }
-
-      const finalKb = Math.round((localDataUrl.length * 3) / 4 / 1024);
-      if (finalKb > targetMaxKb && !isImage) {
-        notify(`⚠️ கோப்பின் அளவு அதிகம் (${finalKb} KB)! ஆவணம் 100 KB-க்குள் இருக்க வேண்டும்.`);
-        event.target.value = '';
-        return;
-      }
-
-      // UNIQUE docId ensures EVERY document uploaded by a customer is saved separately!
-      const docId = `DOC-${cleanPhone}-${requirement.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}`;
-      const documentObj = {
-        id: docId,
-        applicationId: application.id,
-        requirement,
-        name: file.name,
-        type: file.type || (isImage ? 'image/jpeg' : 'application/pdf'),
-        uploadedAt: new Date().toLocaleDateString('en-IN'),
-        data: localDataUrl,
-        url: localDataUrl,
-        customerPhone: customer.phone,
-        storagePath: ''
-      };
-
-      // Save to IndexedDB binary store immediately for full persistence across reloads
-      saveDocBinary(docId, localDataUrl, documentObj).catch(() => {});
-
-      const existingDocs = customer?.documents || [];
-      const filteredDocs = existingDocs.filter(
-        (item) =>
-          item.id !== docId &&
-          !(
-            (item.applicationId === application.id || !item.applicationId) &&
-            item.requirement &&
-            requirement &&
-            item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()
-          )
-      );
-
-      const updatedCustomerRecord = {
-        ...customer,
-        documents: [...filteredDocs, documentObj]
-      };
-
-      // 1. Update React state immediately with full documentObj for 0ms green card display
-      updateCustomer(updatedCustomerRecord);
-
-      // 2. Persist to MongoDB backend and localStorage
-      saveExpiryDocumentCloud({
-        id: docId,
-        applicationId: application.id,
-        name: file.name,
-        requirement,
-        url: localDataUrl,
-        data: localDataUrl,
-        customerPhone: customer.phone,
-        uploadedAt: new Date().toISOString()
-      });
-
-      notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name} - ${finalKb} KB)`);
       try {
-        event.target.value = '';
-      } catch (e) {}
+        const { canonicalDoc, finalKb } = await performCanonicalDocumentUpload({
+          file,
+          customerPhone: cleanPhone || customer.phone,
+          requirement,
+          applicationId: application.id,
+          maxPdfKb: 100,
+          maxImageKb: 100
+        });
+
+        const existingDocs = customer?.documents || [];
+        const filteredDocs = existingDocs.filter(
+          (item) =>
+            item &&
+            item.id !== canonicalDoc.id &&
+            !(
+              (item.applicationId === application.id || !item.applicationId) &&
+              item.requirement &&
+              requirement &&
+              item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()
+            )
+        );
+
+        const updatedCustomerRecord = {
+          ...customer,
+          documents: [...filteredDocs, canonicalDoc]
+        };
+
+        // Update React/local state with confirmed canonical server DOC- ID; POST /api/documents already persisted Customer.documents
+        updateCustomer(updatedCustomerRecord, { skipRemoteSync: true });
+
+        notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name} - ${finalKb} KB)`);
+      } catch (err) {
+        notify(formatUploadFailureMessage(err));
+      } finally {
+        uploadingReqsRef.current.delete(lockKey);
+        try {
+          event.target.value = '';
+        } catch (e) {}
+      }
     };
 
     const deleteDocument = async (requirement, documentObj) => {
@@ -6636,20 +6748,23 @@ const getServiceVisual = (group, title = '') => {
       const targetId = documentObj.id || `${application?.id}-${requirement}`;
       deleteDocBinary(targetId).catch(() => {});
 
-      // 1. Delete from local state instantly without deleting unrelated requirement docs
-      updateCustomer((current) => {
-        const existingDocs = current.documents || [];
-        const filtered = existingDocs.filter(
-          (item) =>
-            item.id !== targetId &&
-            item.data !== documentObj.data &&
-            item.name !== documentObj.name
-        );
-        return {
-          ...current,
-          documents: filtered
-        };
-      });
+      // 1. Delete from local state without erasing unrelated documents
+      updateCustomer(
+        (current) => {
+          const existingDocs = current.documents || [];
+          const filtered = existingDocs.filter(
+            (item) =>
+              item.id !== targetId &&
+              item.data !== documentObj.data &&
+              item.name !== documentObj.name
+          );
+          return {
+            ...current,
+            documents: filtered
+          };
+        },
+        { explicitDocumentsReplace: true, deletedDocIds: [targetId], allowClearDocuments: true }
+      );
 
       // 2. Delete from Cloud Firestore & Storage
       try {

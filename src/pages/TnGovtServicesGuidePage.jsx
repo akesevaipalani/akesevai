@@ -184,6 +184,19 @@ export default function TnGovtServicesGuidePage({ navigate, lang = 'ta' }) {
         </div>
       </section>
 
+      <section aria-label="Dedicated Tamil Nadu Service Guides" style={{ marginBottom: '28px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '14px', padding: '18px' }}>
+        <h2 style={{ fontSize: '17px', fontWeight: 800, color: '#0f172a', marginBottom: '12px' }}>
+          {isTa ? 'பிரத்யேக ஆவண & சேவை வழிகாட்டிகள்' : 'Dedicated Service Checklists & Guidance Pages'}
+        </h2>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          <SpaLink to="/smart-ration-card" navigate={navigate} scrollToTop style={{ background: 'white', border: '1px solid #cbd5e1', color: '#0052cc', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, textDecoration: 'none' }}>Smart Ration Card Guide</SpaLink>
+          <SpaLink to="/patta-chitta" navigate={navigate} scrollToTop style={{ background: 'white', border: '1px solid #cbd5e1', color: '#0052cc', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, textDecoration: 'none' }}>Patta &amp; Chitta Guide</SpaLink>
+          <SpaLink to="/aadhaar-guidance" navigate={navigate} scrollToTop style={{ background: 'white', border: '1px solid #cbd5e1', color: '#0052cc', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, textDecoration: 'none' }}>Aadhaar Document Guidance</SpaLink>
+          <SpaLink to="/pan-card-service" navigate={navigate} scrollToTop style={{ background: 'white', border: '1px solid #cbd5e1', color: '#0052cc', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, textDecoration: 'none' }}>PAN Card Assistance</SpaLink>
+          <SpaLink to="/esevai-application-assistance" navigate={navigate} scrollToTop style={{ background: 'white', border: '1px solid #cbd5e1', color: '#0052cc', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 700, textDecoration: 'none' }}>e-Sevai Application Assistance</SpaLink>
+        </div>
+      </section>
+
       <section style={{ marginBottom: '36px' }}>
         <h2 style={{ fontSize: '21px', fontWeight: 800, color: '#0f172a', marginBottom: '16px' }}>
           {isTa ? 'அடிக்கடி கேட்கப்படும் கேள்விகள் (FAQs)' : 'Frequently Asked Questions'}

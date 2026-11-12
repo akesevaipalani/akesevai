@@ -23,5 +23,12 @@ export const publicPages = [
   { id: 'coimbatore-online-esevai-assistance', label: 'Coimbatore Online Guide', file: 'pages/CityOnlineGuidePage.jsx' },
   { id: 'madurai-online-esevai-assistance', label: 'Madurai Online Guide', file: 'pages/CityOnlineGuidePage.jsx' },
   { id: 'trichy-online-esevai-assistance', label: 'Trichy Online Guide', file: 'pages/CityOnlineGuidePage.jsx' },
-  { id: 'salem-online-esevai-assistance', label: 'Salem Online Guide', file: 'pages/CityOnlineGuidePage.jsx' }
+  { id: 'salem-online-esevai-assistance', label: 'Salem Online Guide', file: 'pages/CityOnlineGuidePage.jsx' },
+  { id: 'pan-card-service', label: 'PAN Card Assistance', file: 'pages/PanCardServicePage.jsx' },
+  { id: 'income-certificate', label: 'Income Certificate Assistance', file: 'pages/IncomeCertificatePage.jsx' },
+  { id: 'community-certificate', label: 'Community Certificate Assistance', file: 'pages/CommunityCertificatePage.jsx' },
+  { id: 'smart-ration-card', label: 'Smart Ration Card Assistance', file: 'pages/SmartRationCardPage.jsx' },
+  { id: 'patta-chitta', label: 'Patta & Chitta Assistance', file: 'pages/PattaChittaPage.jsx' },
+  { id: 'aadhaar-guidance', label: 'Aadhaar Guidance', file: 'pages/AadhaarGuidancePage.jsx' },
+  { id: 'esevai-application-assistance', label: 'e-Sevai Application Assistance', file: 'pages/EsevaiApplicationAssistancePage.jsx' }
 ];

@@ -1,6 +1,7 @@
 // server/ingestion/scrapers/centralGovtScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { toKolkataIsoDate } from '../../../src/utils/notificationDateHelper.js';
 
 /**
  * Scrapes UPSC Active Examinations & Notices
@@ -85,14 +86,14 @@ export async function scrapeSscNotifications(sourceConfig) {
         detailsLink = notice.redirectUrl;
       }
 
-      // Format date if ISO string
+      // Project UTC/offset timestamp cleanly into Asia/Kolkata calendar date
       let publishedDate = '';
       if (notice.createdAt) {
-        try {
-          const d = new Date(notice.createdAt);
-          publishedDate = !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : '';
-        } catch (_) {}
+        publishedDate = toKolkataIsoDate(notice.createdAt);
       }
+
+      const startIso = notice.startDate ? (toKolkataIsoDate(notice.startDate) || notice.startDate) : '';
+      const endIso = notice.endDate ? (toKolkataIsoDate(notice.endDate) || notice.endDate) : '';
 
       items.push({
         sourceKey: 'ssc_notices',
@@ -101,8 +102,8 @@ export async function scrapeSscNotifications(sourceConfig) {
         service: headline,
         postName: headline,
         notificationNo: notice.id || '',
-        openingDate: notice.startDate || publishedDate || '',
-        closingDate: notice.endDate || '',
+        openingDate: startIso || publishedDate || '',
+        closingDate: endIso || '',
         examDate: 'Announced Soon',
         qualification: '10th / 12th / Any Degree (as per post)',
         ageLimit: '18 - 30 Years (Post wise)',
@@ -110,7 +111,8 @@ export async function scrapeSscNotifications(sourceConfig) {
         detailsLink,
         applyLink: 'https://ssc.gov.in/',
         source: 'Official Staff Selection Commission Portal (ssc.gov.in)',
-        sourceUrl: 'https://ssc.gov.in/'
+        sourceUrl: 'https://ssc.gov.in/',
+        sourcePublishedAt: publishedDate
       });
 
       if (items.length >= 8) break;

@@ -39,6 +39,8 @@ import {
   syncBankingNotificationsCloud,
   subscribeNotificationsCloud,
   fetchPendingNotificationsCloud,
+  fetchQuarantinedNotificationsCloud,
+  fetchIngestionStatusCloud,
   approveNotificationCloud,
   rejectNotificationCloud,
   triggerIngestionJobCloud
@@ -51,7 +53,9 @@ import {
   formatDisplayDate,
   validateNotificationDateForm,
   enrichNotificationWithDateStatus,
-  parseDateToComponents
+  parseDateToComponents,
+  getNotificationUiLabels,
+  normalizeLanguage
 } from '../utils/notificationDateHelper';
 
 export function normalizeCategory(cat) {
@@ -88,6 +92,8 @@ const CATEGORY_CONFIG = {
 };
 
 export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
+  const resolvedLang = normalizeLanguage(lang);
+  const ui = getNotificationUiLabels(resolvedLang);
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active_app' | 'upcoming_exams' | 'app_closed' | 'exam_completed' | 'updates'
@@ -118,18 +124,31 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
   const isAdmin = forceAdmin === true;
   const today = useMemo(() => getKolkataToday(), []);
 
-  // Admin Ingestion & Pending Review States
+  // Admin Ingestion, Quarantine & Telemetry States
   const [pendingNotifications, setPendingNotifications] = useState([]);
+  const [quarantinedNotifications, setQuarantinedNotifications] = useState([]);
   const [showPendingQueue, setShowPendingQueue] = useState(false);
+  const [showQuarantineQueue, setShowQuarantineQueue] = useState(false);
+  const [showTelemetryPanel, setShowTelemetryPanel] = useState(false);
+  const [ingestionTelemetry, setIngestionTelemetry] = useState(null);
   const [ingestionReport, setIngestionReport] = useState(null);
 
-  // Load pending review notifications when in Admin Mode
+  const loadAdminIngestionQueues = () => {
+    if (!isAdmin) return;
+    fetchPendingNotificationsCloud().then((data) => {
+      if (Array.isArray(data)) setPendingNotifications(data);
+    }).catch(() => {});
+    fetchQuarantinedNotificationsCloud().then((data) => {
+      if (Array.isArray(data)) setQuarantinedNotifications(data);
+    }).catch(() => {});
+    fetchIngestionStatusCloud().then((status) => {
+      if (status && status.status === 'ok') setIngestionTelemetry(status);
+    }).catch(() => {});
+  };
+
+  // Load pending, quarantined, and source health telemetry when in Admin Mode
   useEffect(() => {
-    if (isAdmin) {
-      fetchPendingNotificationsCloud().then((data) => {
-        if (Array.isArray(data)) setPendingNotifications(data);
-      }).catch(() => {});
-    }
+    loadAdminIngestionQueues();
   }, [isAdmin]);
 
   const handleApprovePending = async (id) => {
@@ -137,54 +156,83 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       const res = await approveNotificationCloud(id);
       if (res?.success) {
         setPendingNotifications((prev) => prev.filter((p) => p.id !== id));
+        setQuarantinedNotifications((prev) => prev.filter((q) => q.id !== id));
         const fresh = await fetchNotificationsCloud();
         if (Array.isArray(fresh) && fresh.length > 0) setNotifications(fresh);
-        setSyncMessage('✅ புதிய அறிவிப்பு வெற்றிகரமாக அங்கீகரிக்கப்பட்டு நேரலை தளத்தில் வெளியிடப்பட்டது!');
+        setSyncMessage(
+          resolvedLang === 'en'
+            ? '✅ Notification approved and published to the live board.'
+            : '✅ புதிய அறிவிப்பு வெற்றிகரமாக அங்கீகரிக்கப்பட்டு நேரலை தளத்தில் வெளியிடப்பட்டது!'
+        );
       } else {
-        alert(res?.message || 'ஒப்புதல் அளிப்பதில் பிழை');
+        alert(res?.message || (resolvedLang === 'en' ? 'Approval failed' : 'ஒப்புதல் அளிப்பதில் பிழை'));
       }
     } catch (e) {
-      alert('ஒப்புதல் அளிப்பதில் பிழை: ' + e.message);
+      alert((resolvedLang === 'en' ? 'Approval failed: ' : 'ஒப்புதல் அளிப்பதில் பிழை: ') + e.message);
     }
   };
 
   const handleRejectPending = async (id) => {
-    if (window.confirm('இந்த அறிவிப்பை நிராகரிக்க விரும்புகிறீர்களா? (Reject and remove candidate?)')) {
+    if (
+      window.confirm(
+        resolvedLang === 'en'
+          ? 'Reject this notification and store it in rejection suppression memory?'
+          : 'இந்த அறிவிப்பை நிராகரிக்க விரும்புகிறீர்களா? (Reject and store in suppression memory?)'
+      )
+    ) {
       try {
         await rejectNotificationCloud(id);
         setPendingNotifications((prev) => prev.filter((p) => p.id !== id));
-        setSyncMessage('ℹ️ அறிவிப்பு நிராகரிக்கப்பட்டு நீக்கப்பட்டது.');
+        setQuarantinedNotifications((prev) => prev.filter((q) => q.id !== id));
+        setSyncMessage(
+          resolvedLang === 'en'
+            ? 'ℹ️ Notification rejected and saved to Rejection Memory.'
+            : 'ℹ️ அறிவிப்பு நிராகரிக்கப்பட்டு தற்காலிக நினைவகத்தில் (Rejection Memory) சேமிக்கப்பட்டது.'
+        );
       } catch (e) {
-        alert('நிராகரிப்பதில் பிழை: ' + e.message);
+        alert((resolvedLang === 'en' ? 'Rejection failed: ' : 'நிராகரிப்பதில் பிழை: ') + e.message);
       }
     }
   };
 
   const handleRunIngestion = async () => {
     setIsSyncing(true);
-    setSyncMessage('⏳ அனைத்து அரசு தளங்களிலும் புதிய அறிவிப்புகள் தானாகத் தேடப்படுகின்றன (Scanning official sources)...');
+    setSyncMessage(
+      resolvedLang === 'en'
+        ? '⏳ Scanning official portals for new notifications...'
+        : '⏳ அனைத்து அரசு தளங்களிலும் புதிய அறிவிப்புகள் தானாகத் தேடப்படுகின்றன (Scanning official sources)...'
+    );
     try {
       const res = await triggerIngestionJobCloud();
       if (res?.success) {
         setIngestionReport(res.summary);
-        setSyncMessage(`✅ தானியங்கி ஸ்கேன் நிறைவடைந்தது! புதியவை: ${res.summary?.newRecordsInserted || 0}, நகல்கள்: ${res.summary?.duplicatesSkipped || 0}`);
+        setSyncMessage(
+          resolvedLang === 'en'
+            ? `✅ Automated scan completed! New: ${res.summary?.newRecordsInserted || 0}, Duplicates skipped: ${res.summary?.duplicatesSkipped || 0}`
+            : `✅ தானியங்கி ஸ்கேன் நிறைவடைந்தது! புதியவை: ${res.summary?.newRecordsInserted || 0}, நகல்கள்: ${res.summary?.duplicatesSkipped || 0}`
+        );
+        loadAdminIngestionQueues();
         const freshPending = await fetchPendingNotificationsCloud();
         setPendingNotifications(freshPending || []);
         if (freshPending && freshPending.length > 0) {
           setShowPendingQueue(true);
         }
       } else {
-        setSyncMessage('⚠️ தானியங்கி ஸ்கேன் செய்வதில் பிழை ஏற்பட்டது.');
+        setSyncMessage(
+          resolvedLang === 'en'
+            ? '⚠️ Error running automated scan.'
+            : '⚠️ தானியங்கி ஸ்கேன் செய்வதில் பிழை ஏற்பட்டது.'
+        );
       }
     } catch (err) {
-      setSyncMessage('⚠️ ஸ்கேன் பிழை: ' + err.message);
+      setSyncMessage((resolvedLang === 'en' ? '⚠️ Scan error: ' : '⚠️ ஸ்கேன் பிழை: ') + err.message);
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncMessage(''), 6000);
     }
   };
 
-  // Real-time MongoDB notifications subscription & Auto-Sync on mount
+  // Real-time MongoDB notifications subscription & safe read-only fetch on mount
   useEffect(() => {
     let isMounted = true;
 
@@ -193,8 +241,8 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
         const data = await fetchNotificationsCloud();
         if (isMounted && Array.isArray(data) && data.length > 0) {
           setNotifications(data);
-        } else if (isMounted && (!data || data.length === 0)) {
-          // Trigger automatic background master sync if DB was empty
+        } else if (isMounted && isAdmin && (!data || data.length === 0)) {
+          // Only admins trigger master feed sync when DB is empty; public users stay strictly read-only
           syncBankingNotificationsCloud().then(async () => {
             const fresh = await fetchNotificationsCloud();
             if (isMounted && Array.isArray(fresh) && fresh.length > 0) {
@@ -217,22 +265,27 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       isMounted = false;
       unsub();
     };
-  }, []);
+  }, [isAdmin]);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
     setSyncMessage('');
     try {
-      const res = await syncBankingNotificationsCloud();
-      if (res?.success) {
-        setSyncMessage(`✅ ${res.count || 'அனைத்து'} அரசு & போட்டித் தேர்வு அறிவிப்புகள் MongoDB Atlas-ல் வெற்றிகரமாக புதுப்பிக்கப்பட்டன!`);
-        const fresh = await fetchNotificationsCloud();
-        if (Array.isArray(fresh) && fresh.length > 0) {
-          setNotifications(fresh);
+      if (isAdmin) {
+        const res = await syncBankingNotificationsCloud();
+        if (res?.success) {
+          setSyncMessage(ui.syncSuccessAdmin(res.count));
         }
+      } else {
+        // Public users strictly use read-only GET /api/notifications (zero 403 write calls)
+        setSyncMessage(ui.syncSuccessPublic);
+      }
+      const fresh = await fetchNotificationsCloud();
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        setNotifications(fresh);
       }
     } catch (err) {
-      setSyncMessage('⚠️ புதுப்பித்தலில் பிழை ஏற்பட்டது.');
+      setSyncMessage(ui.syncError);
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncMessage(''), 4500);
@@ -240,7 +293,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
   };
 
   const handleDeleteNotification = async (id) => {
-    if (window.confirm('இந்த அறிவிப்பை நீக்க வேண்டுமா? (Delete this notification?)')) {
+    if (window.confirm(ui.deleteConfirm)) {
       await deleteNotificationCloud(id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     }
@@ -248,8 +301,8 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
   // Form Validation Preview for Admin
   const adminValidation = useMemo(() => {
-    return validateNotificationDateForm(formData.openingDate, formData.closingDate, formData.examDate);
-  }, [formData.openingDate, formData.closingDate, formData.examDate]);
+    return validateNotificationDateForm(formData.openingDate, formData.closingDate, formData.examDate, { lang: resolvedLang });
+  }, [formData.openingDate, formData.closingDate, formData.examDate, resolvedLang]);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
@@ -321,7 +374,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
     const rawList = notifications && notifications.length > 0 ? notifications : INITIAL_NOTIFICATIONS;
 
     // 1. Enrich every notification with live computed statuses
-    const enrichedList = rawList.map((item) => enrichNotificationWithDateStatus(item, today));
+    const enrichedList = rawList.map((item) => enrichNotificationWithDateStatus(item, today, { lang: resolvedLang }));
 
     // 2. Filter list
     let list = enrichedList.filter((item) => {
@@ -343,7 +396,14 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       if (statusFilter === 'exam_completed' && !item.examStatus.isCompleted) return false;
       if (statusFilter === 'updates') {
         const hasUpdateKeywords = `${item.service} ${item.importantDetails || ''}`.toLowerCase();
-        const isUpdate = hasUpdateKeywords.includes('result') || hasUpdateKeywords.includes('admit') || hasUpdateKeywords.includes('hall ticket') || hasUpdateKeywords.includes('answer key') || item.examStatus.isCompleted;
+        const isUpdate = Boolean(
+          item.resultStatus?.isPublished ||
+          hasUpdateKeywords.includes('result') ||
+          hasUpdateKeywords.includes('admit') ||
+          hasUpdateKeywords.includes('hall ticket') ||
+          hasUpdateKeywords.includes('answer key') ||
+          item.examStatus.isCompleted
+        );
         if (!isUpdate) return false;
       }
 
@@ -389,10 +449,10 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       // Both closed: sort by newest notification first
       return (b.updatedAt ? new Date(b.updatedAt) : 0) - (a.updatedAt ? new Date(a.updatedAt) : 0);
     });
-  }, [notifications, activeCategory, statusFilter, autoHideExpired, query, today]);
+  }, [notifications, activeCategory, statusFilter, autoHideExpired, query, today, resolvedLang]);
 
   return (
-    <div className="notification-tables-wrapper" style={{ marginTop: '16px', maxWidth: '1440px', marginInline: 'auto' }}>
+    <div className="notification-tables-wrapper" data-lang={resolvedLang} style={{ marginTop: '16px', maxWidth: '1440px', marginInline: 'auto' }}>
       
       {/* 1. TOP HEADER & CONTROLS */}
       <div
@@ -410,7 +470,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h2 style={{ font: '800 20px/1.3 Manrope, sans-serif', color: '#0f172a', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>📢 அனைத்து அரசு & போட்டித் தேர்வு நேரலை அறிவிப்புகள்</span>
+              <span>{ui.pageTitle}</span>
               <span
                 style={{
                   fontSize: '11px',
@@ -425,11 +485,11 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   gap: '4px'
                 }}
               >
-                <span>🟢</span> <span>நேரடி நேரலை Feed (Live)</span>
+                <span>🟢</span> <span>{ui.liveFeedBadge}</span>
               </span>
             </h2>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-              UPSC, SSC, வங்கி, ரயில்வே, TNPSC, காவல்துறை, ஆசிரியர் பணி, மருத்துவம் மற்றும் நுழைவுத் தேர்வுகள் — தேதி & தேர்வு நிலை தானாகப் புதுப்பிக்கப்படுகிறது.
+              {ui.pageSubtitle}
             </p>
           </div>
 
@@ -454,7 +514,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               }}
             >
               <RefreshCw size={16} className={isSyncing ? 'animate-spin' : ''} />
-              <span>{isSyncing ? 'புதுப்பிக்கிறது...' : '🔄 அறிவிப்புகளைப் புதுப்பி (Sync Feed)'}</span>
+              <span>{isSyncing ? ui.syncing : (isAdmin ? ui.syncMaster : ui.refreshFeed)}</span>
             </button>
 
             {isAdmin && (
@@ -477,7 +537,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                     boxShadow: '0 4px 12px rgba(124, 58, 237, 0.25)'
                   }}
                 >
-                  <Sparkles size={16} /> <span>⚡ அரசு தளங்களில் தேடு (Run Ingestion)</span>
+                  <Sparkles size={16} /> <span>{ui.runIngestion}</span>
                 </button>
 
                 <button
@@ -496,7 +556,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                     gap: '6px'
                   }}
                 >
-                  <span>📥 புதிய அறிவிப்புகள் ஒப்புதல்</span>
+                  <span>{ui.pendingApprovals}</span>
                   <span
                     style={{
                       background: pendingNotifications.length > 0 ? '#ea580c' : '#64748b',
@@ -509,6 +569,44 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   >
                     {pendingNotifications.length}
                   </span>
+                </button>
+
+                <button
+                  onClick={() => setShowQuarantineQueue(!showQuarantineQueue)}
+                  style={{
+                    background: quarantinedNotifications.length > 0 ? '#fee2e2' : '#f8fafc',
+                    color: quarantinedNotifications.length > 0 ? '#b91c1c' : '#475569',
+                    border: quarantinedNotifications.length > 0 ? '1px solid #fca5a5' : '1px solid #cbd5e1',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <ShieldAlert size={15} /> <span>{ui.quarantineBtn} ({quarantinedNotifications.length})</span>
+                </button>
+
+                <button
+                  onClick={() => setShowTelemetryPanel(!showTelemetryPanel)}
+                  style={{
+                    background: showTelemetryPanel ? '#e0f2fe' : '#f8fafc',
+                    color: '#0369a1',
+                    border: '1px solid #bae6fd',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Info size={15} /> <span>{ui.sourceHealthBtn}</span>
                 </button>
 
                 <button
@@ -528,7 +626,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                     boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
                   }}
                 >
-                  <Plus size={16} /> <span>➕ புதிய அறிவிப்பு சேர்க்க (Add)</span>
+                  <Plus size={16} /> <span>{ui.addNotificationBtn}</span>
                 </button>
               </>
             )}
@@ -555,6 +653,75 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
           </div>
         )}
 
+        {/* Admin Ingestion Quarantine Queue Panel */}
+        {isAdmin && showQuarantineQueue && (
+          <div style={{ background: '#fef2f2', border: '2px solid #fca5a5', borderRadius: '16px', padding: '18px', display: 'grid', gap: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#991b1b' }}>
+                {ui.quarantineQueueTitle} {quarantinedNotifications.length})
+              </h3>
+              <button onClick={() => setShowQuarantineQueue(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#991b1b' }}>
+                <X size={18} />
+              </button>
+            </div>
+            {quarantinedNotifications.length === 0 ? (
+              <div style={{ background: '#ffffff', padding: '12px', borderRadius: '10px', textAlign: 'center', color: '#15803d', fontWeight: 700, fontSize: '12.5px' }}>
+                {ui.quarantineQueueEmpty}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
+                {quarantinedNotifications.map((qItem) => (
+                  <div key={qItem.id} style={{ background: '#ffffff', border: '1px solid #fecaca', borderRadius: '10px', padding: '12px', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#0f172a' }}>{qItem.service}</div>
+                      <div style={{ fontSize: '11.5px', color: '#b91c1c', fontWeight: 700, marginTop: '4px' }}>
+                        Reason: {qItem.quarantineReason || 'LOW_TRUST_OR_SUSPICIOUS'} • Score: {qItem.trustScore ?? 0}/100
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => handleApprovePending(qItem.id)} style={{ background: '#16a34a', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{ui.approveOverrideBtn}</button>
+                      <button onClick={() => handleRejectPending(qItem.id)} style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{ui.rejectOverrideBtn}</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Admin Ingestion Source Health & Safety Telemetry Panel */}
+        {isAdmin && showTelemetryPanel && ingestionTelemetry && (
+          <div style={{ background: '#f0f9ff', border: '2px solid #bae6fd', borderRadius: '16px', padding: '18px', display: 'grid', gap: '10px', fontSize: '12.5px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ color: '#0369a1', fontSize: '14px' }}>
+                📡 Persistent Source Health Telemetry (Auto-Publish: {ingestionTelemetry.safetyFlags?.autoPublishEnabled ? 'ON' : 'OFF (Safe Mode)'})
+              </strong>
+              <button onClick={() => setShowTelemetryPanel(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#0369a1' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', color: '#0c4a6e', fontWeight: 700 }}>
+              <span>Published: {ingestionTelemetry.counts?.published ?? 0}</span>
+              <span>Pending: {ingestionTelemetry.counts?.pending ?? 0}</span>
+              <span>Quarantined: {ingestionTelemetry.counts?.quarantined ?? 0}</span>
+              <span>Rejected Memory: {ingestionTelemetry.counts?.rejected ?? 0}</span>
+              <span>Fencing Token: #{ingestionTelemetry.lockState?.fencingToken ?? 0}</span>
+            </div>
+            {Array.isArray(ingestionTelemetry.sourceHealth) && ingestionTelemetry.sourceHealth.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                {ingestionTelemetry.sourceHealth.map((sh) => (
+                  <div key={sh.sourceKey} style={{ background: '#ffffff', border: '1px solid #e0f2fe', padding: '8px 10px', borderRadius: '8px' }}>
+                    <div style={{ fontWeight: 800, color: '#0f172a' }}>{sh.sourceKey}</div>
+                    <div style={{ fontSize: '11px', color: sh.lastStatus === 'ok' ? '#15803d' : '#b91c1c', fontWeight: 700 }}>
+                      Status: {sh.lastStatus} • Failures: {sh.consecutiveFailures || 0}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Admin Ingestion Pending Review Approval Queue Panel */}
         {isAdmin && showPendingQueue && (
           <div
@@ -571,13 +738,13 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#92400e', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>📥 அரசு தளங்களில் கண்டறியப்பட்ட புதிய அறிவிப்புகள் (Pending Ingestion Review Queue)</span>
+                  <span>{ui.pendingQueueTitle}</span>
                   <span style={{ background: '#ea580c', color: 'white', padding: '2px 8px', borderRadius: '12px', fontSize: '12px' }}>
-                    {pendingNotifications.length} நிலுவை
+                    {pendingNotifications.length} {ui.pendingQueueCount}
                   </span>
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#b45309' }}>
-                  இவை TNPSC, IBPS, SSC, UPSC, Railway, Defence போன்ற அதிகாரப்பூர்வ தளங்களிலிருந்து தானாக எடுக்கப்பட்டவை. நீங்கள் ஒப்புதல் (Approve) அளித்த பிறகே பொதுத் தளத்தில் நேரலையாகும்.
+                  {ui.pendingQueueDesc}
                 </p>
               </div>
               <button
@@ -590,7 +757,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
             {pendingNotifications.length === 0 ? (
               <div style={{ background: '#ffffff', padding: '16px', borderRadius: '10px', textAlign: 'center', color: '#15803d', fontWeight: 700, fontSize: '13px' }}>
-                🟢 தற்போது ஒப்புதலுக்காக புதிய அறிவிப்புகள் நிலுவையில் இல்லை. (No pending notifications). மேலே உள்ள "அரசு தளங்களில் தேடு" பட்டனை அழுத்திப் புதிய அறிவிப்புகளை ஸ்கேன் செய்யலாம்.
+                {ui.pendingQueueEmpty}
               </div>
             ) : (
               <div style={{ display: 'grid', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
@@ -618,16 +785,31 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                         {cand.notificationNo && (
                           <span style={{ fontSize: '11px', color: '#0369a1', fontWeight: 700 }}>#{cand.notificationNo}</span>
                         )}
+                        {typeof cand.trustScore === 'number' && (
+                          <span style={{ fontSize: '11px', fontWeight: 800, background: cand.trustScore >= 85 ? '#dcfce7' : '#e0f2fe', color: cand.trustScore >= 85 ? '#15803d' : '#0369a1', padding: '2px 8px', borderRadius: '6px' }}>
+                            Trust: {cand.trustScore}/100 ({cand.docVerificationStatus || 'unverified'})
+                          </span>
+                        )}
+                        {cand.hasCorrigendum && (
+                          <span style={{ fontSize: '11px', fontWeight: 800, background: '#f3e8ff', color: '#7e22ce', padding: '2px 8px', borderRadius: '6px' }}>
+                            Corrigendum Proposal
+                          </span>
+                        )}
                       </div>
+                      {cand.corrigendumSummary && (
+                        <div style={{ fontSize: '11.5px', color: '#7e22ce', fontWeight: 700, marginBottom: '4px' }}>
+                          {cand.corrigendumSummary}
+                        </div>
+                      )}
                       <div style={{ fontWeight: 800, fontSize: '15px', color: '#0f172a', marginBottom: '6px' }}>
                         {cand.service}
                       </div>
                       <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '12px', color: '#475569' }}>
-                        <span>📅 தொடக்கம்: <strong>{cand.openingDate || 'அறிவிக்கப்படும்'}</strong></span>
-                        <span>⏳ கடைசி நாள்: <strong>{cand.closingDate || 'அறிவிக்கப்படும்'}</strong></span>
+                        <span>📅 {ui.openingDateLabel} <strong>{cand.openingDate || (resolvedLang === 'en' ? 'Announced Soon' : 'அறிவிக்கப்படும்')}</strong></span>
+                        <span>⏳ {ui.closingDateLabel} <strong>{cand.closingDate || (resolvedLang === 'en' ? 'Announced Soon' : 'அறிவிக்கப்படும்')}</strong></span>
                         {cand.detailsLink && (
                           <a href={cand.detailsLink} target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <span>அதிகாரப்பூர்வ ஆவணம்</span> <ExternalLink size={12} />
+                            <span>{ui.pdfDetailsBtn}</span> <ExternalLink size={12} />
                           </a>
                         )}
                       </div>
@@ -651,7 +833,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                           boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
                         }}
                       >
-                        <Check size={14} /> <span>ஒப்புதல் அளி (Approve)</span>
+                        <Check size={14} /> <span>{ui.approveBtn}</span>
                       </button>
 
                       <button
@@ -670,7 +852,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                           gap: '4px'
                         }}
                       >
-                        <Trash2 size={14} /> <span>நிராகரி</span>
+                        <Trash2 size={14} /> <span>{ui.rejectBtn}</span>
                       </button>
                     </div>
                   </div>
@@ -691,9 +873,9 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               autoComplete="off"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="🔍 தேர்வுப் பெயர், அமைப்பு (UPSC, TNPSC, SSC, SBI, RRB...), பதவி, தகுதி தேடவும்..."
+              placeholder={ui.searchPlaceholder}
             />
-            {query && <span className="search-count-pill">{filteredNotifications.length} Results</span>}
+            {query && <span className="search-count-pill">{filteredNotifications.length} {ui.resultsCountSuffix}</span>}
           </div>
 
           <label
@@ -720,7 +902,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               onChange={(e) => setAutoHideExpired(e.target.checked)}
               style={{ accentColor: '#d97706', width: '16px', height: '16px', cursor: 'pointer' }}
             />
-            <span>🚫 தேர்வு முடிந்தவற்றை மட்டும் மறை (Hide Finished)</span>
+            <span>{ui.hideFinished}</span>
           </label>
         </div>
 
@@ -730,6 +912,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             const Icon = cfg.icon;
             const isSelected = activeCategory === key;
             const count = counts[key] || 0;
+            const catLabel = ui.categories?.[key] || cfg.label;
 
             return (
               <button
@@ -755,7 +938,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                 }}
               >
                 <Icon size={14} />
-                <span>{cfg.label}</span>
+                <span>{catLabel}</span>
                 <span
                   style={{
                     background: isSelected ? 'rgba(255,255,255,0.25)' : '#f1f5f9',
@@ -784,13 +967,13 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             borderTop: '1px solid #f1f5f9'
           }}
         >
-          <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>வடிகட்டிகள் (Filter):</span>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b' }}>{ui.filterHeading}</span>
 
           <button
             className={`status-pill-btn ${statusFilter === 'all' ? 'pill-active' : ''}`}
             onClick={() => setStatusFilter('all')}
           >
-            📋 அனைத்து அறிவிப்புகள் (All)
+            {ui.filterAll}
           </button>
 
           <button
@@ -798,7 +981,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             onClick={() => setStatusFilter('active_app')}
             style={statusFilter === 'active_app' ? { background: '#15803d', color: '#ffffff', borderColor: '#15803d' } : {}}
           >
-            🔥 விண்ணப்பம் நடைபெறுகிறது (Active Applications)
+            {ui.filterActiveApp}
           </button>
 
           <button
@@ -806,7 +989,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             onClick={() => setStatusFilter('upcoming_exams')}
             style={statusFilter === 'upcoming_exams' ? { background: '#0284c7', color: '#ffffff', borderColor: '#0284c7' } : {}}
           >
-            📚 தேர்வு நடைபெற உள்ளது (Upcoming Exams)
+            {ui.filterUpcomingExam}
           </button>
 
           <button
@@ -814,21 +997,21 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             onClick={() => setStatusFilter('app_closed')}
             style={statusFilter === 'app_closed' ? { background: '#dc2626', color: '#ffffff', borderColor: '#dc2626' } : {}}
           >
-            🔴 விண்ணப்ப காலம் முடிந்தது (Application Closed)
+            {ui.filterAppClosed}
           </button>
 
           <button
             className={`status-pill-btn ${statusFilter === 'exam_completed' ? 'pill-active' : ''}`}
             onClick={() => setStatusFilter('exam_completed')}
           >
-            🔴 தேர்வு முடிந்தது (Exam Completed)
+            {ui.filterExamCompleted}
           </button>
 
           <button
             className={`status-pill-btn ${statusFilter === 'updates' ? 'pill-active' : ''}`}
             onClick={() => setStatusFilter('updates')}
           >
-            📢 முடிவுகள் / நுழைவுச் சீட்டு (Results & Updates)
+            {ui.filterUpdates}
           </button>
         </div>
       </div>
@@ -848,10 +1031,10 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
           >
             <Building2 size={48} color="#94a3b8" style={{ marginBottom: '14px' }} />
             <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#334155', margin: '0 0 8px' }}>
-              அறிவிப்புகள் எதுவும் கிடைக்கவில்லை / No Notifications Found
+              {ui.emptyTitle}
             </h3>
             <p style={{ fontSize: '13px', margin: '0 0 20px', maxWidth: '500px', marginInline: 'auto' }}>
-              தேர்ந்தெடுக்கப்பட்ட வடிகட்டியில் அறிவிப்புகள் இல்லை. புதிய அறிவிப்புகளைப் பெற கீழே உள்ள பொத்தானை அழுத்தவும்.
+              {ui.emptySubtitle}
             </p>
             <button
               onClick={handleManualSync}
@@ -866,7 +1049,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                 cursor: 'pointer'
               }}
             >
-              🔄 அனைத்துத் தேர்வுகளையும் உடனே புதுப்பிக்க (Sync Master Feed)
+              {isAdmin ? ui.syncAllAction : ui.refreshAction}
             </button>
           </div>
         ) : (
@@ -877,6 +1060,8 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               const isNew = notif.isNew === true;
               const appSt = notif.appStatus;
               const examSt = notif.examStatus;
+              const resSt = notif.resultStatus;
+              const needsReview = notif.needsAdminReview === true;
 
               return (
                 <div
@@ -884,15 +1069,20 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   className="notification-card govt-job-card notification-row-card"
                   data-category={notif.category}
                   data-id={notif.id}
+                  data-app-status={notif.applicationStatus}
+                  data-exam-status={notif.examStatusCode}
+                  data-result-status={notif.resultStatusCode}
                   style={{
                     background: '#ffffff',
-                    border: appSt.isOpen ? '1.5px solid #86efac' : (examSt.isUpcoming ? '1.5px solid #bae6fd' : '1.5px solid #e2e8f0'),
+                    border: needsReview
+                      ? '1.5px solid #f59e0b'
+                      : (notif.canShowApplyCta ? '1.5px solid #86efac' : (examSt.isUpcoming ? '1.5px solid #bae6fd' : '1.5px solid #e2e8f0')),
                     borderRadius: '20px',
                     padding: '22px',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
-                    boxShadow: appSt.isOpen ? '0 8px 24px rgba(22, 163, 74, 0.08)' : '0 4px 16px rgba(0, 0, 0, 0.03)',
+                    boxShadow: notif.canShowApplyCta ? '0 8px 24px rgba(22, 163, 74, 0.08)' : '0 4px 16px rgba(0, 0, 0, 0.03)',
                     position: 'relative',
                     transition: 'transform 0.15s ease, box-shadow 0.15s ease'
                   }}
@@ -941,7 +1131,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
                       {notif.notificationDate && (
                         <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
-                          அறிவிப்பு: {notif.formattedNotificationDate}
+                          {ui.publishedPrefix} {notif.formattedNotificationDate}
                         </span>
                       )}
                     </div>
@@ -989,16 +1179,16 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                       }}
                     >
                       <div>
-                        <strong>🎓 கல்வித் தகுதி:</strong> {notif.qualification || 'Any Graduation'}
+                        <strong>🎓 {ui.qualificationLabel}</strong> {notif.qualification || 'Any Graduation'}
                       </div>
                       {notif.ageLimit && (
                         <div style={{ color: '#475569' }}>
-                          <strong>⏳ வயது வரம்பு:</strong> {notif.ageLimit}
+                          <strong>⏳ {ui.ageLimitLabel}</strong> {notif.ageLimit}
                         </div>
                       )}
                       {notif.applicationFee && (
                         <div style={{ color: '#64748b', fontSize: '11.5px' }}>
-                          <strong>💳 கட்டணம்:</strong> {notif.applicationFee}
+                          <strong>💳 {ui.feeLabel}</strong> {notif.applicationFee}
                         </div>
                       )}
                       {notif.importantDetails && (
@@ -1028,7 +1218,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                         }}
                       >
                         <span style={{ color: '#64748b', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Calendar size={11} color="#0284c7" /> விண்ணப்ப தொடக்கம்:
+                          <Calendar size={11} color="#0284c7" /> {ui.openingDateLabel}
                         </span>
                         <strong style={{ color: '#0f172a', fontSize: '12.5px', marginTop: '2px', display: 'block' }}>
                           {notif.formattedOpeningDate}
@@ -1038,15 +1228,15 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                       {/* Tile 2: Application Closing Date */}
                       <div
                         style={{
-                          background: appSt.isExpired ? '#fef2f2' : (appSt.isLastDay ? '#fffbeb' : '#f0fdf4'),
-                          border: `1px solid ${appSt.isExpired ? '#fecaca' : (appSt.isLastDay ? '#fde68a' : '#bbf7d0')}`,
+                          background: appSt.isExpired ? '#fef2f2' : (appSt.isLastDay ? '#fffbeb' : (appSt.isInvalid || appSt.hasMissingDeadline ? '#fff7ed' : '#f0fdf4')),
+                          border: `1px solid ${appSt.isExpired ? '#fecaca' : (appSt.isLastDay ? '#fde68a' : (appSt.isInvalid || appSt.hasMissingDeadline ? '#fed7aa' : '#bbf7d0'))}`,
                           padding: '8px 10px',
                           borderRadius: '10px'
                         }}
                       >
                         <span
                           style={{
-                            color: appSt.isExpired ? '#dc2626' : (appSt.isLastDay ? '#b45309' : '#15803d'),
+                            color: appSt.tagColor || '#15803d',
                             fontSize: '10.5px',
                             fontWeight: 800,
                             display: 'flex',
@@ -1054,11 +1244,11 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                             gap: '4px'
                           }}
                         >
-                          <Clock size={11} /> கடைசி தேதி (Last Date):
+                          <Clock size={11} /> {appSt.hasExtendedDeadline ? ui.extendedClosingDateLabel : ui.closingDateLabel}
                         </span>
                         <strong
                           style={{
-                            color: appSt.isExpired ? '#dc2626' : (appSt.isLastDay ? '#b45309' : '#15803d'),
+                            color: appSt.tagColor || '#15803d',
                             fontSize: '12.5px',
                             marginTop: '2px',
                             display: 'block'
@@ -1066,14 +1256,19 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                         >
                           {notif.formattedClosingDate}
                         </strong>
+                        {appSt.hasExtendedDeadline && notif.formattedOriginalClosingDate && (
+                          <span style={{ display: 'block', fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                            {ui.originalClosingDateLabel} {notif.formattedOriginalClosingDate}
+                          </span>
+                        )}
                       </div>
 
                       {/* Tile 3: Exam Date (Spans Full Width) */}
                       <div
                         style={{
                           gridColumn: '1 / -1',
-                          background: examSt.isToday ? '#fff7ed' : (examSt.isUpcoming ? '#f0f9ff' : (examSt.isCompleted ? '#fef2f2' : '#f8fafc')),
-                          border: `1px solid ${examSt.isToday ? '#ffedd5' : (examSt.isUpcoming ? '#bae6fd' : (examSt.isCompleted ? '#fecaca' : '#e2e8f0'))}`,
+                          background: examSt.isToday ? '#fff7ed' : (examSt.isUpcoming ? '#f0f9ff' : (examSt.isCompleted || examSt.isInvalid ? '#fef2f2' : '#f8fafc')),
+                          border: `1px solid ${examSt.isToday ? '#ffedd5' : (examSt.isUpcoming ? '#bae6fd' : (examSt.isCompleted || examSt.isInvalid ? '#fecaca' : '#e2e8f0'))}`,
                           padding: '9px 12px',
                           borderRadius: '10px',
                           display: 'flex',
@@ -1094,7 +1289,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                               gap: '4px'
                             }}
                           >
-                            <CalendarDays size={13} /> தேர்வு தேதி (Exam Date):
+                            <CalendarDays size={13} /> {ui.examDateLabel}
                           </span>
                           <strong
                             style={{
@@ -1110,7 +1305,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                       </div>
                     </div>
 
-                    {/* DUAL-STATUS LIVE BADGES & COUNTDOWN CONTAINER */}
+                    {/* INDEPENDENT TRIPLE-STATUS LIVE BADGES & COUNTDOWN CONTAINER */}
                     <div
                       style={{
                         display: 'grid',
@@ -1165,109 +1360,191 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                           {examSt.countdown}
                         </span>
                       </div>
+
+                      {/* 3. Independent Verified Result Status Row */}
+                      {resSt && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', borderTop: '1px dashed #e2e8f0', paddingTop: '6px' }}>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              padding: '3px 8px',
+                              borderRadius: '12px',
+                              background: resSt.tagBg,
+                              color: resSt.tagColor,
+                              border: `1px solid ${resSt.tagBorder}`,
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {resSt.label}
+                          </span>
+                          {resSt.isPublished && resSt.resultLink && (
+                            <a
+                              href={resSt.resultLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ fontSize: '11px', fontWeight: 800, color: '#15803d', textDecoration: 'underline' }}
+                            >
+                              {ui.viewResultLink}
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* DATE INCONSISTENCY / ADMIN REVIEW WARNING BANNER */}
+                    {needsReview && notif.dateConsistency?.warnings?.length > 0 && (
+                      <div
+                        role="alert"
+                        data-testid="admin-date-review-warning"
+                        style={{
+                          background: '#fffbeb',
+                          border: '1px solid #f59e0b',
+                          color: '#92400e',
+                          padding: '9px 12px',
+                          borderRadius: '10px',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          lineHeight: 1.45,
+                          marginTop: '8px',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '8px'
+                        }}
+                      >
+                        <ShieldAlert size={16} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <div>
+                          <div>{notif.dateConsistency.warnings[0]}</div>
+                          {appSt.isOpen && !notif.canShowApplyCta && (
+                            <div style={{ fontSize: '10.5px', color: '#b45309', marginTop: '3px' }}>
+                              {ui.adminReviewPausedNote}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* ACTION BUTTONS & OFFICIAL LINKS */}
-                  <div
-                    style={{
-                      marginTop: '14px',
-                      paddingTop: '12px',
-                      borderTop: '1px solid #f1f5f9',
-                      display: 'flex',
-                      gap: '8px',
-                      alignItems: 'center'
-                    }}
-                  >
-                    {/* Official PDF / Details Button */}
-                    {notif.detailsLink && (
-                      <a
-                        href={notif.detailsLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          flex: 1,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          background: '#f8fafc',
-                          color: '#334155',
-                          border: '1px solid #cbd5e1',
-                          padding: '10px 12px',
-                          borderRadius: '10px',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          textDecoration: 'none'
-                        }}
-                      >
-                        <FileText size={14} /> <span>PDF விவரம்</span>
-                      </a>
-                    )}
+                  <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #f1f5f9', display: 'grid', gap: '8px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        gap: '8px',
+                        alignItems: 'center'
+                      }}
+                    >
+                      {/* Official PDF / Details Button */}
+                      {notif.detailsLink && (
+                        <a
+                          href={notif.detailsLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            flex: 1,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            background: '#f8fafc',
+                            color: '#334155',
+                            border: '1px solid #cbd5e1',
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            textDecoration: 'none'
+                          }}
+                        >
+                          <FileText size={14} /> <span>{ui.pdfDetailsBtn}</span>
+                        </a>
+                      )}
 
-                    {/* Official Apply Button */}
-                    {notif.applyLink && appSt.isOpen ? (
-                      <a
-                        href={notif.applyLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          flex: 1.3,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '10px 12px',
-                          borderRadius: '10px',
-                          fontSize: '12px',
-                          fontWeight: 800,
-                          textDecoration: 'none',
-                          boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
-                        }}
-                      >
-                        <span>விண்ணப்பிக்க</span> <ExternalLink size={14} />
-                      </a>
-                    ) : (
-                      <button
-                        disabled
-                        style={{
-                          flex: 1.3,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          background: '#f1f5f9',
-                          color: '#94a3b8',
-                          border: '1px solid #e2e8f0',
-                          padding: '10px 12px',
-                          borderRadius: '10px',
-                          fontSize: '12px',
-                          fontWeight: 700,
-                          cursor: 'not-allowed'
-                        }}
-                      >
-                        <span>{appSt.isExpired ? 'விண்ணப்பம் முடிந்தது' : 'விண்ணப்பம் தொடங்கவில்லை'}</span>
-                      </button>
-                    )}
+                      {/* Official Apply CTA — strictly gated by application OPEN + safe URL + date consistency */}
+                      {notif.applyCtaState === 'ACTIVE' ? (
+                        <a
+                          href={notif.applyLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            flex: 1.3,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            textDecoration: 'none',
+                            boxShadow: '0 2px 8px rgba(22, 163, 74, 0.25)'
+                          }}
+                        >
+                          <span>{ui.applyNowBtn}</span> <ExternalLink size={14} />
+                        </a>
+                      ) : (
+                        <button
+                          disabled
+                          style={{
+                            flex: 1.3,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            background: notif.applyCtaState === 'NEEDS_REVIEW_DISABLED' ? '#fef3c7' : '#f1f5f9',
+                            color: notif.applyCtaState === 'NEEDS_REVIEW_DISABLED' ? '#92400e' : '#94a3b8',
+                            border: notif.applyCtaState === 'NEEDS_REVIEW_DISABLED' ? '1px solid #f59e0b' : '1px solid #e2e8f0',
+                            padding: '10px 12px',
+                            borderRadius: '10px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'not-allowed'
+                          }}
+                        >
+                          <span>
+                            {notif.applyCtaState === 'NEEDS_REVIEW_DISABLED'
+                              ? ui.applyPendingReviewBtn
+                              : (appSt.isExpired
+                                ? ui.applyClosedBtn
+                                : (appSt.status === 'NOT_STARTED' ? ui.applyNotStartedBtn : ui.applyDateUnverifiedBtn))}
+                          </span>
+                        </button>
+                      )}
 
-                    {isAdmin && (
-                      <button
-                        onClick={() => handleDeleteNotification(notif.id)}
-                        title="Delete notification"
-                        style={{
-                          background: '#fee2e2',
-                          color: '#dc2626',
-                          border: '1px solid #fca5a5',
-                          padding: '9px',
-                          borderRadius: '10px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteNotification(notif.id)}
+                          title="Delete notification"
+                          style={{
+                            background: '#fee2e2',
+                            color: '#dc2626',
+                            border: '1px solid #fca5a5',
+                            padding: '9px',
+                            borderRadius: '10px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Reference-only official URL when application is CLOSED (never an active Apply CTA) */}
+                    {appSt.isExpired && notif.hasVerifiedReferenceApplyUrl && (
+                      <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                        <span>{ui.referenceFooterLabel}</span>
+                        <a
+                          href={notif.applyLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: '#475569', fontWeight: 700, textDecoration: 'underline' }}
+                        >
+                          {ui.referenceFooterAction}
+                        </a>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1323,7 +1600,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
             </button>
 
             <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', margin: '0 0 16px' }}>
-              ➕ புதிய தேர்வு / வேலைவாய்ப்பு அறிவிப்பு சேர்க்க (Add Notification)
+              {ui.modalTitle}
             </h2>
 
             {/* Live Admin Date Validation Warnings / Errors */}
@@ -1379,16 +1656,16 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               }}
             >
               <div style={{ fontWeight: 800, color: '#0369a1' }}>
-                🔍 நேரலை நிலை முன்னோட்டம் (Live Status Preview):
+                {ui.modalLivePreview}
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700, color: '#334155' }}>விண்ணப்பம்:</span>
+                <span style={{ fontWeight: 700, color: '#334155' }}>{ui.modalAppPrefix}</span>
                 <span style={{ fontWeight: 800, color: adminValidation.appStatus.tagColor }}>
                   {adminValidation.appStatus.label} ({adminValidation.appStatus.countdown})
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontWeight: 700, color: '#334155' }}>தேர்வு:</span>
+                <span style={{ fontWeight: 700, color: '#334155' }}>{ui.modalExamPrefix}</span>
                 <span style={{ fontWeight: 800, color: adminValidation.examStatus.tagColor }}>
                   {adminValidation.examStatus.label} ({adminValidation.examStatus.countdown})
                 </span>
@@ -1397,7 +1674,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
             <form onSubmit={handleAddSubmit} style={{ display: 'grid', gap: '12px' }}>
               <label htmlFor="modal-notif-category" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                பிரிவு (Category):
+                {ui.modalCategory}
                 <select
                   id="modal-notif-category"
                   name="notification_category"
@@ -1405,21 +1682,21 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px', fontWeight: 700 }}
                 >
-                  <option value="banking">🏦 வங்கி & நிதி (Banking & Finance)</option>
-                  <option value="upsc">🏛️ மத்திய அரசு (UPSC / Central Govt)</option>
-                  <option value="ssc">📑 பணியாளர் தேர்வாணையம் (SSC)</option>
-                  <option value="railway">🚆 ரயில்வே (Railway / RRB)</option>
-                  <option value="tnpsc">🏢 தமிழ்நாடு அரசு (TNPSC / State Govt)</option>
-                  <option value="police_defence">👮 காவல்துறை / ராணுவம் (Police & Defence)</option>
-                  <option value="teaching">👨‍🏫 ஆசிரியர் பணி (Teaching & TET)</option>
-                  <option value="medical">🏥 மருத்துவம் & நர்சிங் (Medical & Health)</option>
-                  <option value="entrance">🎓 நுழைவுத் தேர்வுகள் (Entrance Exams)</option>
-                  <option value="psu">🏭 பொதுத்துறை & தொழில்முறை (PSU & Technical)</option>
+                  <option value="banking">🏦 {ui.categories?.banking || 'Banking & Finance'}</option>
+                  <option value="upsc">🏛️ {ui.categories?.upsc || 'UPSC / Central Govt'}</option>
+                  <option value="ssc">📑 {ui.categories?.ssc || 'SSC'}</option>
+                  <option value="railway">🚆 {ui.categories?.railway || 'Railway / RRB'}</option>
+                  <option value="tnpsc">🏢 {ui.categories?.tnpsc || 'TNPSC / State Govt'}</option>
+                  <option value="police_defence">👮 {ui.categories?.police_defence || 'Police & Defence'}</option>
+                  <option value="teaching">👨‍🏫 {ui.categories?.teaching || 'Teaching & TET'}</option>
+                  <option value="medical">🏥 {ui.categories?.medical || 'Medical & Health'}</option>
+                  <option value="entrance">🎓 {ui.categories?.entrance || 'Entrance Exams'}</option>
+                  <option value="psu">🏭 {ui.categories?.psu || 'PSU & Technical'}</option>
                 </select>
               </label>
 
               <label htmlFor="modal-notif-organization" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                நிறுவனம் / அமைப்பு (Organization):
+                {ui.modalOrg}
                 <input
                   id="modal-notif-organization"
                   name="notification_organization"
@@ -1433,7 +1710,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               </label>
 
               <label htmlFor="modal-notif-service" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                அறிவிப்பு தலைப்பு (Exam / Recruitment Title):
+                {ui.modalTitleField}
                 <input
                   id="modal-notif-service"
                   name="notification_title"
@@ -1448,7 +1725,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <label htmlFor="modal-notif-post" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  பதவிப் பெயர் (Post Name):
+                  {ui.modalPostName}
                   <input
                     id="modal-notif-post"
                     name="notification_post"
@@ -1460,7 +1737,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   />
                 </label>
                 <label htmlFor="modal-notif-posts" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  காலிப்பணியிடங்கள் (Posts):
+                  {ui.modalPosts}
                   <input
                     id="modal-notif-posts"
                     name="notification_posts_count"
@@ -1475,7 +1752,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <label htmlFor="modal-notif-qualification" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  கல்வித் தகுதி (Qualification):
+                  {ui.modalQualification}
                   <input
                     id="modal-notif-qualification"
                     name="notification_qualification"
@@ -1487,7 +1764,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   />
                 </label>
                 <label htmlFor="modal-notif-age" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  வயது வரம்பு (Age Limit):
+                  {ui.modalAgeLimit}
                   <input
                     id="modal-notif-age"
                     name="notification_age_limit"
@@ -1503,7 +1780,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               {/* DATES SECTION (DD-MM-YYYY OR YYYY-MM-DD) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <label htmlFor="modal-notif-opening-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  தொடங்கும் தேதி (DD-MM-YYYY):
+                  {ui.modalOpeningDate}
                   <input
                     id="modal-notif-opening-date"
                     name="notification_opening_date"
@@ -1515,7 +1792,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   />
                 </label>
                 <label htmlFor="modal-notif-closing-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  கடைசி தேதி (DD-MM-YYYY):
+                  {ui.modalClosingDate}
                   <input
                     id="modal-notif-closing-date"
                     name="notification_closing_date"
@@ -1530,19 +1807,19 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <label htmlFor="modal-notif-exam-date" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  தேர்வு தேதி (Exam Date / DD-MM-YYYY):
+                  {ui.modalExamDate}
                   <input
                     id="modal-notif-exam-date"
                     name="notification_exam_date"
                     type="text"
                     value={formData.examDate}
                     onChange={(e) => setFormData({ ...formData, examDate: e.target.value })}
-                    placeholder="15-11-2026 அல்லது November 2026"
+                    placeholder={resolvedLang === 'en' ? '15-11-2026 or November 2026' : '15-11-2026 அல்லது November 2026'}
                     style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', marginTop: '4px', fontSize: '13px' }}
                   />
                 </label>
                 <label htmlFor="modal-notif-fee" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  விண்ணப்பக் கட்டணம் (Fee):
+                  {ui.modalFee}
                   <input
                     id="modal-notif-fee"
                     name="notification_fee"
@@ -1556,7 +1833,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
               </div>
 
               <label htmlFor="modal-notif-details" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                முக்கிய விவரங்கள் (Important Details):
+                {ui.modalDetails}
                 <input
                   id="modal-notif-details"
                   name="notification_details"
@@ -1570,7 +1847,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <label htmlFor="modal-notif-pdf-url" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  PDF / அறிவிப்பு URL:
+                  {ui.modalPdfUrl}
                   <input
                     id="modal-notif-pdf-url"
                     name="notification_pdf_url"
@@ -1582,7 +1859,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   />
                 </label>
                 <label htmlFor="modal-notif-apply-url" style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                  விண்ணப்பிக்கும் URL:
+                  {ui.modalApplyUrl}
                   <input
                     id="modal-notif-apply-url"
                     name="notification_apply_url"
@@ -1612,7 +1889,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
                   marginTop: '8px'
                 }}
               >
-                💾 அறிவிப்பை MongoDB Atlas-ல் சேமிக்கவும் (Save Notification)
+                {ui.modalSaveBtn}
               </button>
             </form>
           </div>

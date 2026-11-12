@@ -8,14 +8,13 @@ import crypto from 'crypto';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 import {
-  getKolkataToday,
-  calculateApplicationStatus,
-  calculateExamStatus,
-  enrichNotificationWithDateStatus
-} from './src/utils/notificationDateHelper.js';
+  registerNotificationAndIngestionRoutes
+} from './server/ingestion/ingestionRoutes.js';
 import {
-  runAllIngestionJobs,
-  getIngestionStatus
+  recoverStaleIngestionJobs
+} from './server/ingestion/ingestionLockHelper.js';
+import {
+  runAllIngestionJobs
 } from './server/ingestion/ingestionManager.js';
 import {
   escapeHtml,
@@ -97,7 +96,40 @@ app.use((req, res, next) => {
 });
 
 // Middleware
-app.use(cors());
+const rawAllowedOrigins = String(process.env.ALLOWED_ORIGINS || '').trim();
+const allowedOriginPatterns = rawAllowedOrigins
+  ? rawAllowedOrigins.split(',').map((entry) => entry.trim()).filter(Boolean)
+  : [];
+
+const matchesAllowedCorsOrigin = (origin, pattern) => {
+  if (pattern === '*') return true;
+  if (origin === pattern) return true;
+  if (pattern.startsWith('https://*.') || pattern.startsWith('http://*.')) {
+    try {
+      const parsedOrigin = new URL(origin);
+      const [scheme, wildcardSuffix] = pattern.split('*.');
+      const expectedProto = scheme.slice(0, -2); // "https:" or "http:"
+      const suffix = String(wildcardSuffix || '').toLowerCase();
+      const host = parsedOrigin.hostname.toLowerCase();
+      return parsedOrigin.protocol === expectedProto && (host === suffix || host.endsWith(`.${suffix}`));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+};
+
+app.use(
+  allowedOriginPatterns.length > 0
+    ? cors({
+        origin: (origin, callback) => {
+          if (!origin) return callback(null, true);
+          const ok = allowedOriginPatterns.some((pattern) => matchesAllowedCorsOrigin(origin, pattern));
+          return ok ? callback(null, true) : callback(new Error('CORS_ORIGIN_NOT_ALLOWED'));
+        }
+      })
+    : cors()
+);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -196,8 +228,11 @@ const documentSchema = new mongoose.Schema({
   customerPhone: { type: String, default: '' },
   name: { type: String, default: 'Document' },
   requirement: { type: String, default: '' },
+  type: { type: String, default: '' },
   url: { type: String, default: '' },
   data: { type: String, default: '' },
+  contentHash: { type: String, default: '', index: true },
+  clientRequestId: { type: String, default: '', index: true },
   uploadedAt: { type: Date, default: Date.now }
 });
 
@@ -255,8 +290,10 @@ const notificationSchema = new mongoose.Schema({
   isNew: { type: Boolean, default: true },
   status: { type: String, default: 'active' }, // 'active' | 'expired' | 'upcoming'
 
-  // Phase 1 Automatic Ingestion Foundation Metadata
-  ingestionStatus: { type: String, default: 'published', index: true }, // 'published' | 'pending_review'
+  // Phase 1 Automatic Ingestion Foundation & Safety Metadata
+  sourceKey: { type: String, default: '', index: true },
+  noticeType: { type: String, default: 'unknown' },
+  ingestionStatus: { type: String, default: 'published', index: true }, // 'published' | 'pending_review' | 'quarantined' | 'rejected'
   sourceUrl: { type: String, default: '' },
   notificationNo: { type: String, default: '' },
   sourcePublishedAt: { type: String, default: '' },
@@ -265,9 +302,126 @@ const notificationSchema = new mongoose.Schema({
   ingestionSource: { type: String, default: 'manual_admin' }, // 'manual_admin' | 'verified_master_feed' | 'scraper_tnpsc' | etc.
   ingestionError: { type: String, default: '' },
   fingerprint: { type: String, default: '', index: true },
+  identityFingerprint: { type: String, default: '', index: true },
+  contentHash: { type: String, default: '', index: true },
+
+  // Phase 1 Trust Scoring, Verification, Corrigendum & Write-Fencing Metadata
+  trustScore: { type: Number, default: 100 },
+  trustTier: { type: String, default: 'high' },
+  trustBreakdown: { type: Object, default: {} },
+  autoPublished: { type: Boolean, default: false },
+  docVerificationStatus: { type: String, default: '' },
+  docVerificationReason: { type: String, default: '' },
+  quarantineReason: { type: String, default: '' },
+  hasCorrigendum: { type: Boolean, default: false },
+  corrigendumSummary: { type: String, default: '' },
+  corrigendumDetectedAt: { type: Date, default: null },
+  parentNotificationId: { type: String, default: '' },
+  revisionCount: { type: Number, default: 0 },
+  revisionHistory: { type: [Object], default: [] },
+  rejectedAt: { type: Date, default: null },
+  rejectedReason: { type: String, default: '' },
+  rejectedContentHash: { type: String, default: '' },
+  manualOverrideLock: { type: Boolean, default: false },
+  publishRunId: { type: String, default: '', index: true },
+  originJobId: { type: String, default: '' },
+  originFencingToken: { type: Number, default: 0 },
+  lastWriteFencingToken: { type: Number, default: 0 },
+  lastIngestedJobId: { type: String, default: '' },
 
   updatedAt: { type: Date, default: Date.now }
 }, { suppressReservedKeysWarning: true });
+
+notificationSchema.index({ ingestionStatus: 1, updatedAt: -1 });
+notificationSchema.index({ sourceKey: 1, notificationNo: 1 });
+
+// 11. Durable Ingestion Job Queue & Checkpoints Schema (No active TTL deletion)
+const ingestionJobSchema = new mongoose.Schema({
+  jobId: { type: String, required: true, unique: true, index: true },
+  triggerType: { type: String, default: 'manual_admin' },
+  status: { type: String, default: 'pending', index: true }, // 'pending' | 'running' | 'completed' | 'completed_with_errors' | 'failed'
+  dryRun: { type: Boolean, default: false },
+  sourceKeyFilter: { type: String, default: '' },
+  ownerRunId: { type: String, default: '' },
+  fencingToken: { type: Number, default: null },
+  attemptCount: { type: Number, default: 0 },
+  maxAttempts: { type: Number, default: 3 },
+  currentSourceKey: { type: String, default: '' },
+  sourceQueue: { type: [Object], default: [] },
+  summary: { type: Object, default: {} },
+  errors: { type: [String], default: [] },
+  startedAt: { type: Date, default: null },
+  heartbeatAt: { type: Date, default: null, index: true },
+  leaseExpiresAt: { type: Date, default: null, index: true },
+  lastResumedAt: { type: Date, default: null },
+  lastRecoveredAt: { type: Date, default: null },
+  completedAt: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now, index: true }
+}, { collection: 'ingestion_jobs' });
+
+// 12. Distributed Ingestion Lock Schema (STRICTLY NO TTL DELETION — preserves monotonic fencingToken)
+const ingestionLockSchema = new mongoose.Schema({
+  lockKey: { type: String, required: true, unique: true, default: 'global_notification_ingestion' },
+  fencingToken: { type: Number, required: true, default: 0 },
+  ownerRunId: { type: String, default: null },
+  ownerInstance: { type: String, default: '' },
+  acquiredAt: { type: Date, default: null },
+  heartbeatAt: { type: Date, default: null },
+  leaseExpiresAt: { type: Date, default: null },
+  releasedAt: { type: Date, default: null }
+}, { collection: 'ingestion_locks' });
+
+// 13. Persistent Per-Source Health & Latency Telemetry Schema
+const ingestionSourceHealthSchema = new mongoose.Schema({
+  sourceKey: { type: String, required: true, unique: true, index: true },
+  sourceName: { type: String, default: '' },
+  category: { type: String, default: '' },
+  url: { type: String, default: '' },
+  enabled: { type: Boolean, default: true },
+  lastAttemptAt: { type: Date, default: null },
+  lastSuccessAt: { type: Date, default: null, index: true },
+  lastFailureAt: { type: Date, default: null },
+  lastStatus: { type: String, default: 'never_run' },
+  lastError: { type: String, default: '' },
+  lastDurationMs: { type: Number, default: 0 },
+  lastItemsExtracted: { type: Number, default: 0 },
+  lastInserted: { type: Number, default: 0 },
+  lastUpdated: { type: Number, default: 0 },
+  lastQuarantined: { type: Number, default: 0 },
+  lastRunId: { type: String, default: '' },
+  lastJobId: { type: String, default: '' },
+  lastCountedJobId: { type: String, default: '' },
+  lastWriteFencingToken: { type: Number, default: 0 },
+  consecutiveFailures: { type: Number, default: 0 },
+  totalRuns: { type: Number, default: 0 },
+  totalSuccesses: { type: Number, default: 0 },
+  totalFailures: { type: Number, default: 0 },
+  recentRuns: { type: [Object], default: [] },
+  updatedAt: { type: Date, default: Date.now }
+}, { collection: 'ingestion_source_health' });
+
+// 14. Ingestion Run History Logs Schema (30-Day Bounded TTL)
+const ingestionRunLogSchema = new mongoose.Schema({
+  runId: { type: String, required: true, unique: true, index: true },
+  jobId: { type: String, default: '' },
+  fencingToken: { type: Number, default: 0 },
+  triggerType: { type: String, default: 'manual_admin' },
+  status: { type: String, default: 'completed' },
+  startedAt: { type: Date, default: Date.now, index: true },
+  completedAt: { type: Date, default: Date.now },
+  durationMs: { type: Number, default: 0 },
+  sourcesAttempted: { type: Number, default: 0 },
+  sourcesSucceeded: { type: Number, default: 0 },
+  sourcesFailed: { type: Number, default: 0 },
+  autoPublishedCount: { type: Number, default: 0 },
+  pendingReviewCount: { type: Number, default: 0 },
+  quarantinedCount: { type: Number, default: 0 },
+  corrigendaUpdatedCount: { type: Number, default: 0 },
+  duplicatesSkipped: { type: Number, default: 0 },
+  rejectedSkipped: { type: Number, default: 0 },
+  errors: { type: [String], default: [] },
+  createdAt: { type: Date, default: Date.now, index: { expires: 2592000 } } // 30-day TTL on run logs ONLY
+}, { collection: 'ingestion_run_logs' });
 
 // 7. OTP Authentication Schema with 5-minute TTL auto-expiration
 const otpSchema = new mongoose.Schema({
@@ -331,6 +485,10 @@ const OtpSession = mongoose.model('OtpSession', otpSchema);
 const Advertisement = mongoose.model('Advertisement', advertisementSchema);
 const CenterSettings = mongoose.models.CenterSettings || mongoose.model('CenterSettings', centerSettingsSchema);
 const AdminAuth = mongoose.models.AdminAuth || mongoose.model('AdminAuth', adminAuthSchema);
+const IngestionJob = mongoose.models.IngestionJob || mongoose.model('IngestionJob', ingestionJobSchema);
+const IngestionLock = mongoose.models.IngestionLock || mongoose.model('IngestionLock', ingestionLockSchema);
+const IngestionSourceHealth = mongoose.models.IngestionSourceHealth || mongoose.model('IngestionSourceHealth', ingestionSourceHealthSchema);
+const IngestionRunLog = mongoose.models.IngestionRunLog || mongoose.model('IngestionRunLog', ingestionRunLogSchema);
 
 // MASTER VERIFIED ALL-INDIA & TAMIL NADU GOVT EXAM NOTIFICATIONS REGISTRY
 const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
@@ -1232,23 +1390,38 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
   }
 ];
 
-// Master Sync Function for All Exam Categories
+// Master Sync Function for All Exam Categories (Protects manualOverrideLock, corrigenda, rejected & quarantined)
 const syncAllVerifiedNotificationsFeed = async () => {
   try {
-    const ops = VERIFIED_ALL_EXAM_NOTIFICATIONS.map((notif) => ({
-      updateOne: {
-        filter: { id: notif.id },
-        update: {
-          $set: {
-            ...notif,
-            ingestionStatus: notif.ingestionStatus || 'published',
-            ingestionSource: notif.ingestionSource || 'verified_master_feed',
-            updatedAt: new Date()
-          }
-        },
-        upsert: true
-      }
-    }));
+    const protectedDocs = await Notification.find(
+      {
+        $or: [
+          { manualOverrideLock: true },
+          { hasCorrigendum: true },
+          { ingestionSource: 'manual_admin' },
+          { ingestionStatus: { $in: ['rejected', 'quarantined'] } }
+        ]
+      },
+      { id: 1 }
+    ).lean();
+    const protectedIds = new Set((protectedDocs || []).map((d) => d.id));
+
+    const ops = VERIFIED_ALL_EXAM_NOTIFICATIONS
+      .filter((notif) => !protectedIds.has(notif.id))
+      .map((notif) => ({
+        updateOne: {
+          filter: { id: notif.id },
+          update: {
+            $set: {
+              ...notif,
+              ingestionStatus: notif.ingestionStatus || 'published',
+              ingestionSource: notif.ingestionSource || 'verified_master_feed',
+              updatedAt: new Date()
+            }
+          },
+          upsert: true
+        }
+      }));
     if (ops.length > 0) {
       await Notification.bulkWrite(ops);
     }
@@ -1630,31 +1803,43 @@ function signCustomerToken(phone) {
   return `ctok_${cleanPhone}_${timestamp}_${signature}`;
 }
 
-function verifyCustomerToken(tokenStr) {
-  if (!tokenStr || typeof tokenStr !== 'string' || !tokenStr.startsWith('ctok_') || !CUSTOMER_AUTH_SECRET) {
-    return null;
+function inspectCustomerToken(tokenStr) {
+  if (!tokenStr || typeof tokenStr !== 'string') {
+    return { valid: false, phone: '', status: 'missing' };
+  }
+  if (!tokenStr.startsWith('ctok_') || !CUSTOMER_AUTH_SECRET) {
+    return { valid: false, phone: '', status: 'malformed' };
   }
   try {
     const parts = tokenStr.split('_');
-    if (parts.length !== 4) return null;
+    if (parts.length !== 4) {
+      return { valid: false, phone: '', status: 'malformed' };
+    }
     const phone = parts[1];
     const timestamp = parseInt(parts[2], 10);
     const signature = parts[3];
 
     if (isNaN(timestamp) || Date.now() - timestamp > CUSTOMER_TOKEN_EXPIRY_MS) {
-      return null; // Expired
+      return { valid: false, phone: '', status: 'expired' };
     }
 
     const expectedPayload = `${phone}:${timestamp}`;
     const expectedSignature = crypto.createHmac('sha256', CUSTOMER_AUTH_SECRET).update(expectedPayload).digest('hex');
 
-    if (crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSignature, 'hex'))) {
-      return cleanPhoneDigits(phone);
+    const sigBuf = Buffer.from(signature, 'hex');
+    const expBuf = Buffer.from(expectedSignature, 'hex');
+    if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return { valid: true, phone: cleanPhoneDigits(phone), status: 'valid' };
     }
-    return null;
+    return { valid: false, phone: '', status: 'invalid_signature' };
   } catch (err) {
-    return null;
+    return { valid: false, phone: '', status: 'malformed' };
   }
+}
+
+function verifyCustomerToken(tokenStr) {
+  const inspected = inspectCustomerToken(tokenStr);
+  return inspected.valid ? inspected.phone : null;
 }
 
 // --- EPHEMERAL TRACKING-ONLY TOKEN ENGINE (CRYPTOGRAPHICALLY ISOLATED FROM CUSTOMER LOGIN) ---
@@ -1757,31 +1942,63 @@ function decryptDocumentPayload(storedData) {
   }
 }
 
-const resolveAuthContext = (req) => {
-  const isAdmin = isAdminAuthorized(req);
+const resolveAuthContext = (req, adminTokensSet = activeAdminTokensSet) => {
+  const rawAdminHeader = req.headers['x-admin-token'] || req.headers['authorization'];
+  const cleanAdmin = rawAdminHeader ? String(rawAdminHeader).replace(/^Bearer\s+/i, '').trim() : '';
+  const masterSecret = process.env.ADMIN_MASTER_TOKEN;
+  const isAdmin = Boolean(cleanAdmin && (adminTokensSet.has(cleanAdmin) || (masterSecret && cleanAdmin === masterSecret)));
 
   // Verify Customer Token Cryptographically (DO NOT TRUST RAW CLIENT PHONE HEADERS)
   const customerToken = req.headers['x-customer-token'] || req.headers['x-auth-token'];
   let verifiedCustomerPhone = '';
+  let tokenStatus = customerToken ? 'invalid' : 'missing';
 
   if (customerToken) {
-    verifiedCustomerPhone = verifyCustomerToken(customerToken) || '';
+    const inspected = inspectCustomerToken(customerToken);
+    tokenStatus = inspected.status;
+    if (inspected.valid) {
+      verifiedCustomerPhone = inspected.phone;
+    }
   }
 
   // If a raw x-customer-phone header was also sent, ensure it matches the verified token
   const rawHeaderPhone = cleanPhoneDigits(req.headers['x-customer-phone'] || req.headers['x-auth-phone'] || '');
   if (rawHeaderPhone && verifiedCustomerPhone && rawHeaderPhone !== verifiedCustomerPhone) {
     console.warn(`🚨 [SECURITY SPOOF BLOCKED] Client sent header phone +91 ${maskPhoneForLog(rawHeaderPhone)} but token belongs to +91 ${maskPhoneForLog(verifiedCustomerPhone)}`);
-    // Mismatch detected: Invalidate context to prevent spoofing
     verifiedCustomerPhone = '';
+    tokenStatus = 'phone_mismatch';
   }
 
   return {
     isAdmin,
     customerPhone: verifiedCustomerPhone,
+    tokenStatus,
     role: isAdmin ? 'admin' : (verifiedCustomerPhone ? 'customer' : 'anonymous')
   };
 };
+
+async function resolveAuthContextAsync(req, AdminAuthModel = AdminAuth, adminTokensSet = activeAdminTokensSet) {
+  const auth = resolveAuthContext(req, adminTokensSet);
+  if (auth.isAdmin) return auth;
+
+  const rawAdminHeader = req.headers['x-admin-token'] || req.headers['authorization'];
+  const cleanAdmin = rawAdminHeader ? String(rawAdminHeader).replace(/^Bearer\s+/i, '').trim() : '';
+  if (cleanAdmin && AdminAuthModel && typeof AdminAuthModel.findOne === 'function') {
+    try {
+      const adminRecord = await AdminAuthModel.findOne({ username: 'admin' }).lean();
+      if (adminRecord && Array.isArray(adminRecord.activeSessionTokens) && adminRecord.activeSessionTokens.includes(cleanAdmin)) {
+        adminTokensSet.add(cleanAdmin);
+        return {
+          ...auth,
+          isAdmin: true,
+          role: 'admin'
+        };
+      }
+    } catch (e) {}
+  }
+
+  return auth;
+}
 
 // --- OTP API ENDPOINTS ---
 
@@ -2468,14 +2685,14 @@ app.post('/api/customer/logout', async (req, res) => {
 // 1. Get all customers (or filtered by phone)
 app.get('/api/customers', async (req, res) => {
   try {
-    const auth = resolveAuthContext(req);
+    const auth = await resolveAuthContextAsync(req);
     const { phone } = req.query;
     const cleanPhone = cleanPhoneDigits(phone);
 
     // ADMIN ACCESS: Full customer directory access
     if (auth.isAdmin) {
-      const filter = cleanPhone ? { $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }] } : {};
-      const customers = await Customer.find(filter, { 'documents.data': 0, 'documents.url': 0 }).sort({ updatedAt: -1 }).limit(100).maxTimeMS(5000).lean();
+      const filter = cleanPhone ? buildPhoneFilter(cleanPhone) : {};
+      const customers = await Customer.find(filter, { passwordHash: 0, passwordSalt: 0, activeSessionTokens: 0, 'documents.data': 0, 'documents.url': 0 }).sort({ updatedAt: -1 }).limit(100).maxTimeMS(5000).lean();
       const records = {};
       customers.forEach((c) => {
         records[c.phone] = c;
@@ -2494,9 +2711,10 @@ app.get('/api/customers', async (req, res) => {
         });
       }
       const ownPhone = auth.customerPhone;
-      const customer = await Customer.findOne({
-        $or: [{ phone: ownPhone }, { phone: `+91${ownPhone}` }, { phone: `91${ownPhone}` }, { phone: `+91 ${ownPhone}` }]
-      }, { 'documents.data': 0, 'documents.url': 0 }).lean();
+      const customer = await Customer.findOne(
+        buildPhoneFilter(ownPhone),
+        { passwordHash: 0, passwordSalt: 0, activeSessionTokens: 0, 'documents.data': 0, 'documents.url': 0 }
+      ).lean();
       if (!customer) return res.json({});
       return res.json({ [customer.phone]: customer });
     }
@@ -2504,7 +2722,7 @@ app.get('/api/customers', async (req, res) => {
     // ANONYMOUS ACCESS: Blocked
     return res.status(401).json({
       success: false,
-      error: 'UNAUTHORIZED',
+      error: auth.tokenStatus === 'expired' ? 'SESSION_EXPIRED' : 'UNAUTHORIZED',
       message: 'வாடிக்கையாளர் தகவல்களைப் பார்க்க உள்நுழையவும்.'
     });
   } catch (err) {
@@ -2515,21 +2733,22 @@ app.get('/api/customers', async (req, res) => {
 // 2. Get single customer by phone
 app.get('/api/customers/:phone', async (req, res) => {
   try {
-    const auth = resolveAuthContext(req);
+    const auth = await resolveAuthContextAsync(req);
     const cleanPhone = cleanPhoneDigits(req.params.phone);
     if (!cleanPhone) return res.status(400).json({ error: 'Phone number is required' });
 
     // Authorization: Admin or Profile Owner only
     if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== cleanPhone)) {
       if (!auth.customerPhone) {
-        return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required' });
+        return res.status(401).json({ success: false, error: auth.tokenStatus === 'expired' ? 'SESSION_EXPIRED' : 'UNAUTHORIZED', message: 'Authentication required' });
       }
       return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Access denied: Customer data isolation enforced.' });
     }
 
-    const customer = await Customer.findOne({
-      $or: [{ phone: cleanPhone }, { phone: `+91${cleanPhone}` }, { phone: `91${cleanPhone}` }, { phone: `+91 ${cleanPhone}` }]
-    }).maxTimeMS(5000).lean();
+    const customer = await Customer.findOne(
+      buildPhoneFilter(cleanPhone),
+      { passwordHash: 0, passwordSalt: 0, activeSessionTokens: 0, 'documents.data': 0, 'documents.url': 0 }
+    ).maxTimeMS(5000).lean();
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json({ success: true, ...customer });
   } catch (err) {
@@ -2537,42 +2756,580 @@ app.get('/api/customers/:phone', async (req, res) => {
   }
 });
 
-// 3. Save or Update customer
-app.post('/api/customers', async (req, res) => {
+function isSafeHttpsUrl(val) {
+  if (typeof val !== 'string') return false;
+  const trimmed = val.trim();
+  if (!/^https:\/\//i.test(trimmed)) return false;
   try {
-    const auth = resolveAuthContext(req);
-    const { phone, name, profile, applications, documents, lastToken, dob, aadhaarNo, aadhar } = req.body;
-    const cleanPhone = cleanPhoneDigits(phone);
-    if (!cleanPhone) return res.status(400).json({ error: 'Phone number is required' });
-
-    // Authorization: Admin or Owner only
-    if (!auth.isAdmin && auth.customerPhone && auth.customerPhone !== cleanPhone) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'You cannot modify another customer profile.' });
-    }
-
-    const updateData = {
-      phone: cleanPhone,
-      updatedAt: new Date()
-    };
-    updateData.name = sanitizeInput(name || profile?.name || 'Customer');
-    updateData.dob = sanitizeInput(dob || profile?.dob || '');
-    updateData.aadhaarNo = sanitizeInput(aadhaarNo || aadhar || profile?.aadhaarNo || profile?.aadhar || '');
-    if (profile) updateData.profile = profile;
-    if (Array.isArray(applications)) updateData.applications = applications;
-    if (Array.isArray(documents)) updateData.documents = documents;
-    if (lastToken) updateData.lastToken = lastToken;
-
-    const result = await Customer.findOneAndUpdate(
-      { phone: cleanPhone },
-      { $set: updateData },
-      { upsert: true, new: true }
-    );
-    const obj = result.toObject ? result.toObject() : result;
-    res.json({ success: true, ...obj });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to save customer profile.' });
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:';
+  } catch (e) {
+    return false;
   }
-});
+}
+
+function isCanonicalDocumentId(id) {
+  return typeof id === 'string' && /^DOC-[A-Za-z0-9._-]+$/.test(id.trim());
+}
+
+function sanitizeCustomerDocMetadata(item, fallback = {}) {
+  if (!item || typeof item !== 'object') return null;
+  const canonicalId = isCanonicalDocumentId(item.id)
+    ? String(item.id).trim()
+    : (isCanonicalDocumentId(fallback?.id)
+      ? String(fallback.id).trim()
+      : String(item.id || fallback?.id || '').trim());
+
+  const legacyId = (!isCanonicalDocumentId(item.id) && item.id && String(item.id).trim() !== canonicalId)
+    ? String(item.id).trim()
+    : (item.legacyId || fallback?.legacyId || undefined);
+
+  const safeUrl = isSafeHttpsUrl(item.url)
+    ? item.url.trim()
+    : (isSafeHttpsUrl(fallback?.url) ? fallback.url.trim() : '');
+
+  const meta = {
+    id: canonicalId,
+    applicationId: sanitizeInput(String(item.applicationId || fallback?.applicationId || '')),
+    name: sanitizeInput(String(item.name || fallback?.name || 'Document')),
+    requirement: sanitizeInput(String(item.requirement || fallback?.requirement || '')),
+    type: sanitizeInput(String(item.type || fallback?.type || '')),
+    url: safeUrl,
+    uploadedAt: item.uploadedAt || fallback?.uploadedAt || new Date().toISOString()
+  };
+  if (legacyId) meta.legacyId = sanitizeInput(String(legacyId));
+  return meta;
+}
+
+function mergeCustomerDocumentsOnSave(incomingDocs, existingDocs = [], options = {}) {
+  const safeExisting = Array.isArray(existingDocs) ? existingDocs.filter(Boolean) : [];
+  if (!Array.isArray(incomingDocs)) {
+    return safeExisting;
+  }
+  if (incomingDocs.length === 0 && safeExisting.length > 0 && options.allowClearDocuments !== true) {
+    return safeExisting;
+  }
+
+  const deletedSet = new Set(Array.isArray(options.deletedDocIds) ? options.deletedDocIds.map(String) : []);
+  const existingById = new Map();
+  const existingByComposite = new Map();
+
+  safeExisting.forEach((docItem) => {
+    const idKey = String(docItem.id || '').trim();
+    if (idKey) existingById.set(idKey, docItem);
+    const legKey = String(docItem.legacyId || '').trim();
+    if (legKey) existingById.set(legKey, docItem);
+    const compKey = `${String(docItem.applicationId || '').trim().toLowerCase()}::${String(docItem.requirement || '').trim().toLowerCase()}::${String(docItem.name || '').trim().toLowerCase()}`;
+    if (compKey !== '::::' && !existingByComposite.has(compKey)) {
+      existingByComposite.set(compKey, docItem);
+    }
+  });
+
+  const mergedMap = new Map();
+
+  if (options.explicitDocumentsReplace !== true) {
+    safeExisting.forEach((docItem) => {
+      const sanitized = sanitizeCustomerDocMetadata(docItem);
+      if (sanitized && sanitized.id && !deletedSet.has(sanitized.id)) {
+        mergedMap.set(sanitized.id, sanitized);
+      }
+    });
+  }
+
+  incomingDocs.forEach((docItem) => {
+    if (!docItem || typeof docItem !== 'object') return;
+    const rawId = String(docItem.id || '').trim();
+    const compKey = `${String(docItem.applicationId || '').trim().toLowerCase()}::${String(docItem.requirement || '').trim().toLowerCase()}::${String(docItem.name || '').trim().toLowerCase()}`;
+    const matchedExisting = (rawId && existingById.get(rawId)) || existingByComposite.get(compKey) || null;
+    const sanitized = sanitizeCustomerDocMetadata(docItem, matchedExisting || {});
+    if (!sanitized) return;
+    if (sanitized.id && deletedSet.has(sanitized.id)) return;
+    const mapKey = sanitized.id || `legacy:${sanitized.requirement}:${sanitized.name}`;
+    mergedMap.set(mapKey, sanitized);
+  });
+
+  return Array.from(mergedMap.values());
+}
+
+function buildPhoneFilter(cleanPhone) {
+  return {
+    $or: [
+      { phone: cleanPhone },
+      { phone: `+91${cleanPhone}` },
+      { phone: `91${cleanPhone}` },
+      { phone: `+91 ${cleanPhone}` }
+    ]
+  };
+}
+
+function extractOwnerPhoneHint(docId, queryPhone) {
+  const cleanQuery = cleanPhoneDigits(queryPhone);
+  if (cleanQuery && cleanQuery.length === 10) return cleanQuery;
+  const akMatch = String(docId || '').match(/^AK-(\d{10})-/);
+  if (akMatch && akMatch[1]) return cleanPhoneDigits(akMatch[1]);
+  return '';
+}
+
+function createVaultRouteHandlers(deps = {}) {
+  const CustomerModel = deps.CustomerModel || Customer;
+  const DocumentModelRef = deps.DocumentModelRef || DocumentModel;
+  const AdminAuthModel = deps.AdminAuthModel || AdminAuth;
+  const adminTokensSet = deps.adminTokensSet || activeAdminTokensSet;
+
+  return {
+    async postCustomer(req, res) {
+      try {
+        const auth = await resolveAuthContextAsync(req, AdminAuthModel, adminTokensSet);
+        const body = req.body || {};
+        const { phone, name, profile, applications, documents, lastToken, dob, aadhaarNo, aadhar } = body;
+        const cleanPhone = cleanPhoneDigits(phone);
+        if (!cleanPhone) return res.status(400).json({ success: false, error: 'Phone number is required' });
+
+        if (!auth.isAdmin && !auth.customerPhone) {
+          const isExpired = auth.tokenStatus === 'expired';
+          return res.status(401).json({
+            success: false,
+            error: isExpired ? 'SESSION_EXPIRED' : 'UNAUTHORIZED',
+            message: isExpired
+              ? 'உங்கள் அமர்வு காலாவதியாகிவிட்டது. மீண்டும் உள்நுழையவும்.'
+              : 'Authentication required to update customer profile.'
+          });
+        }
+
+        if (!auth.isAdmin && auth.customerPhone !== cleanPhone) {
+          return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'You cannot modify another customer profile.' });
+        }
+
+        const existingCustomer = await CustomerModel.findOne(buildPhoneFilter(cleanPhone)).lean();
+
+        const updateData = {
+          phone: cleanPhone,
+          updatedAt: new Date()
+        };
+
+        const resolvedName = name || profile?.name || existingCustomer?.name || existingCustomer?.profile?.name || 'Customer';
+        const resolvedDob = dob !== undefined ? dob : (profile?.dob !== undefined ? profile.dob : (existingCustomer?.dob || ''));
+        const resolvedAadhaar = (aadhaarNo !== undefined || aadhar !== undefined)
+          ? (aadhaarNo || aadhar)
+          : (profile?.aadhaarNo !== undefined || profile?.aadhar !== undefined
+            ? (profile.aadhaarNo || profile.aadhar)
+            : (existingCustomer?.aadhaarNo || ''));
+
+        updateData.name = sanitizeInput(resolvedName);
+        updateData.dob = sanitizeInput(resolvedDob);
+        updateData.aadhaarNo = sanitizeInput(resolvedAadhaar);
+        if (profile && typeof profile === 'object') {
+          updateData.profile = {
+            ...(existingCustomer?.profile || {}),
+            ...profile
+          };
+        }
+        if (Array.isArray(applications)) updateData.applications = applications;
+        if (Array.isArray(documents)) {
+          updateData.documents = mergeCustomerDocumentsOnSave(documents, existingCustomer?.documents || [], {
+            allowClearDocuments: body.allowClearDocuments === true,
+            explicitDocumentsReplace: body.explicitDocumentsReplace === true,
+            deletedDocIds: body.deletedDocIds
+          });
+        }
+        if (lastToken) updateData.lastToken = lastToken;
+
+        const result = await CustomerModel.findOneAndUpdate(
+          buildPhoneFilter(cleanPhone),
+          { $set: updateData },
+          { upsert: true, new: true }
+        );
+        const obj = result && result.toObject ? result.toObject() : (result || updateData);
+        if (obj) {
+          delete obj.passwordHash;
+          delete obj.passwordSalt;
+          delete obj.activeSessionTokens;
+        }
+        return res.json({ success: true, ...obj });
+      } catch (err) {
+        return res.status(500).json({ success: false, error: 'Failed to save customer profile.' });
+      }
+    },
+
+    async getDocuments(req, res) {
+      try {
+        const auth = await resolveAuthContextAsync(req, AdminAuthModel, adminTokensSet);
+        const targetPhone = cleanPhoneDigits(req.query?.phone || req.query?.customerPhone);
+
+        if (auth.isAdmin) {
+          const filter = targetPhone ? { $or: [{ customerPhone: targetPhone }, { customerPhone: `+91${targetPhone}` }, { customerPhone: `91${targetPhone}` }] } : {};
+          const docs = await DocumentModelRef.find(filter, { data: 0 }).sort({ uploadedAt: -1 }).limit(100).maxTimeMS(5000).lean();
+          console.log(`📋 [AUDIT] Admin retrieved document list metadata (Count: ${docs.length})`);
+          const sanitizedDocs = (docs || []).map((d) => ({
+            ...d,
+            data: '',
+            url: isSafeHttpsUrl(d.url) ? d.url.trim() : ''
+          }));
+          return res.json(sanitizedDocs);
+        }
+
+        if (auth.customerPhone) {
+          if (targetPhone && targetPhone !== auth.customerPhone) {
+            console.warn(`🚨 [AUDIT SECURITY] Customer +91 ${maskPhoneForLog(auth.customerPhone)} attempted unauthorized access to documents of +91 ${maskPhoneForLog(targetPhone)}`);
+            return res.status(403).json({
+              success: false,
+              error: 'FORBIDDEN',
+              message: 'அனுமதி மறுக்கப்பட்டது: நீங்கள் பிற வாடிக்கையாளர்களின் ஆவணங்களை அணுக முடியாது. (Access denied: Customer data isolation enforced).'
+            });
+          }
+
+          const ownPhone = auth.customerPhone;
+          const filter = { $or: [{ customerPhone: ownPhone }, { customerPhone: `+91${ownPhone}` }, { customerPhone: `91${ownPhone}` }] };
+          const docs = await DocumentModelRef.find(filter, { data: 0 }).sort({ uploadedAt: -1 }).limit(50).maxTimeMS(5000).lean();
+          console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(ownPhone)} retrieved own documents metadata (Count: ${docs.length})`);
+          const sanitizedDocs = (docs || []).map((d) => ({
+            ...d,
+            data: '',
+            url: isSafeHttpsUrl(d.url) ? d.url.trim() : ''
+          }));
+          return res.json(sanitizedDocs);
+        }
+
+        const isExpired = auth.tokenStatus === 'expired';
+        console.warn(`🚨 [AUDIT SECURITY] Unauthenticated request attempted to access customer document list.`);
+        return res.status(401).json({
+          success: false,
+          error: isExpired ? 'SESSION_EXPIRED' : 'UNAUTHORIZED',
+          message: isExpired
+            ? 'உங்கள் அமர்வு காலாவதியாகிவிட்டது. மீண்டும் உள்நுழையவும்.'
+            : 'ஆவணங்களை அணுக உள்நுழையவும். (Authentication required to access documents).'
+        });
+      } catch (err) {
+        console.error('Document list error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to retrieve documents.' });
+      }
+    },
+
+    async getDocumentById(req, res) {
+      try {
+        const auth = await resolveAuthContextAsync(req, AdminAuthModel, adminTokensSet);
+        const docId = String(req.params?.id || '').trim();
+        if (!docId) return res.status(400).json({ success: false, error: 'Document ID required.' });
+
+        if (!auth.isAdmin && !auth.customerPhone) {
+          const isExpired = auth.tokenStatus === 'expired';
+          console.warn(`🚨 [AUDIT SECURITY] Unauthenticated attempt to access document ${docId}`);
+          return res.status(401).json({
+            success: false,
+            error: isExpired ? 'SESSION_EXPIRED' : 'UNAUTHORIZED',
+            message: isExpired
+              ? 'உங்கள் அமர்வு காலாவதியாகிவிட்டது. மீண்டும் உள்நுழையவும்.'
+              : 'ஆவணத்தைப் பார்க்க உள்நுழையவும். (Authentication required).'
+          });
+        }
+
+        const doc = await DocumentModelRef.findOne({ $or: [{ id: docId }, { url: docId }] }).maxTimeMS(5000).lean();
+        if (doc) {
+          const docOwnerPhone = cleanPhoneDigits(doc.customerPhone);
+
+          if (!auth.isAdmin && auth.customerPhone !== docOwnerPhone) {
+            console.warn(`🚨 [AUDIT SECURITY] Customer +91 ${maskPhoneForLog(auth.customerPhone)} attempted IDOR access to document ${docId} owned by +91 ${maskPhoneForLog(docOwnerPhone)}`);
+            return res.status(403).json({
+              success: false,
+              error: 'FORBIDDEN',
+              message: 'அனுமதி மறுக்கப்பட்டது: இந்த ஆவணத்தை அணுக உங்களுக்கு உரிமை இல்லை. (Access denied: IDOR blocked).'
+            });
+          }
+
+          let resolvedData = '';
+          if (typeof doc.data === 'string' && doc.data.length > 0) {
+            const decryptedData = decryptDocumentPayload(doc.data);
+            if (doc.data.startsWith('enc:v1:') && decryptedData === null) {
+              return res.status(500).json({
+                success: false,
+                error: 'DOCUMENT_DECRYPTION_FAILED',
+                message: 'Stored document decryption failed. Please contact support or Admin.'
+              });
+            }
+            resolvedData = decryptedData || '';
+          }
+
+          // Legacy read-only compatibility: if old doc.data was empty but doc.url held a data URL
+          if (!resolvedData && typeof doc.url === 'string' && doc.url.startsWith('data:')) {
+            resolvedData = doc.url;
+          }
+
+          const safeExternalUrl = isSafeHttpsUrl(doc.url) ? doc.url.trim() : '';
+          if (!resolvedData && !safeExternalUrl) {
+            return res.status(404).json({
+              success: false,
+              error: 'DOCUMENT_BINARY_EMPTY',
+              needsAdminReview: true,
+              message: 'Document record has no stored file content.'
+            });
+          }
+
+          if (auth.isAdmin) {
+            console.log(`📋 [AUDIT] Admin retrieved document: ${docId} (Owner: +91 ${maskPhoneForLog(docOwnerPhone)})`);
+          } else {
+            console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(auth.customerPhone)} accessed own document: ${docId}`);
+          }
+
+          return res.json({
+            success: true,
+            id: doc.id,
+            applicationId: doc.applicationId || '',
+            customerPhone: docOwnerPhone,
+            name: doc.name || 'Document',
+            requirement: doc.requirement || '',
+            type: doc.type || '',
+            uploadedAt: doc.uploadedAt,
+            url: safeExternalUrl,
+            data: resolvedData
+          });
+        }
+
+        // Legacy read-only owner-scoped lookup by exact ID / legacyId only (NEVER guess by requirement/name)
+        const scopedOwnerPhone = auth.isAdmin
+          ? extractOwnerPhoneHint(docId, req.query?.customerPhone)
+          : auth.customerPhone;
+
+        if (scopedOwnerPhone) {
+          const ownerCust = await CustomerModel.findOne(buildPhoneFilter(scopedOwnerPhone)).lean();
+          const legacyMatch = Array.isArray(ownerCust?.documents)
+            ? ownerCust.documents.find((item) => item && (String(item.id || '').trim() === docId || String(item.legacyId || '').trim() === docId))
+            : null;
+
+          if (legacyMatch) {
+            const rawLegacy = typeof legacyMatch.data === 'string' && legacyMatch.data.length > 0
+              ? legacyMatch.data
+              : (typeof legacyMatch.url === 'string' && legacyMatch.url.startsWith('data:') ? legacyMatch.url : '');
+            const resolvedLegacyData = rawLegacy ? decryptDocumentPayload(rawLegacy) : '';
+            const safeLegacyHttps = isSafeHttpsUrl(legacyMatch.url) ? legacyMatch.url.trim() : '';
+
+            if (resolvedLegacyData || safeLegacyHttps) {
+              return res.json({
+                success: true,
+                id: legacyMatch.id || docId,
+                applicationId: legacyMatch.applicationId || '',
+                customerPhone: scopedOwnerPhone,
+                name: legacyMatch.name || 'Document',
+                requirement: legacyMatch.requirement || '',
+                type: legacyMatch.type || '',
+                uploadedAt: legacyMatch.uploadedAt || '',
+                url: safeLegacyHttps,
+                data: resolvedLegacyData || '',
+                legacyResolved: true
+              });
+            }
+
+            return res.status(404).json({
+              success: false,
+              error: 'LEGACY_DOCUMENT_UNRESOLVED',
+              needsAdminReview: true,
+              message: 'Legacy document reference cannot be resolved safely and requires Admin review or re-upload.'
+            });
+          }
+        }
+
+        return res.status(404).json({
+          success: false,
+          error: 'DOCUMENT_NOT_FOUND',
+          message: 'ஆவணம் கிடைக்கவில்லை.'
+        });
+      } catch (err) {
+        console.error('Document fetch error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to access document.' });
+      }
+    },
+
+    async postDocument(req, res) {
+      try {
+        const auth = await resolveAuthContextAsync(req, AdminAuthModel, adminTokensSet);
+        if (!auth.isAdmin && !auth.customerPhone) {
+          const isExpired = auth.tokenStatus === 'expired';
+          return res.status(401).json({
+            success: false,
+            error: isExpired ? 'SESSION_EXPIRED' : 'UNAUTHORIZED',
+            message: isExpired
+              ? 'உங்கள் அமர்வு காலாவதியாகிவிட்டது. மீண்டும் உள்நுழையவும்.'
+              : 'Authentication required to upload documents.'
+          });
+        }
+
+        const docData = req.body;
+        if (!docData) return res.status(400).json({ success: false, error: 'MISSING_PAYLOAD', message: 'Document data required.' });
+
+        const docOwnerPhone = cleanPhoneDigits(docData.customerPhone || docData.phone || auth.customerPhone);
+        if (!docOwnerPhone) {
+          return res.status(400).json({ success: false, error: 'MISSING_PHONE', message: 'Customer phone number is required for document ownership.' });
+        }
+
+        if (!auth.isAdmin && auth.customerPhone !== docOwnerPhone) {
+          return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'You cannot upload documents to another customer profile.' });
+        }
+
+        // Multi-Layer Binary & Threat Inspection (Executed BEFORE storage)
+        const scanResult = inspectDocumentThreats(docData);
+        if (!scanResult.safe) {
+          console.warn(`🚨 [SECURITY AUDIT] Malicious file upload blocked: ${scanResult.reason} for Customer: +91 ${maskPhoneForLog(docOwnerPhone)}`);
+          return res.status(400).json({
+            success: false,
+            error: scanResult.reason,
+            message: scanResult.message
+          });
+        }
+
+        const rawPayloadData = (typeof docData.data === 'string' && docData.data.startsWith('data:'))
+          ? docData.data
+          : (typeof docData.url === 'string' && docData.url.startsWith('data:') ? docData.url : '');
+        const safeHttpsUrl = isSafeHttpsUrl(docData.url) ? docData.url.trim() : '';
+
+        if (!rawPayloadData && !safeHttpsUrl) {
+          return res.status(400).json({ success: false, error: 'MISSING_PAYLOAD', message: 'Valid encrypted document binary or HTTPS URL required.' });
+        }
+
+        const cleanAppId = sanitizeInput(String(docData.applicationId || ''));
+        const cleanName = sanitizeInput(String(docData.name || 'Document'));
+        const cleanReq = sanitizeInput(String(docData.requirement || ''));
+        const cleanType = sanitizeInput(String(docData.type || scanResult.mime || ''));
+        const clientRequestId = sanitizeInput(String(docData.clientRequestId || '')).slice(0, 128);
+        const contentHash = crypto.createHash('sha256').update(rawPayloadData || safeHttpsUrl).digest('hex');
+
+        let docId = '';
+        let deduplicated = false;
+        const requestedId = typeof docData.id === 'string' ? docData.id.trim() : '';
+
+        if (isCanonicalDocumentId(requestedId)) {
+          const existingById = await DocumentModelRef.findOne({ id: requestedId }).lean();
+          if (existingById) {
+            const existingOwner = cleanPhoneDigits(existingById.customerPhone);
+            if (!auth.isAdmin && existingOwner && existingOwner !== docOwnerPhone) {
+              return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Cannot overwrite another customer document.' });
+            }
+          }
+          docId = requestedId;
+        } else {
+          let existingDup = null;
+          if (clientRequestId) {
+            existingDup = await DocumentModelRef.findOne({ customerPhone: docOwnerPhone, clientRequestId }).lean();
+          }
+          if (!existingDup) {
+            existingDup = await DocumentModelRef.findOne({
+              customerPhone: docOwnerPhone,
+              applicationId: cleanAppId,
+              requirement: cleanReq,
+              contentHash
+            }).lean();
+          }
+          if (existingDup && existingDup.id) {
+            docId = existingDup.id;
+            deduplicated = true;
+          } else {
+            docId = `DOC-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+          }
+        }
+
+        const encryptedData = encryptDocumentPayload(rawPayloadData);
+        const uploadedAt = new Date();
+
+        await DocumentModelRef.findOneAndUpdate(
+          { id: docId },
+          {
+            $set: {
+              id: docId,
+              applicationId: cleanAppId,
+              customerPhone: docOwnerPhone,
+              name: cleanName,
+              requirement: cleanReq,
+              type: cleanType,
+              url: safeHttpsUrl,
+              data: encryptedData,
+              contentHash,
+              clientRequestId,
+              uploadedAt
+            }
+          },
+          { upsert: true, new: true }
+        );
+
+        const canonicalCustDoc = {
+          id: docId,
+          applicationId: cleanAppId,
+          name: cleanName,
+          requirement: cleanReq,
+          type: cleanType,
+          url: safeHttpsUrl,
+          uploadedAt
+        };
+
+        await CustomerModel.findOneAndUpdate(
+          buildPhoneFilter(docOwnerPhone),
+          { $pull: { documents: { id: docId } } }
+        );
+        await CustomerModel.findOneAndUpdate(
+          buildPhoneFilter(docOwnerPhone),
+          { $push: { documents: canonicalCustDoc } }
+        );
+
+        console.log(`📋 [AUDIT] Document uploaded & encrypted (AES-256-GCM): ${docId} for Customer: +91 ${maskPhoneForLog(docOwnerPhone)}`);
+        return res.json({
+          success: true,
+          id: docId,
+          applicationId: cleanAppId,
+          customerPhone: docOwnerPhone,
+          name: cleanName,
+          requirement: cleanReq,
+          type: cleanType,
+          url: safeHttpsUrl,
+          data: rawPayloadData,
+          uploadedAt,
+          deduplicated
+        });
+      } catch (err) {
+        console.error('Document save error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to upload document.' });
+      }
+    },
+
+    async deleteDocument(req, res) {
+      try {
+        const auth = await resolveAuthContextAsync(req, AdminAuthModel, adminTokensSet);
+        const docId = String(req.params?.id || '').trim();
+        if (!docId) return res.status(400).json({ success: false, error: 'Document ID required.' });
+
+        if (!auth.isAdmin && !auth.customerPhone) {
+          return res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'Authentication required.' });
+        }
+
+        const existing = await DocumentModelRef.findOne({ $or: [{ id: docId }, { url: docId }] }).lean();
+        if (!existing) {
+          return res.json({ success: true, message: 'Document already deleted or not found.' });
+        }
+
+        const docOwnerPhone = cleanPhoneDigits(existing.customerPhone);
+        if (!auth.isAdmin && auth.customerPhone !== docOwnerPhone) {
+          console.warn(`🚨 [AUDIT SECURITY] Unauthorized document delete attempt on ${docId} by ${auth.customerPhone || 'Anonymous'}`);
+          return res.status(403).json({
+            success: false,
+            error: 'FORBIDDEN',
+            message: 'அனுமதி மறுக்கப்பட்டது: இந்த ஆவணத்தை நீக்க உங்களுக்கு உரிமை இல்லை.'
+          });
+        }
+
+        await DocumentModelRef.deleteMany({ $or: [{ id: docId }, { url: docId }] });
+        await CustomerModel.updateMany({}, { $pull: { documents: { id: docId } } });
+        await CustomerModel.updateMany({}, { $pull: { documents: { url: docId } } });
+
+        console.log(`📋 [AUDIT] Document permanently deleted: ${docId} (Owner: +91 ${maskPhoneForLog(docOwnerPhone)})`);
+        return res.json({ success: true, message: `Document ${docId} permanently deleted.` });
+      } catch (err) {
+        console.error('Document delete error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to delete document.' });
+      }
+    }
+  };
+}
+
+const defaultVaultHandlers = createVaultRouteHandlers();
+
+// 3. Save or Update customer
+app.post('/api/customers', (req, res) => defaultVaultHandlers.postCustomer(req, res));
 
 // 4. Delete Customer (Admin or Owner Only - Cascade Delete)
 app.delete('/api/customers/:phone', async (req, res) => {
@@ -3054,7 +3811,7 @@ const inspectDocumentThreats = (docData) => {
   if (typeof rawData !== 'string' || !rawData.startsWith('data:')) {
     // If external URL string is provided, verify it is a valid HTTPS link
     if (typeof rawData === 'string' && rawData.startsWith('http')) {
-      if (!rawData.startsWith('https://')) {
+      if (!isSafeHttpsUrl(rawData)) {
         return { safe: false, reason: 'INSECURE_HTTP_URL', message: 'Only secure HTTPS document URLs are supported.' };
       }
       return { safe: true, mime: 'url', bytesScanned: 0, engine: 'AkEsevai Binary Threat Scanner v2.0' };
@@ -3156,7 +3913,8 @@ const inspectDocumentThreats = (docData) => {
   const lowerContent = asciiContent.toLowerCase();
 
   const webShellPatterns = [
-    '<?php', '<?=', '<script', 'javascript:', 'vbscript:', 'data:text/html',
+    '<?php', '<?=', '<script', '<html', '<!doctype html', '<svg', '<iframe',
+    'onload=', 'onerror=', 'javascript:', 'vbscript:', 'data:text/html',
     'eval(', 'base64_decode(', 'system(', 'shell_exec(', 'passthru(',
     'exec(', 'popen(', 'proc_open(', 'powershell', 'cmd.exe', '/bin/sh', '/bin/bash'
   ];
@@ -3199,226 +3957,17 @@ const inspectDocumentThreats = (docData) => {
 
 // --- EXPIRY & VAULT DOCUMENTS API (SERVER-SIDE AUTHORIZATION & IDOR GUARD) ---
 
-// 1. Fetch Documents (Admin or Authenticated Customer)
-app.get('/api/documents', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    const targetPhone = cleanPhoneDigits(req.query.phone || req.query.customerPhone);
-
-    // ADMIN ACCESS: Full access to all documents or filtered by customer
-    if (auth.isAdmin) {
-      const filter = targetPhone ? { $or: [{ customerPhone: targetPhone }, { customerPhone: `+91${targetPhone}` }, { customerPhone: `91${targetPhone}` }] } : {};
-      const docs = await DocumentModel.find(filter, { data: 0 }).sort({ uploadedAt: -1 }).limit(100).maxTimeMS(5000).lean();
-      console.log(`📋 [AUDIT] Admin retrieved document list metadata (Count: ${docs.length})`);
-      const sanitizedDocs = (docs || []).map((d) => ({
-        ...d,
-        data: '',
-        url: d.url && d.url.startsWith('http') ? d.url : ''
-      }));
-      return res.json(sanitizedDocs);
-    }
-
-    // CUSTOMER ACCESS: Strictly isolated to own documents
-    if (auth.customerPhone) {
-      // If customer attempts to query another customer's phone number, reject with 403
-      if (targetPhone && targetPhone !== auth.customerPhone) {
-        console.warn(`🚨 [AUDIT SECURITY] Customer +91 ${maskPhoneForLog(auth.customerPhone)} attempted unauthorized access to documents of +91 ${maskPhoneForLog(targetPhone)}`);
-        return res.status(403).json({
-          success: false,
-          error: 'FORBIDDEN',
-          message: 'அனுமதி மறுக்கப்பட்டது: நீங்கள் பிற வாடிக்கையாளர்களின் ஆவணங்களை அணுக முடியாது. (Access denied: Customer data isolation enforced).'
-        });
-      }
-
-      const ownPhone = auth.customerPhone;
-      const filter = { $or: [{ customerPhone: ownPhone }, { customerPhone: `+91${ownPhone}` }, { customerPhone: `91${ownPhone}` }] };
-      const docs = await DocumentModel.find(filter, { data: 0 }).sort({ uploadedAt: -1 }).limit(50).maxTimeMS(5000).lean();
-      console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(ownPhone)} retrieved own documents metadata (Count: ${docs.length})`);
-      const sanitizedDocs = (docs || []).map((d) => ({
-        ...d,
-        data: '',
-        url: d.url && d.url.startsWith('http') ? d.url : ''
-      }));
-      return res.json(sanitizedDocs);
-    }
-
-    // ANONYMOUS ACCESS: Blocked from accessing private documents
-    console.warn(`🚨 [AUDIT SECURITY] Anonymous request attempted to access customer document list.`);
-    return res.status(401).json({
-      success: false,
-      error: 'UNAUTHORIZED',
-      message: 'ஆவணங்களை அணுக உள்நுழையவும். (Authentication required to access documents).'
-    });
-  } catch (err) {
-    console.error('Document list error:', err);
-    res.status(500).json({ success: false, error: 'Failed to retrieve documents.' });
-  }
-});
+// 1. Fetch Documents (Admin or Authenticated Customer, Metadata Only)
+app.get('/api/documents', (req, res) => defaultVaultHandlers.getDocuments(req, res));
 
 // 2. Fetch Single Document by ID (with IDOR Protection & Ownership Validation)
-app.get('/api/documents/:id', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    const docId = String(req.params.id || '').trim();
-    if (!docId) return res.status(400).json({ error: 'Document ID required.' });
-
-    const doc = await DocumentModel.findOne({ $or: [{ id: docId }, { url: docId }] }).maxTimeMS(5000).lean();
-    if (!doc) {
-      return res.status(404).json({ success: false, error: 'DOCUMENT_NOT_FOUND', message: 'ஆவணம் கிடைக்கவில்லை.' });
-    }
-
-    const docOwnerPhone = cleanPhoneDigits(doc.customerPhone);
-    const decryptedData = decryptDocumentPayload(doc.data);
-
-    // ADMIN ACCESS: Allowed
-    if (auth.isAdmin) {
-      console.log(`📋 [AUDIT] Admin retrieved document: ${docId} (Owner: +91 ${maskPhoneForLog(docOwnerPhone)})`);
-      return res.json({ success: true, ...doc, data: decryptedData });
-    }
-
-    // CUSTOMER ACCESS: Verified owner check
-    if (auth.customerPhone && auth.customerPhone === docOwnerPhone) {
-      console.log(`📋 [AUDIT] Customer +91 ${maskPhoneForLog(auth.customerPhone)} accessed own document: ${docId}`);
-      return res.json({ success: true, ...doc, data: decryptedData });
-    }
-
-    // UNAUTHORIZED / CROSS-CUSTOMER ACCESS: Blocked
-    if (auth.customerPhone) {
-      console.warn(`🚨 [AUDIT SECURITY] Customer +91 ${maskPhoneForLog(auth.customerPhone)} attempted IDOR access to document ${docId} owned by +91 ${maskPhoneForLog(docOwnerPhone)}`);
-      return res.status(403).json({
-        success: false,
-        error: 'FORBIDDEN',
-        message: 'அனுமதி மறுக்கப்பட்டது: இந்த ஆவணத்தை அணுக உங்களுக்கு உரிமை இல்லை. (Access denied: IDOR blocked).'
-      });
-    }
-
-    // ANONYMOUS ACCESS: Blocked
-    console.warn(`🚨 [AUDIT SECURITY] Anonymous attempt to access document ${docId}`);
-    return res.status(401).json({
-      success: false,
-      error: 'UNAUTHORIZED',
-      message: 'ஆவணத்தைப் பார்க்க உள்நுழையவும். (Authentication required).'
-    });
-  } catch (err) {
-    console.error('Document fetch error:', err);
-    res.status(500).json({ success: false, error: 'Failed to access document.' });
-  }
-});
+app.get('/api/documents/:id', (req, res) => defaultVaultHandlers.getDocumentById(req, res));
 
 // 3. Save / Upload Document (Multi-Layer Threat Scanned, Anti-Spoofing & Isolated)
-app.post('/api/documents', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    const docData = req.body;
-    if (!docData) return res.status(400).json({ error: 'Document data required.' });
-
-    // Multi-Layer Binary & Threat Inspection (Executed BEFORE any storage or exposure)
-    const scanResult = inspectDocumentThreats(docData);
-    if (!scanResult.safe) {
-      const docOwnerPhone = cleanPhoneDigits(docData.customerPhone || docData.phone || auth.customerPhone);
-      console.warn(`🚨 [SECURITY AUDIT] Malicious file upload blocked: ${scanResult.reason} for Customer: +91 ${maskPhoneForLog(docOwnerPhone)}`);
-      return res.status(400).json({
-        success: false,
-        error: scanResult.reason,
-        message: scanResult.message
-      });
-    }
-
-    const docOwnerPhone = cleanPhoneDigits(docData.customerPhone || docData.phone || auth.customerPhone);
-    if (!docOwnerPhone) {
-      return res.status(400).json({ error: 'Customer phone number is required for document ownership.' });
-    }
-
-    // Customer can only upload to own account
-    if (!auth.isAdmin && auth.customerPhone && auth.customerPhone !== docOwnerPhone) {
-      return res.status(403).json({ error: 'FORBIDDEN', message: 'You cannot upload documents to another customer profile.' });
-    }
-
-    // Generate secure random server-side document ID
-    const docId = docData.id && String(docData.id).startsWith('DOC-')
-      ? docData.id
-      : `DOC-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-
-    const rawPayloadData = docData.data || '';
-    const encryptedData = encryptDocumentPayload(rawPayloadData);
-
-    const savedDoc = await DocumentModel.findOneAndUpdate(
-      { id: docId },
-      {
-        $set: {
-          id: docId,
-          applicationId: sanitizeInput(docData.applicationId || ''),
-          customerPhone: docOwnerPhone,
-          name: sanitizeInput(docData.name || 'Document'),
-          requirement: sanitizeInput(docData.requirement || ''),
-          url: docData.url || '',
-          data: encryptedData,
-          uploadedAt: new Date()
-        }
-      },
-      { upsert: true, new: true }
-    );
-
-    // Update Customer record document reference
-    await Customer.findOneAndUpdate(
-      { $or: [{ phone: docOwnerPhone }, { phone: `+91${docOwnerPhone}` }, { phone: `91${docOwnerPhone}` }] },
-      {
-        $push: {
-          documents: {
-            id: docId,
-            name: sanitizeInput(docData.name || 'Document'),
-            requirement: sanitizeInput(docData.requirement || ''),
-            uploadedAt: new Date()
-          }
-        }
-      }
-    );
-
-    console.log(`📋 [AUDIT] Document uploaded & encrypted (AES-256-GCM): ${docId} for Customer: +91 ${maskPhoneForLog(docOwnerPhone)}`);
-    const obj = savedDoc.toObject ? savedDoc.toObject() : savedDoc;
-    res.json({ success: true, ...obj, data: rawPayloadData });
-  } catch (err) {
-    console.error('Document save error:', err);
-    res.status(500).json({ success: false, error: 'Failed to upload document.' });
-  }
-});
+app.post('/api/documents', (req, res) => defaultVaultHandlers.postDocument(req, res));
 
 // 4. Delete Document (Authorized Customer or Admin)
-app.delete('/api/documents/:id', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    const docId = String(req.params.id || '').trim();
-    if (!docId) return res.status(400).json({ error: 'Document ID required.' });
-
-    const existing = await DocumentModel.findOne({ $or: [{ id: docId }, { url: docId }] }).lean();
-    if (!existing) {
-      return res.json({ success: true, message: 'Document already deleted or not found.' });
-    }
-
-    const docOwnerPhone = cleanPhoneDigits(existing.customerPhone);
-
-    // Verify delete authorization
-    if (!auth.isAdmin && (!auth.customerPhone || auth.customerPhone !== docOwnerPhone)) {
-      console.warn(`🚨 [AUDIT SECURITY] Unauthorized document delete attempt on ${docId} by ${auth.customerPhone || 'Anonymous'}`);
-      return res.status(403).json({
-        success: false,
-        error: 'FORBIDDEN',
-        message: 'அனுமதி மறுக்கப்பட்டது: இந்த ஆவணத்தை நீக்க உங்களுக்கு உரிமை இல்லை.'
-      });
-    }
-
-    // Permanently remove file data from MongoDB DocumentModel and Customer documents array
-    await DocumentModel.deleteMany({ $or: [{ id: docId }, { url: docId }] });
-    await Customer.updateMany({}, { $pull: { documents: { id: docId } } });
-    await Customer.updateMany({}, { $pull: { documents: { url: docId } } });
-
-    console.log(`📋 [AUDIT] Document permanently deleted: ${docId} (Owner: +91 ${maskPhoneForLog(docOwnerPhone)})`);
-    res.json({ success: true, message: `Document ${docId} permanently deleted.` });
-  } catch (err) {
-    console.error('Document delete error:', err);
-    res.status(500).json({ success: false, error: 'Failed to delete document.' });
-  }
-});
+app.delete('/api/documents/:id', (req, res) => defaultVaultHandlers.deleteDocument(req, res));
 
 // --- TOKENS API & PRIORITY PAYMENT VERIFICATION WORKFLOW ---
 
@@ -3858,359 +4407,17 @@ app.post('/api/deleted-customers', async (req, res) => {
 });
 
 // --- NOTIFICATIONS & ALL-INDIA EXAM RECRUITMENT API ---
-
-const normalizeCategoryStr = (cat) => {
-  if (!cat) return 'all';
-  const c = String(cat).toLowerCase().replace(/[^a-z]/g, '');
-  if (c.includes('bank')) return 'banking';
-  if (c.includes('upsc') || c.includes('central') || c.includes('ias')) return 'upsc';
-  if (c.includes('ssc') || c.includes('cgl') || c.includes('chsl')) return 'ssc';
-  if (c.includes('rail') || c.includes('rrb') || c.includes('rrc')) return 'railway';
-  if (c.includes('tnpsc') || c.includes('state') || c.includes('vao')) return 'tnpsc';
-  if (c.includes('police') || c.includes('defence') || c.includes('army') || c.includes('tnusrb')) return 'police_defence';
-  if (c.includes('teach') || c.includes('trb') || c.includes('tet') || c.includes('school')) return 'teaching';
-  if (c.includes('med') || c.includes('nurse') || c.includes('mrb') || c.includes('doctor') || c.includes('health') || c.includes('hospital')) return 'medical';
-  if (c.includes('enter') || c.includes('entrance') || c.includes('jee') || c.includes('neet') || c.includes('cuet') || c.includes('gate') || c.includes('tancet')) return 'entrance';
-  if (c.includes('psu') || c.includes('iocl') || c.includes('ongc') || c.includes('bhel') || c.includes('tneb') || c.includes('tech')) return 'psu';
-  return cat;
-};
-
-// GET all notifications with auto-expiry calculation, search & auto-seed
-app.get('/api/notifications', async (req, res) => {
-  const { category, status, search, includePending } = req.query;
-  const today = getKolkataToday();
-  const auth = resolveAuthContext(req);
-
-  let rawList = [];
-  try {
-    if (mongoose.connection.readyState === 1) {
-      const filter = {};
-      if (category && category !== 'all') {
-        const norm = normalizeCategoryStr(category);
-        filter.$or = [{ category }, { category: norm }];
-      }
-
-      // Ingestion filter: Public requests see ONLY published or legacy notifications
-      // Admin requests with includePending=true can view pending_review records
-      if (!auth.isAdmin || includePending !== 'true') {
-        const publishedCondition = {
-          $or: [
-            { ingestionStatus: 'published' },
-            { ingestionStatus: { $exists: false } },
-            { ingestionStatus: null },
-            { ingestionStatus: '' }
-          ]
-        };
-        if (filter.$or) {
-          filter.$and = [{ $or: filter.$or }, publishedCondition];
-          delete filter.$or;
-        } else {
-          filter.$or = publishedCondition.$or;
-        }
-      } else if (req.query.ingestionStatus && req.query.ingestionStatus !== 'all') {
-        filter.ingestionStatus = req.query.ingestionStatus;
-      }
-
-      rawList = await Notification.find(filter).sort({ updatedAt: -1, _id: -1 }).maxTimeMS(4000).lean();
-    }
-  } catch (dbErr) {
-    console.warn('⚠️ [MongoDB Read Warning]: Falling back to local verified notifications registry.', dbErr.message);
-  }
-
-  // Fallback to in-memory verified master notifications if db list is empty
-  if (!rawList || rawList.length === 0) {
-    rawList = VERIFIED_ALL_EXAM_NOTIFICATIONS.filter(item => {
-      if (!category || category === 'all') return true;
-      return normalizeCategoryStr(item.category) === normalizeCategoryStr(category);
-    });
-    // Public fallback filtering for in-memory records
-    if (!auth.isAdmin || includePending !== 'true') {
-      rawList = rawList.filter(item => !item.ingestionStatus || item.ingestionStatus === 'published');
-    }
-  }
-
-  let processedList = rawList.map((item) => enrichNotificationWithDateStatus(item, today));
-
-  if (search && search.trim()) {
-    const q = search.trim().toLowerCase();
-    processedList = processedList.filter((item) => {
-      const text = `${item.service} ${item.organization || ''} ${item.postName || ''} ${item.qualification || ''} ${item.importantDetails || ''} ${item.category || ''} ${item.formattedExamDate} ${item.formattedClosingDate}`.toLowerCase();
-      return text.includes(q);
-    });
-  }
-
-  // Filter by status code if requested
-  if (status === 'active' || status === 'active_app' || status === 'open') {
-    processedList = processedList.filter(n => n.appStatus.isOpen);
-  } else if (status === 'upcoming_exams' || status === 'upcoming') {
-    processedList = processedList.filter(n => n.examStatus.isUpcoming || n.examStatus.isToday);
-  } else if (status === 'expired' || status === 'app_closed') {
-    processedList = processedList.filter(n => n.appStatus.isExpired);
-  } else if (status === 'exam_completed') {
-    processedList = processedList.filter(n => n.examStatus.isCompleted);
-  }
-
-  // Sort: Open applications first, upcoming exams next, then newest
-  processedList.sort((a, b) => {
-    if (a.appStatus.isOpen !== b.appStatus.isOpen) {
-      return a.appStatus.isOpen ? -1 : 1;
-    }
-    if (a.examStatus.isUpcoming !== b.examStatus.isUpcoming) {
-      return a.examStatus.isUpcoming ? -1 : 1;
-    }
-    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
-  });
-
-  return res.json(processedList);
-});
-
-// Master Sync All Exam Categories Endpoint (Admin Only)
-app.post('/api/notifications/sync-all', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    if (!auth.isAdmin) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
-    }
-    await syncAllVerifiedNotificationsFeed();
-    const all = await Notification.find().sort({ updatedAt: -1 }).lean();
-    res.json({
-      success: true,
-      message: '✅ All Official Govt & Competitive Exam Notifications synced successfully to MongoDB Atlas!',
-      count: all.length,
-      notifications: all
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Sync Banking Exam Feed Endpoint (Admin Only)
-app.post('/api/notifications/sync-banking', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    if (!auth.isAdmin) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
-    }
-    await syncAllVerifiedNotificationsFeed();
-    const all = await Notification.find().sort({ updatedAt: -1 }).lean();
-    res.json({
-      success: true,
-      message: '✅ Verified Banking & Govt Exam Notifications synced successfully to MongoDB Atlas!',
-      count: all.length,
-      notifications: all
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Create / Update Notification (Admin Only)
-app.post('/api/notifications', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    if (!auth.isAdmin) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
-    }
-    const data = req.body;
-    if (!data.service) {
-      return res.status(400).json({ error: 'Notification service/title is required' });
-    }
-
-    const id = data.id || `notif-${Date.now()}`;
-    const keyFilter = data.id
-      ? { id: data.id }
-      : { service: data.service, organization: data.organization || '' };
-
-    const updatePayload = {
-      ...data,
-      id,
-      ingestionStatus: data.ingestionStatus || 'published',
-      ingestionSource: data.ingestionSource || 'manual_admin',
-      updatedAt: new Date()
-    };
-
-    const result = await Notification.findOneAndUpdate(
-      keyFilter,
-      { $set: updatePayload },
-      { upsert: true, new: true }
-    );
-    const obj = result.toObject ? result.toObject() : result;
-    res.json({ success: true, ...obj });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete Notification (Admin Only)
-app.delete('/api/notifications/:id', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    if (!auth.isAdmin) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
-    }
-    await Notification.deleteMany({ id: req.params.id });
-    res.json({ success: true, message: `Notification ${req.params.id} deleted` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Trigger Automated Ingestion Job (Admin or Cron Secret Header)
-app.post('/api/notifications/ingest-job', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    const secretHeader = req.headers['x-ingestion-secret'] || req.headers['x-cron-secret'];
-    const rawEnvSecret = typeof process.env.INGESTION_SECRET_KEY === 'string' && process.env.INGESTION_SECRET_KEY.trim().length > 0
-      ? process.env.INGESTION_SECRET_KEY.trim()
-      : (typeof process.env.INGESTION_SECRET === 'string' ? process.env.INGESTION_SECRET.trim() : '');
-
-    // Constant-time comparison to prevent timing attacks, fail-closed if secret is unconfigured
-    let isSecretValid = false;
-    if (rawEnvSecret && rawEnvSecret.length > 0 && typeof secretHeader === 'string' && secretHeader.trim().length > 0) {
-      const headerBuf = Buffer.from(secretHeader.trim(), 'utf8');
-      const envBuf = Buffer.from(rawEnvSecret, 'utf8');
-      if (headerBuf.length === envBuf.length) {
-        isSecretValid = crypto.timingSafeEqual(headerBuf, envBuf);
-      }
-    }
-
-    if (!auth.isAdmin && !isSecretValid) {
-      return res.status(403).json({
-        success: false,
-        error: 'FORBIDDEN',
-        message: 'Admin authorization or valid X-Ingestion-Secret header is required to trigger ingestion.'
-      });
-    }
-
-    const { sourceKey, dryRun } = req.query;
-    console.log(`📡 [Ingestion Trigger]: Running ingestion jobs (source: ${sourceKey || 'ALL'}, dryRun: ${dryRun || 'false'})...`);
-    const summary = await runAllIngestionJobs(Notification, {
-      sourceKey,
-      dryRun: dryRun === 'true'
-    });
-
-    res.json({
-      success: true,
-      message: `Ingestion job completed. ${summary.newRecordsInserted} new items detected, ${summary.duplicatesSkipped} duplicates skipped.`,
-      summary
-    });
-  } catch (err) {
-    if (err.code === 'CONCURRENT_INGESTION_LOCKED' || err.message === 'INGESTION_IN_PROGRESS') {
-      return res.status(409).json({
-        success: false,
-        error: 'CONFLICT',
-        code: 'INGESTION_IN_PROGRESS',
-        message: 'An automated ingestion job is already running. Please wait for it to finish.'
-      });
-    }
-    console.error('Ingestion job error:', err.message);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Fetch Pending Review Notifications (Admin Only)
-app.get('/api/notifications/pending', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    if (!auth.isAdmin) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
-    }
-    const today = getKolkataToday();
-    const pendingList = await Notification.find({ ingestionStatus: 'pending_review' })
-      .sort({ updatedAt: -1, _id: -1 })
-      .maxTimeMS(4000)
-      .lean();
-
-    const enriched = (pendingList || []).map(item => enrichNotificationWithDateStatus(item, today));
-    res.json({ success: true, count: enriched.length, notifications: enriched });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Approve Pending Notification and Publish to Public Feed (Admin Only)
-app.post('/api/notifications/:id/approve', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    if (!auth.isAdmin) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
-    }
-    const notif = await Notification.findOneAndUpdate(
-      { id: req.params.id },
-      {
-        $set: {
-          ingestionStatus: 'published',
-          isVerified: true,
-          updatedAt: new Date()
-        }
-      },
-      { new: true }
-    );
-    if (!notif) {
-      return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Notification not found' });
-    }
-    res.json({
-      success: true,
-      message: '✅ Notification approved and published to live /notifications page!',
-      notification: notif
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Reject / Discard Pending Notification (Admin Only)
-app.post('/api/notifications/:id/reject', async (req, res) => {
-  try {
-    const auth = resolveAuthContext(req);
-    if (!auth.isAdmin) {
-      return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
-    }
-    await Notification.deleteMany({ id: req.params.id });
-    res.json({
-      success: true,
-      message: `Notification ${req.params.id} rejected and removed.`
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Ingestion Diagnostics & System Status Endpoint
-app.get('/api/notifications/ingestion-status', async (req, res) => {
-  try {
-    const status = getIngestionStatus();
-    let publishedCount = 0;
-    let pendingCount = 0;
-    let totalCount = 0;
-
-    if (mongoose.connection.readyState === 1) {
-      [publishedCount, pendingCount, totalCount] = await Promise.all([
-        Notification.countDocuments({
-          $or: [
-            { ingestionStatus: 'published' },
-            { ingestionStatus: { $exists: false } },
-            { ingestionStatus: null },
-            { ingestionStatus: '' }
-          ]
-        }),
-        Notification.countDocuments({ ingestionStatus: 'pending_review' }),
-        Notification.countDocuments({})
-      ]);
-    }
-
-    res.json({
-      status: 'ok',
-      diagnostics: status,
-      counts: {
-        published: publishedCount,
-        pending: pendingCount,
-        total: totalCount
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+registerNotificationAndIngestionRoutes(app, {
+  Notification,
+  IngestionJob,
+  IngestionLock,
+  IngestionSourceHealth,
+  IngestionRunLog,
+  mongooseConnection: mongoose.connection,
+  resolveAuthContext,
+  syncAllVerifiedNotificationsFeed,
+  VERIFIED_ALL_EXAM_NOTIFICATIONS,
+  env: process.env
 });
 
 // --- ADVERTISEMENTS API ---
@@ -4462,9 +4669,15 @@ const connectWithRetry = async () => {
     // Initialize & bootstrap Admin Authentication record in MongoDB
     await initializeAdminAuth();
 
-    // Auto-sync official exam notifications on startup
+    // Auto-sync official exam notifications on startup (preserving locked/edited records)
     await syncAllVerifiedNotificationsFeed();
     console.log(`📢 ✅ Master Exam Notifications Feed Synced to MongoDB Atlas!`);
+
+    // Recover any stale durable ingestion jobs interrupted by process crash/restart
+    const rec = await recoverStaleIngestionJobs(IngestionJob);
+    if (rec.recoveredCount > 0 || rec.failedCount > 0) {
+      console.log(`🔄 [Recovery]: Recovered ${rec.recoveredCount} stale ingestion job(s) to pending, marked ${rec.failedCount} exhausted.`);
+    }
   } catch (err) {
     console.warn(`⚠️ MongoDB Atlas Cloud Connection Warning: ${err.message}`);
     console.warn(`🔄 Retrying MongoDB Atlas connection in 3 seconds...`);
@@ -4472,10 +4685,46 @@ const connectWithRetry = async () => {
   }
 };
 
+const runDurableSchedulerTick = async (triggerType = 'in_process_interval') => {
+  if (process.env.INGESTION_SCHEDULER_DISABLED === 'true') {
+    return;
+  }
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
+  try {
+    const pendingRecoveries = await IngestionJob.countDocuments({ status: 'pending' });
+    const latestRun = await IngestionRunLog.findOne({}, { completedAt: 1 }).sort({ completedAt: -1 }).lean();
+    const fourHoursMs = 4 * 60 * 60 * 1000;
+    const isStale = !latestRun?.completedAt || (Date.now() - new Date(latestRun.completedAt).getTime()) >= fourHoursMs;
+
+    if (pendingRecoveries === 0 && !isStale) {
+      return; // Skip unnecessary catch-up if recent run completed cleanly within 4 hours
+    }
+
+    console.log(`🤖 [Scheduler]: Running durable ingestion tick (pending=${pendingRecoveries}, stale=${isStale})...`);
+    const summary = await runAllIngestionJobs(Notification, {
+      triggerType: pendingRecoveries > 0 ? 'startup_recovery' : triggerType,
+      models: {
+        IngestionJob,
+        IngestionLock,
+        IngestionSourceHealth,
+        IngestionRunLog,
+        mongooseConnection: mongoose.connection
+      }
+    });
+    console.log(`🤖 [Scheduler]: Ingestion completed: ${summary.newRecordsInserted} new inserted, ${summary.duplicatesSkipped} duplicates skipped.`);
+  } catch (err) {
+    if (err.code !== 'CONCURRENT_INGESTION_LOCKED') {
+      console.warn(`⚠️ [Scheduler Warning]: Ingestion run failed:`, err.message);
+    }
+  }
+};
+
 const startServer = async () => {
   connectWithRetry();
 
-  // Automated background periodic sync (Every 30 minutes)
+  // Automated background periodic sync (Every 30 minutes, protecting manual/corrigendum docs)
   setInterval(async () => {
     try {
       if (mongoose.connection.readyState === 1) {
@@ -4487,22 +4736,13 @@ const startServer = async () => {
     }
   }, 30 * 60 * 1000);
 
-  // Automated Ingestion Engine Scheduler (Runs every 4 hours with 2-min startup delay)
-  setTimeout(() => {
-    const runScheduledIngestion = async () => {
-      try {
-        if (mongoose.connection.readyState === 1) {
-          console.log(`🤖 [Scheduler]: Starting automated exam notification ingestion across official sources...`);
-          const summary = await runAllIngestionJobs(Notification);
-          console.log(`🤖 [Scheduler]: Ingestion completed: ${summary.newRecordsInserted} new inserted, ${summary.duplicatesSkipped} duplicates skipped.`);
-        }
-      } catch (err) {
-        console.warn(`⚠️ [Scheduler Warning]: Ingestion run failed:`, err.message);
-      }
-    };
-    runScheduledIngestion();
-    setInterval(runScheduledIngestion, 4 * 60 * 60 * 1000); // 4-hour periodic interval
-  }, 2 * 60 * 1000);
+  // Staleness-aware Scheduler + Crash Recovery Resume (Primary external cron hits POST /api/notifications/ingest-job)
+  if (process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false' && process.env.INGESTION_SCHEDULER_DISABLED !== 'true') {
+    setTimeout(() => {
+      runDurableSchedulerTick('startup_recovery');
+      setInterval(() => runDurableSchedulerTick('in_process_interval'), 4 * 60 * 60 * 1000);
+    }, 2 * 60 * 1000);
+  }
 
   const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 AkEsevai MongoDB Express Backend API Server running on port ${PORT} (0.0.0.0)`);
@@ -4516,5 +4756,32 @@ const startServer = async () => {
   });
 };
 
-startServer();
+const isMainModule =
+  typeof process !== 'undefined' &&
+  Array.isArray(process.argv) &&
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(__filename);
+
+if (isMainModule && process.env.DISABLE_AUTO_START !== 'true') {
+  startServer();
+}
+
+export {
+  app,
+  createVaultRouteHandlers,
+  inspectCustomerToken,
+  verifyCustomerToken,
+  signCustomerToken,
+  isAdminAuthorized,
+  resolveAuthContext,
+  resolveAuthContextAsync,
+  encryptDocumentPayload,
+  decryptDocumentPayload,
+  inspectDocumentThreats,
+  sanitizeCustomerDocMetadata,
+  mergeCustomerDocumentsOnSave,
+  isCanonicalDocumentId,
+  isSafeHttpsUrl,
+  activeAdminTokensSet
+};
 

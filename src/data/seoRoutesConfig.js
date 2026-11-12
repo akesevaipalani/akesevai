@@ -3,13 +3,15 @@
 
 import { PHOTO_TOOLS_CATALOG, SEARCH_INTENT_TOOL_ALIASES } from './photoToolsData.js';
 import { CITY_DEDICATED_GUIDES } from './regionalCitiesData.js';
+import { SEO03_PAGE_SEO_MAP } from './seo03ServicePagesData.js';
 
 export const BASE_URL = 'https://www.akesevai.com';
-export const DEFAULT_OG_IMAGE = `${BASE_URL}/logo.png`;
+export const DEFAULT_OG_IMAGE = `${BASE_URL}/og-banner.jpg`;
+export const BRAND_LOGO_URL = `${BASE_URL}/logo.png`;
 
 export const PALANI_ADDRESS = {
   '@type': 'PostalAddress',
-  streetAddress: 'Mill Rd, Sanmugapuram, Anna Nagar',
+  streetAddress: 'Mill Road, Sanmugapuram, Anna Nagar',
   addressLocality: 'Palani',
   addressRegion: 'Tamil Nadu',
   postalCode: '624601',
@@ -21,9 +23,9 @@ export const ORGANIZATION_NODE = {
   '@id': `${BASE_URL}/#organization`,
   name: 'AK E-SEVAI',
   legalName: 'AK E-SEVAI Digital Service Centre',
-  alternateName: ['AK E-SEVAI Palani', 'AkEsevai', 'அக் இ-சேவை'],
+  alternateName: ['AK E-SEVAI Palani', 'AkEsevai', 'அக் இ-சேவை டிஜிட்டல் சேவை மையம்'],
   url: `${BASE_URL}/`,
-  logo: DEFAULT_OG_IMAGE,
+  logo: BRAND_LOGO_URL,
   telephone: '+919342318844',
   email: 'akesevaipalani@gmail.com',
   address: PALANI_ADDRESS,
@@ -37,13 +39,13 @@ export const ORGANIZATION_NODE = {
 export const PALANI_LOCAL_BUSINESS_NODE = {
   '@type': ['LocalBusiness', 'ProfessionalService'],
   '@id': `${BASE_URL}/#palani-centre`,
-  name: 'AK E-SEVAI Digital Service Centre Palani',
-  alternateName: 'பழனி அக் இ-சேவை டிஜிட்டல் மையம்',
+  name: 'AK E-SEVAI Digital Service Centre',
+  alternateName: 'அக் இ-சேவை டிஜிட்டல் சேவை மையம், பழனி',
   url: `${BASE_URL}/`,
-  logo: DEFAULT_OG_IMAGE,
-  image: DEFAULT_OG_IMAGE,
+  logo: BRAND_LOGO_URL,
+  image: [DEFAULT_OG_IMAGE, `${BASE_URL}/office1.jpg`, BRAND_LOGO_URL],
   description:
-    'AK E-SEVAI physical walk-in centre in Palani (Mill Rd, 624601) offering Xerox, Colour Printing, Tamil/English Typing, Spiral Binding, Lamination, and e-Sevai document assistance.',
+    'Independent digital service centre on Mill Road, Sanmugapuram, Anna Nagar, Palani 624601 offering Xerox, colour printing, Tamil/English typing, spiral binding, lamination, PAN & certificate application assistance, plus statewide Tamil Nadu online document tools.',
   telephone: '+919342318844',
   email: 'akesevaipalani@gmail.com',
   priceRange: '₹',
@@ -55,7 +57,11 @@ export const PALANI_LOCAL_BUSINESS_NODE = {
     longitude: 77.5186
   },
   hasMap:
-    'https://www.google.com/maps/search/?api=1&query=AK+Esevai%2C+Mill+Rd%2C+Sanmugapuram%2C+Anna+Nagar%2C+Palani%2C+Tamil+Nadu+624601',
+    'https://www.google.com/maps/search/?api=1&query=AK+E-SEVAI+Digital+Service+Centre%2C+Mill+Road%2C+Sanmugapuram%2C+Anna+Nagar%2C+Palani%2C+Tamil+Nadu+624601',
+  areaServed: [
+    { '@type': 'City', name: 'Palani' },
+    { '@type': 'AdministrativeArea', name: 'Dindigul District' }
+  ],
   openingHoursSpecification: [
     {
       '@type': 'OpeningHoursSpecification',
@@ -84,29 +90,29 @@ const CITY_PAGE_SEO = Object.fromEntries(
 
 export const PAGE_SEO_MAP = {
   home: {
-    title: 'AK E-SEVAI Tamil Nadu | Free Photo, PDF Tools & Online e-Sevai Guidance',
+    title: 'AK E-SEVAI Digital Service Centre | Tamil Nadu Online e-Sevai Guidance, Photo & PDF Tools — Palani',
     description:
-      'AK E-SEVAI offers free browser-based photo compression, passport size photo maker, PDF merge/split/compress tools and online e-Sevai guidance across Tamil Nadu. Walk-in centre in Palani.',
+      'Independent e-Sevai application guidance & free browser Photo/PDF tools across Tamil Nadu. Walk-in digital service centre at Mill Road, Palani (624601) • +91 93423 18844.',
     keywords:
-      'AK E-SEVAI, Tamil Nadu e-Sevai online services, photo compressor, passport photo maker online, pdf merge online, tnpsc photo resize, akesevai palani, esevai maiyam',
+      'AK E-SEVAI, தமிழ்நாடு இ சேவை மையம், தமிழ்நாடு ஆன்லைன் சேவை, Tamil Nadu e-Sevai Centre, Online Services Tamil Nadu, e-Sevai Centre Palani, பழனி இ சேவை மையம், Online Services Palani, photo compressor, passport photo maker online, pdf merge online',
     canonical: `${BASE_URL}/`,
     schemaType: 'palani-home'
   },
   services: {
-    title: 'e-Sevai Services Directory | Revenue Certificates, Ration Card, Patta Chitta | AK E-SEVAI',
+    title: 'e-Sevai Services Directory Palani & Tamil Nadu | Certificates, PAN, Ration Card, Patta | AK E-SEVAI',
     description:
-      'Explore Tamil Nadu e-Sevai document guidance and application support for Income, Community, Nativity, First Graduate, Legal Heir certificates, Smart Ration Card & Patta Chitta.',
+      'Independent document checklists and online application assistance for Income, Community, Nativity, Legal Heir certificates, PAN card, Smart Ration Card & Patta Chitta across Tamil Nadu and in Palani.',
     keywords:
-      'tamil nadu esevai services, income certificate guidance, community certificate apply online, nativity certificate, first graduate certificate, patta chitta, ration card update, palani esevai',
+      'tamil nadu esevai services, income certificate guidance, community certificate apply online, nativity certificate, pan card service palani, certificate application assistance palani, பழனி இ சேவை சேவைகள்',
     canonical: `${BASE_URL}/services`,
     schemaType: 'palani-local'
   },
   'esevai-services': {
-    title: 'Tamil Nadu Online e-Sevai Services & Document Preparation Hub | AK E-SEVAI',
+    title: 'Tamil Nadu Online e-Sevai Services & Document Preparation Hub | தமிழ்நாடு இ-சேவை | AK E-SEVAI',
     description:
       'Statewide Tamil Nadu online e-Sevai certificate checklists, TNeGA portal orientation, land record guidance and free browser PDF/photo utilities. Physical centre in Palani.',
     keywords:
-      'tamil nadu online esevai services, tnesevai guide, online certificate preparation tamil nadu, free document tools tamil nadu',
+      'tamil nadu online esevai services, தமிழ்நாடு ஆன்லைன் இ சேவை, tnesevai guide, online certificate preparation tamil nadu, free document tools tamil nadu',
     canonical: `${BASE_URL}/esevai-services`,
     schemaType: 'statewide-service',
     breadcrumbLabel: 'Tamil Nadu e-Sevai Services'
@@ -210,10 +216,10 @@ export const PAGE_SEO_MAP = {
     schemaType: 'palani-local'
   },
   'token-generator': {
-    title: 'Online Token Generator Palani | Live Counter Queue Slot Booking | AK E-SEVAI',
+    title: 'Online Token Generator Palani | Counter Queue Slot Booking — Mill Road | AK E-SEVAI',
     description:
-      'Book a walk-in service counter queue token online for AK E-SEVAI Digital Centre on Mill Road, Palani.',
-    keywords: 'esevai token generator palani, akesevai live token, palani esevai queue booking',
+      'Book a walk-in service counter queue token online for AK E-SEVAI Digital Service Centre on Mill Road, Sanmugapuram, Anna Nagar, Palani 624601.',
+    keywords: 'esevai token generator palani, akesevai live token, palani esevai queue booking, பழனி இ சேவை டோக்கன்',
     canonical: `${BASE_URL}/token-generator`,
     schemaType: 'palani-local'
   },
@@ -227,45 +233,46 @@ export const PAGE_SEO_MAP = {
     breadcrumbLabel: 'Exam Notifications'
   },
   about: {
-    title: 'About AK E-SEVAI | Palani Digital Service Centre & Tamil Nadu Online Tools',
+    title: 'About AK E-SEVAI Digital Service Centre Palani | e-Sevai Centre Mill Road 624601',
     description:
-      'Learn about AK E-SEVAI — our walk-in digital service centre in Palani and free client-side document tools serving citizens across Tamil Nadu.',
-    keywords: 'about akesevai, akesevai palani, digital service centre tamil nadu',
+      'Visit AK E-SEVAI Digital Service Centre at Mill Road, Sanmugapuram, Anna Nagar, Palani 624601 (+91 93423 18844) for Xerox, typing, binding, PAN & e-Sevai assistance, plus free online tools across Tamil Nadu.',
+    keywords: 'about akesevai, e-sevai centre palani, esevai maiyam palani, பழனி இ சேவை மையம், online services palani, digital service centre tamil nadu',
     canonical: `${BASE_URL}/about`,
     schemaType: 'palani-local'
   },
   contact: {
-    title: 'Contact AK E-SEVAI Digital Centre Palani | Mill Road | +91 93423 18844',
+    title: 'Contact AK E-SEVAI Digital Service Centre Palani | Mill Road | +91 93423 18844',
     description:
-      'Office address, WhatsApp number, email and Google Maps location of AK E-SEVAI Digital Service Centre at Mill Road, Palani 624601. Remote WhatsApp support statewide.',
-    keywords: 'akesevai contact, akesevai palani phone number, akesevai whatsapp number, palani mill road esevai',
+      'Office address, WhatsApp number (+91 93423 18844), email and Google Maps directions for AK E-SEVAI Digital Service Centre, Mill Road, Sanmugapuram, Anna Nagar, Palani 624601.',
+    keywords: 'akesevai contact, akesevai palani phone number, akesevai whatsapp number, palani mill road esevai, பழனி இ சேவை மையம் தொடர்பு',
     canonical: `${BASE_URL}/contact`,
     schemaType: 'palani-local'
   },
   'xerox-printing': {
-    title: 'Xerox, Colour Printing & Document Scanning in Palani | AK E-SEVAI',
+    title: 'Xerox, Colour Printing & Document Scanning in Palani | Mill Road | AK E-SEVAI',
     description:
-      'Walk-in B/W Xerox, laser colour printing, A4/Legal copies and scanning at AK E-SEVAI Palani (Mill Road, 624601). Send files via WhatsApp before walking in.',
-    keywords: 'palani xerox, xerox shop in palani, colour printing palani, whatsapp print palani',
+      'Walk-in B/W Xerox, laser colour printing, A4/Legal copies and scanning at AK E-SEVAI Digital Service Centre, Mill Road, Palani 624601 (+91 93423 18844). Send files via WhatsApp before walking in.',
+    keywords: 'palani xerox, xerox shop in palani, colour printing palani, whatsapp print palani, பழனி ஜெராக்ஸ் மையம்',
     canonical: `${BASE_URL}/xerox-printing`,
     schemaType: 'palani-local'
   },
   'typing-services': {
-    title: 'Tamil & English Document Typing Centre in Palani | AK E-SEVAI',
+    title: 'Tamil & English Document Typing Centre in Palani | Mill Road | AK E-SEVAI',
     description:
-      'Walk-in Tamil (Unicode/Bamini) and English typing in Palani for petitions, resumes, applications, and project documentation at AK E-SEVAI.',
-    keywords: 'palani typing centre, tamil typing palani, english typing palani, resume typing palani',
+      'Walk-in Tamil (Unicode/Bamini) and English typing in Palani for petitions, resumes, applications, and project documentation at AK E-SEVAI Digital Service Centre, Mill Road, Palani 624601.',
+    keywords: 'palani typing centre, tamil typing palani, english typing palani, resume typing palani, பழனி தமிழ் டைப்பிங்',
     canonical: `${BASE_URL}/typing-services`,
     schemaType: 'palani-local'
   },
   'spiral-binding': {
-    title: 'Spiral Binding & Certificate Lamination in Palani | AK E-SEVAI',
+    title: 'Spiral Binding & Certificate Lamination in Palani | Mill Road | AK E-SEVAI',
     description:
-      'Walk-in coil spiral binding and document lamination for college project reports, marksheets, and certificates in Palani at AK E-SEVAI.',
-    keywords: 'palani spiral binding, project binding palani, certificate lamination palani',
+      'Walk-in coil spiral binding and document lamination for college project reports, marksheets, and certificates at AK E-SEVAI Digital Service Centre, Mill Road, Palani 624601.',
+    keywords: 'palani spiral binding, project binding palani, certificate lamination palani, பழனி ஸ்பைரல் பைண்டிங்',
     canonical: `${BASE_URL}/spiral-binding`,
     schemaType: 'palani-local'
   },
+  ...SEO03_PAGE_SEO_MAP,
   ...CITY_PAGE_SEO
 };
 
@@ -436,20 +443,66 @@ function buildPageSchema(pageId, seoMeta) {
     };
   }
 
+  const faqEntities = (seoMeta.faqs || []).map((faq) => ({
+    '@type': 'Question',
+    name: faq.q,
+    acceptedAnswer: { '@type': 'Answer', text: faq.a }
+  }));
+
+  const optionalWebPageNode = seoMeta.includeWebPageSchema
+    ? [
+        {
+          '@type': 'WebPage',
+          '@id': `${canonical}#webpage`,
+          url: canonical,
+          name: cleanTitle,
+          description: seoMeta.description,
+          isPartOf: { '@id': `${BASE_URL}/#organization` }
+        }
+      ]
+    : [];
+
+  const optionalFaqNode =
+    faqEntities.length > 0
+      ? [
+          {
+            '@type': 'FAQPage',
+            '@id': `${canonical}#faq`,
+            mainEntity: faqEntities
+          }
+        ]
+      : [];
+
   if (seoMeta.schemaType === 'palani-local') {
     return {
       '@context': 'https://schema.org',
       '@graph': [
         ORGANIZATION_NODE,
         PALANI_LOCAL_BUSINESS_NODE,
+        ...(seoMeta.includeServiceSchema === true
+          ? [
+              {
+                '@type': 'Service',
+                '@id': `${canonical}#service`,
+                name: cleanTitle,
+                serviceType: 'Online Document Tools & Local Digital Service Assistance',
+                url: canonical,
+                description: seoMeta.description,
+                provider: { '@id': `${BASE_URL}/#palani-centre` },
+                areaServed: { '@type': 'City', name: 'Palani', containedInPlace: { '@type': 'State', name: 'Tamil Nadu' } }
+              }
+            ]
+          : []),
+        ...optionalWebPageNode,
         {
           '@type': 'BreadcrumbList',
           '@id': `${canonical}#breadcrumb`,
           itemListElement: [
             { '@type': 'ListItem', position: 1, name: 'Home', item: `${BASE_URL}/` },
-            { '@type': 'ListItem', position: 2, name: cleanTitle, item: canonical }
+            { '@type': 'ListItem', position: 2, name: seoMeta.breadcrumbLabel || cleanTitle, item: canonical }
           ]
-        }
+        },
+        ...optionalFaqNode
       ]
     };
   }
@@ -459,26 +512,25 @@ function buildPageSchema(pageId, seoMeta) {
     ? { '@type': 'City', name: seoMeta.cityName, containedInPlace: { '@type': 'State', name: 'Tamil Nadu' } }
     : { '@type': 'State', name: 'Tamil Nadu' };
 
-  const faqEntities = (seoMeta.faqs || []).map((faq) => ({
-    '@type': 'Question',
-    name: faq.q,
-    acceptedAnswer: { '@type': 'Answer', text: faq.a }
-  }));
-
   return {
     '@context': 'https://schema.org',
     '@graph': [
       ORGANIZATION_NODE,
-      {
-        '@type': 'Service',
-        '@id': `${canonical}#service`,
-        name: cleanTitle,
-        serviceType: 'Online Document Tools & e-Sevai Application Guidance',
-        url: canonical,
-        description: seoMeta.description,
-        provider: { '@id': `${BASE_URL}/#organization` },
-        areaServed: areaServedNode
-      },
+      ...(seoMeta.includeServiceSchema !== false
+        ? [
+            {
+              '@type': 'Service',
+              '@id': `${canonical}#service`,
+              name: cleanTitle,
+              serviceType: 'Online Document Tools & e-Sevai Application Guidance',
+              url: canonical,
+              description: seoMeta.description,
+              provider: { '@id': `${BASE_URL}/#organization` },
+              areaServed: areaServedNode
+            }
+          ]
+        : []),
+      ...optionalWebPageNode,
       {
         '@type': 'BreadcrumbList',
         '@id': `${canonical}#breadcrumb`,
@@ -492,15 +544,7 @@ function buildPageSchema(pageId, seoMeta) {
           }
         ]
       },
-      ...(faqEntities.length > 0
-        ? [
-            {
-              '@type': 'FAQPage',
-              '@id': `${canonical}#faq`,
-              mainEntity: faqEntities
-            }
-          ]
-        : [])
+      ...optionalFaqNode
     ]
   };
 }

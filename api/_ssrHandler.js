@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   BASE_URL,
+  DEFAULT_OG_IMAGE,
   escapeHtml,
   safeJsonLdStringify,
   resolveQueryRedirect,
@@ -87,6 +88,7 @@ export function injectSeoMetadata(templateHtml, resolved) {
   const escapedDesc = escapeHtml(seo.description || '');
   const escapedKeywords = escapeHtml(seo.keywords || '');
   const escapedCanonical = escapeHtml(seo.canonical || `${BASE_URL}/`);
+  const escapedImage = escapeHtml(seo.image || DEFAULT_OG_IMAGE);
   const robotsValue = resolved?.noindex
     ? 'noindex, nofollow'
     : 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
@@ -101,10 +103,19 @@ export function injectSeoMetadata(templateHtml, resolved) {
   html = html.replace(/<meta\s+property="og:url"[\s\S]*?\/?>/i, () => `<meta property="og:url" content="${escapedCanonical}" />`);
   html = html.replace(/<meta\s+property="og:title"[\s\S]*?\/?>/i, () => `<meta property="og:title" content="${escapedTitle}" />`);
   html = html.replace(/<meta\s+property="og:description"[\s\S]*?\/?>/i, () => `<meta property="og:description" content="${escapedDesc}" />`);
+  html = html.replace(/<meta\s+property="og:image"[\s\S]*?\/?>/i, () => `<meta property="og:image" content="${escapedImage}" />`);
 
   html = html.replace(/<meta\s+name="twitter:url"[\s\S]*?\/?>/i, () => `<meta name="twitter:url" content="${escapedCanonical}" />`);
   html = html.replace(/<meta\s+name="twitter:title"[\s\S]*?\/?>/i, () => `<meta name="twitter:title" content="${escapedTitle}" />`);
   html = html.replace(/<meta\s+name="twitter:description"[\s\S]*?\/?>/i, () => `<meta name="twitter:description" content="${escapedDesc}" />`);
+  html = html.replace(/<meta\s+name="twitter:image"[\s\S]*?\/?>/i, () => `<meta name="twitter:image" content="${escapedImage}" />`);
+
+  const routeH1 = escapeHtml((seo.title || 'AK E-SEVAI Digital Service Centre').split('|')[0].trim());
+  html = html.replace(
+    /<noscript>[\s\S]*?<\/noscript>/i,
+    () =>
+      `<noscript><main style="padding: 20px; font-family: sans-serif; max-width: 900px; margin: 0 auto; line-height: 1.6;"><h1>${routeH1}</h1><p>${escapedDesc}</p><p><strong>AK E-SEVAI Digital Service Centre</strong> — Independent e-Sevai guidance &amp; online document preparation across Tamil Nadu. Walk-in desk: Mill Road, Sanmugapuram, Anna Nagar, Palani, Tamil Nadu 624601 (+91 93423 18844).</p><nav aria-label="Core Pages"><a href="/">Home</a> | <a href="/esevai-services">Tamil Nadu e-Sevai Services</a> | <a href="/services">Service Directory</a> | <a href="/photo-tools">Free Photo &amp; PDF Tools</a> | <a href="/pan-card-service">PAN Card Assistance</a> | <a href="/income-certificate">Income Certificate Guide</a> | <a href="/community-certificate">Community Certificate Guide</a> | <a href="/smart-ration-card">Smart Ration Card Guide</a> | <a href="/patta-chitta">Patta &amp; Chitta Guide</a> | <a href="/aadhaar-guidance">Aadhaar Guidance</a> | <a href="/esevai-application-assistance">e-Sevai Application Assistance</a> | <a href="/xerox-printing">Xerox &amp; Printing Palani</a> | <a href="/typing-services">Typing Palani</a> | <a href="/spiral-binding">Spiral Binding Palani</a> | <a href="/about">About Palani Centre</a> | <a href="/contact">Contact</a></nav></main></noscript>`
+  );
 
   html = html.replace(
     /<script\s+id="akesevai-jsonld-schema"\s+type="application\/ld\+json">[\s\S]*?<\/script>/i,

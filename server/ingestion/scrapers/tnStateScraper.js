@@ -50,7 +50,7 @@ export async function scrapeTnpscNotifications(sourceConfig) {
           applyLink: 'https://apply.tnpscexams.in/',
           source: 'Official TNPSC Portal (tnpsc.gov.in)',
           sourceUrl: url,
-          sourcePublishedAt: openingDate || new Date().toISOString()
+          sourcePublishedAt: openingDate || ''
         });
       }
     }

@@ -22,11 +22,35 @@
   "rewrites": [
     {
       "source": "/api/:path*",
+      "has": [
+        { "type": "host", "value": "www.akesevai.com" }
+      ],
+      "destination": "https://akesevai.onrender.com/api/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "has": [
+        { "type": "host", "value": "akesevai.com" }
+      ],
       "destination": "https://akesevai.onrender.com/api/:path*"
     },
     {
       "source": "/api/(.*)",
+      "has": [
+        { "type": "host", "value": "www.akesevai.com" }
+      ],
       "destination": "https://akesevai.onrender.com/api/$1"
+    },
+    {
+      "source": "/api/(.*)",
+      "has": [
+        { "type": "host", "value": "akesevai.com" }
+      ],
+      "destination": "https://akesevai.onrender.com/api/$1"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/ssr-seo"
     },
     {
       "source": "/(.*)",

@@ -5,8 +5,63 @@ import {
   resolveRouteSeo
 } from '../data/seoRoutesConfig';
 
+function resolvePreferredLanguage() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    const queryLang = params.get('lang');
+    if (queryLang === 'en' || queryLang === 'ta') return queryLang;
+
+    const stored = window.localStorage?.getItem('akesevai-lang');
+    if (stored === 'en' || stored === 'ta') return stored;
+
+    const match = document.cookie.match(/(?:^|;\s*)akesevai-lang=(en|ta)(?:;|$)/);
+    if (match) return match[1];
+  } catch (_) {
+    // Default safely to Tamil if storage access is restricted
+  }
+  return 'ta';
+}
+
 export default function SEOHeadManager({ activeTab = 'home', currentToolId = '' }) {
   useEffect(() => {
+    const setOgTag = (property, content) => {
+      let tag = document.querySelector(`meta[property="${property}"]`);
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute('property', property);
+        document.head.appendChild(tag);
+      }
+      tag.content = content;
+    };
+
+    const syncHtmlLang = () => {
+      const lang = resolvePreferredLanguage();
+      if (document.documentElement.lang !== lang) {
+        document.documentElement.lang = lang;
+      }
+      setOgTag('og:locale', lang === 'en' ? 'en_IN' : 'ta_IN');
+      setOgTag('og:locale:alternate', lang === 'en' ? 'ta_IN' : 'en_IN');
+    };
+
+    syncHtmlLang();
+    const handleLangTrigger = () => {
+      queueMicrotask(syncHtmlLang);
+    };
+    window.addEventListener('storage', syncHtmlLang);
+    document.addEventListener('click', handleLangTrigger);
+
+    return () => {
+      window.removeEventListener('storage', syncHtmlLang);
+      document.removeEventListener('click', handleLangTrigger);
+    };
+  }, []);
+
+  useEffect(() => {
+    const lang = resolvePreferredLanguage();
+    if (document.documentElement.lang !== lang) {
+      document.documentElement.lang = lang;
+    }
+
     const pathname = currentToolId
       ? `/tools/${currentToolId}`
       : activeTab === 'home'
@@ -75,12 +130,15 @@ export default function SEOHeadManager({ activeTab = 'home', currentToolId = '' 
     canonicalTag.href = seoData.canonical || `${BASE_URL}/`;
 
     // 4. Open Graph Tags
+    const activeLang = resolvePreferredLanguage();
     setOgTag('og:title', seoData.title);
     setOgTag('og:description', seoData.description);
     setOgTag('og:url', canonicalTag.href);
     setOgTag('og:type', seoData.ogType || 'website');
     setOgTag('og:site_name', 'AK E-SEVAI');
     setOgTag('og:image', DEFAULT_OG_IMAGE);
+    setOgTag('og:locale', activeLang === 'en' ? 'en_IN' : 'ta_IN');
+    setOgTag('og:locale:alternate', activeLang === 'en' ? 'ta_IN' : 'en_IN');
 
     // 5. Twitter Card Tags
     setNamedMeta('twitter:card', 'summary_large_image');

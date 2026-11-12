@@ -1,20 +1,24 @@
 // server/ingestion/deduplicationHelper.js
 import crypto from 'crypto';
+import {
+  normalizeCleanText,
+  stripCorrigendumMarkers,
+  buildIdentityFingerprint,
+  computeContentHash
+} from './corrigendumHelper.js';
+
+export { buildIdentityFingerprint, computeContentHash };
 
 /**
  * Normalizes text for robust deduplication (removes extra spaces, punctuation, lowercase)
  */
 export function normalizeText(str) {
-  if (!str) return '';
-  return String(str)
-    .toLowerCase()
-    .replace(/[^\w\s]/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return normalizeCleanText(str);
 }
 
 /**
  * Generates a deterministic SHA-256 fingerprint for a notification candidate
+ * (Preserved for deterministic ID generation and backwards compatibility)
  */
 export function generateNotificationFingerprint(item) {
   const normCategory = normalizeText(item.category || 'other');
@@ -38,65 +42,157 @@ export function buildDeterministicId(sourceKey, item) {
 }
 
 /**
- * Checks whether candidate is a duplicate of any existing notification in the database
+ * Checks whether candidate matches an existing notification (published, pending, quarantined, or rejected)
+ * and distinguishes exact duplicates, rejection memory hits, and corrigendum/update matches.
+ *
  * @param {Object} candidate - Ingested notification candidate
  * @param {Array<Object>} existingList - Existing notifications from MongoDB
- * @returns {{ isDuplicate: boolean, matchedExistingId: string | null, reason: string }}
+ * @returns {{ isDuplicate: boolean, isCorrigendumCandidate?: boolean, isRejectedHit?: boolean, matchedExistingId: string | null, matchedExisting: Object | null, ambiguousCount?: number, reason: string }}
  */
 export function isDuplicateNotification(candidate, existingList = []) {
   if (!candidate || !existingList || existingList.length === 0) {
-    return { isDuplicate: false, matchedExistingId: null, reason: 'NEW_RECORD' };
+    return {
+      isDuplicate: false,
+      isCorrigendumCandidate: false,
+      isRejectedHit: false,
+      matchedExistingId: null,
+      matchedExisting: null,
+      ambiguousCount: 0,
+      reason: 'NEW_RECORD'
+    };
   }
 
   const candidateId = candidate.id;
   const candidateFingerprint = candidate.fingerprint || generateNotificationFingerprint(candidate);
+  const candidateIdentity = candidate.identityFingerprint || buildIdentityFingerprint(candidate);
+  const candidateContentHash = candidate.contentHash || computeContentHash(candidate);
   const candidateNormService = normalizeText(candidate.service);
+  const candidateBaseService = normalizeText(stripCorrigendumMarkers(candidate.service));
   const candidateNotifNo = candidate.notificationNo ? candidate.notificationNo.trim().toLowerCase() : '';
-  const candidateLink = candidate.detailsLink ? candidate.detailsLink.trim().toLowerCase() : '';
+  const candidateLink = candidate.detailsLink ? candidate.detailsLink.split('#')[0].split('?')[0].trim().toLowerCase() : '';
+
+  const matchedParents = [];
 
   for (const existing of existingList) {
+    let matchReason = null;
+
     // 1. Exact ID Match
     if (existing.id && existing.id === candidateId) {
-      return { isDuplicate: true, matchedExistingId: existing.id, reason: 'EXACT_ID_MATCH' };
+      matchReason = 'EXACT_ID_MATCH';
     }
 
-    // 2. Exact Fingerprint Match
-    const existingFingerprint = existing.fingerprint || generateNotificationFingerprint(existing);
-    if (existingFingerprint === candidateFingerprint) {
-      return { isDuplicate: true, matchedExistingId: existing.id, reason: 'FINGERPRINT_MATCH' };
+    // 2. Exact Legacy Fingerprint Match
+    if (!matchReason) {
+      const existingFingerprint = existing.fingerprint || generateNotificationFingerprint(existing);
+      if (existingFingerprint === candidateFingerprint) {
+        matchReason = 'FINGERPRINT_MATCH';
+      }
     }
 
-    // 3. Official Notification Number match within same organization
+    // 3. Identity Fingerprint Match
+    if (!matchReason && existing.identityFingerprint && existing.identityFingerprint === candidateIdentity) {
+      matchReason = 'IDENTITY_FINGERPRINT_MATCH';
+    }
+
+    // 4. Official Notification Number match within same organization
     if (
+      !matchReason &&
       candidateNotifNo &&
       existing.notificationNo &&
       candidateNotifNo.length > 2 &&
       existing.notificationNo.trim().toLowerCase() === candidateNotifNo &&
       normalizeText(existing.organization) === normalizeText(candidate.organization)
     ) {
-      return { isDuplicate: true, matchedExistingId: existing.id, reason: 'NOTIFICATION_NUMBER_MATCH' };
+      matchReason = 'NOTIFICATION_NUMBER_MATCH';
     }
 
-    // 4. Exact PDF / detailsLink match (if not generic homepage)
+    // 5. Exact PDF link match
     if (
+      !matchReason &&
       candidateLink &&
       candidateLink.endsWith('.pdf') &&
       existing.detailsLink &&
-      existing.detailsLink.trim().toLowerCase() === candidateLink
+      existing.detailsLink.split('#')[0].split('?')[0].trim().toLowerCase() === candidateLink
     ) {
-      return { isDuplicate: true, matchedExistingId: existing.id, reason: 'DIRECT_PDF_LINK_MATCH' };
+      matchReason = 'DIRECT_PDF_LINK_MATCH';
     }
 
-    // 5. Very high title similarity within same organization
-    if (
-      candidateNormService &&
-      candidateNormService.length > 15 &&
-      normalizeText(existing.service) === candidateNormService &&
-      normalizeText(existing.organization) === normalizeText(candidate.organization)
-    ) {
-      return { isDuplicate: true, matchedExistingId: existing.id, reason: 'TITLE_AND_ORG_MATCH' };
+    // 6. Exact or Corrigendum-stripped title similarity within same organization
+    if (!matchReason && candidateNormService && candidateNormService.length > 15 && normalizeText(existing.organization) === normalizeText(candidate.organization)) {
+      if (normalizeText(existing.service) === candidateNormService) {
+        matchReason = 'TITLE_AND_ORG_MATCH';
+      } else if (
+        candidateBaseService.length > 15 &&
+        normalizeText(stripCorrigendumMarkers(existing.service)) === candidateBaseService &&
+        candidateBaseService !== candidateNormService
+      ) {
+        matchReason = 'CORRIGENDUM_BASE_TITLE_MATCH';
+      }
+    }
+
+    if (matchReason) {
+      matchedParents.push({ existing, matchReason });
     }
   }
 
-  return { isDuplicate: false, matchedExistingId: null, reason: 'UNIQUE_RECORD' };
+  if (matchedParents.length === 0) {
+    return {
+      isDuplicate: false,
+      isCorrigendumCandidate: false,
+      isRejectedHit: false,
+      matchedExistingId: null,
+      matchedExisting: null,
+      ambiguousCount: 0,
+      reason: 'UNIQUE_RECORD'
+    };
+  }
+
+  // Prefer exact ID / rejected / published match deterministically
+  const primary = matchedParents.find((m) => m.matchReason === 'EXACT_ID_MATCH')
+    || matchedParents.find((m) => m.existing.ingestionStatus === 'rejected')
+    || matchedParents[0];
+
+  const { existing, matchReason } = primary;
+  const existingContentHash = existing.contentHash || computeContentHash(existing);
+
+  // Check rejection memory FIRST
+  if (existing.ingestionStatus === 'rejected') {
+    const rejectedHash = existing.rejectedContentHash || existingContentHash;
+    if (rejectedHash === candidateContentHash || matchReason === 'EXACT_ID_MATCH' || matchReason === 'FINGERPRINT_MATCH') {
+      return {
+        isDuplicate: true,
+        isCorrigendumCandidate: false,
+        isRejectedHit: true,
+        matchedExistingId: existing.id,
+        matchedExisting: existing,
+        ambiguousCount: matchedParents.length,
+        reason: 'REJECTED_MEMORY_SKIP'
+      };
+    }
+  }
+
+  // Exact match (identical content hash or exact legacy duplicate without field changes)
+  if (existingContentHash === candidateContentHash || matchReason === 'EXACT_ID_MATCH' || matchReason === 'FINGERPRINT_MATCH') {
+    return {
+      isDuplicate: true,
+      isCorrigendumCandidate: false,
+      isRejectedHit: false,
+      matchedExistingId: existing.id,
+      matchedExisting: existing,
+      ambiguousCount: matchedParents.length,
+      reason: matchReason
+    };
+  }
+
+  // Matched same parent notification via notificationNo / PDF / base title,
+  // AND contentHash changed -> classify as corrigendum/update reconciliation candidate
+  return {
+    isDuplicate: true,
+    isCorrigendumCandidate: true,
+    isRejectedHit: false,
+    matchedExistingId: existing.id,
+    matchedExisting: existing,
+    ambiguousCount: matchedParents.length,
+    reason: matchReason
+  };
 }

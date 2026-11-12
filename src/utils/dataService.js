@@ -11,6 +11,7 @@ import {
   saveExpiryDocumentMongo,
   fetchAllExpiryDocumentsMongo,
   fetchSingleExpiryDocumentMongo,
+  fetchSingleExpiryDocumentDetailedMongo,
   deleteExpiryDocumentMongo,
   subscribeExpiryDocumentsMongo,
   saveTokenBookingMongo,
@@ -32,6 +33,8 @@ import {
   syncBankingNotificationsMongo,
   subscribeNotificationsMongo,
   fetchPendingNotificationsMongo,
+  fetchQuarantinedNotificationsMongo,
+  fetchNotificationRevisionsMongo,
   approveNotificationMongo,
   rejectNotificationMongo,
   triggerIngestionJobMongo,
@@ -51,7 +54,8 @@ import {
   subscribeLiveQueueMongo,
   fetchPublicAppStatusMongo,
   fetchTrackByMobileMongo,
-  getAuthHeaders
+  getAuthHeaders,
+  hasAnyApiAuth
 } from './mongoService.js';
 import {
   saveDocBinary,
@@ -120,6 +124,14 @@ export const fetchPendingNotificationsCloud = async () => {
   return await fetchPendingNotificationsMongo();
 };
 
+export const fetchQuarantinedNotificationsCloud = async () => {
+  return await fetchQuarantinedNotificationsMongo();
+};
+
+export const fetchNotificationRevisionsCloud = async (id) => {
+  return await fetchNotificationRevisionsMongo(id);
+};
+
 export const approveNotificationCloud = async (id) => {
   return await approveNotificationMongo(id);
 };
@@ -151,6 +163,7 @@ export const clearAllApplicationLocalStorage = () => {
   try {
     const keysToKeep = new Set([
       'akesevai-customer-session',
+      'akesevai-customer-token',
       'akesevai-customer-records',
       'akesevai-customers',
       'akesevai-token-bookings',
@@ -177,18 +190,76 @@ export const normalizePhone = (phone) => {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 };
 
+const isCanonicalDocId = (id) => typeof id === 'string' && /^DOC-[A-Za-z0-9._-]+$/.test(id.trim());
+
+/**
+ * Shared helper: merges cloud and local document lists while preserving canonical DOC- IDs
+ * and local cached previews without ever overwriting server IDs with random/legacy keys.
+ */
+export const mergeSyncedDocumentsPreservingIds = (cloudDocs = [], localDocs = []) => {
+  const docMap = new Map();
+  const safeCloud = Array.isArray(cloudDocs) ? cloudDocs : [];
+  const safeLocal = Array.isArray(localDocs) ? localDocs : [];
+
+  const getCompositeKey = (d) =>
+    `${String(d?.applicationId || '').trim().toLowerCase()}::${String(d?.requirement || '').trim().toLowerCase()}::${String(d?.name || '').trim().toLowerCase()}`;
+
+  safeCloud.forEach((d) => {
+    if (!d) return;
+    const k = String(d.id || '').trim() || getCompositeKey(d);
+    if (k && k !== '::::') docMap.set(k, d);
+  });
+
+  safeLocal.forEach((d) => {
+    if (!d) return;
+    const idKey = String(d.id || '').trim();
+    const compKey = getCompositeKey(d);
+    let matchKey = null;
+    if (idKey && docMap.has(idKey)) {
+      matchKey = idKey;
+    } else if (compKey !== '::::') {
+      for (const [k, existing] of docMap.entries()) {
+        if (getCompositeKey(existing) === compKey) {
+          matchKey = k;
+          break;
+        }
+      }
+    }
+
+    if (matchKey) {
+      const existing = docMap.get(matchKey);
+      const canonicalId = isCanonicalDocId(existing.id)
+        ? existing.id
+        : (isCanonicalDocId(d.id) ? d.id : (existing.id || d.id || ''));
+      const bestData = existing.data || d.data || '';
+      const bestUrl = existing.url || d.url || bestData || '';
+      docMap.set(matchKey, {
+        ...d,
+        ...existing,
+        id: canonicalId,
+        url: bestUrl,
+        data: bestData || bestUrl
+      });
+    } else if (idKey) {
+      docMap.set(idKey, d);
+    }
+  });
+
+  return Array.from(docMap.values());
+};
+
 // --- CUSTOMER PROFILES (CENTRAL MONGODB SERVER) ---
 
 export const saveCustomerProfileCloud = async (phone, profileData) => {
   const cleanPhone = normalizePhone(phone);
   if (!cleanPhone) return;
 
-  // 1. Save all document binaries to IndexedDB store
+  // 1. Save all document binaries to IndexedDB store under canonical IDs
   if (Array.isArray(profileData?.documents)) {
     profileData.documents.forEach((docItem) => {
-      const docId = docItem?.id || `${cleanPhone}_${docItem?.requirement || docItem?.name}`;
+      const docId = docItem?.id;
       const dataUrl = docItem?.data || docItem?.url;
-      if (docId && dataUrl && dataUrl.length > 20) {
+      if (docId && dataUrl && dataUrl.length > 20 && !String(dataUrl).startsWith('LOCAL_DATA_URL')) {
         saveDocBinary(docId, dataUrl, { ...docItem, customerPhone: cleanPhone }).catch(() => {});
       }
     });
@@ -200,16 +271,8 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
     const existingRecord = records[cleanPhone] || {};
     const existingDocs = existingRecord.documents || [];
 
-    // Merge documents: retain existing data/url if not present in new payload
-    const mergedDocs = (profileData.documents || []).map((docItem) => {
-      const existing = existingDocs.find(d => d.id === docItem.id || d.requirement === docItem.requirement);
-      const url = docItem.url || docItem.data || existing?.url || existing?.data || '';
-      return {
-        ...docItem,
-        url,
-        data: url
-      };
-    });
+    const incomingDocs = Array.isArray(profileData?.documents) ? profileData.documents : existingDocs;
+    const mergedDocs = mergeSyncedDocumentsPreservingIds(incomingDocs, existingDocs);
 
     const updatedRecord = { ...existingRecord, ...profileData, documents: mergedDocs, phone: cleanPhone };
     if (!profileData.lastToken) {
@@ -223,6 +286,8 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
     }
   } catch (e) {}
 
+  if (profileData?.skipRemoteSync) return null;
+
   const dataToSave = {
     ...profileData,
     phone: cleanPhone,
@@ -230,9 +295,11 @@ export const saveCustomerProfileCloud = async (phone, profileData) => {
   };
 
   try {
-    await saveCustomerProfileMongo(cleanPhone, dataToSave);
+    return await saveCustomerProfileMongo(cleanPhone, dataToSave);
   } catch (err) {
     logNotice('MongoDB Customer save', err);
+    if (profileData?.throwOnError) throw err;
+    return null;
   }
 };
 
@@ -338,21 +405,11 @@ export const subscribeCustomerProfiles = (callback) => {
       if (mongoCusts && typeof mongoCusts === 'object' && Object.keys(mongoCusts).length > 0) {
         const localCust1 = JSON.parse(localStorage.getItem('akesevai-customer-records') || '{}');
         const merged = { ...mongoCusts };
-        // Preserve local document binary data/url for offline viewing without resurrecting deleted applications
+        // Preserve local document binary cache for offline viewing while preserving canonical cloud IDs
         Object.keys(merged).forEach((phone) => {
           const lCust = localCust1[phone];
           if (lCust && Array.isArray(lCust.documents)) {
-            const mDocs = merged[phone].documents || [];
-            const docMap = new Map();
-            mDocs.forEach(d => docMap.set(d.id || d.requirement || d.name, d));
-            lCust.documents.forEach(d => {
-              const k = d.id || d.requirement || d.name;
-              if (docMap.has(k)) {
-                const existing = docMap.get(k);
-                docMap.set(k, { ...existing, ...d, url: d.url || d.data || existing.url || existing.data, data: d.url || d.data || existing.url || existing.data });
-              }
-            });
-            merged[phone].documents = Array.from(docMap.values());
+            merged[phone].documents = mergeSyncedDocumentsPreservingIds(merged[phone].documents || [], lCust.documents);
           }
         });
         if (typeof window !== 'undefined') {
@@ -761,35 +818,66 @@ export const compressImageForUpload = (file) => {
   });
 };
 
-export const saveExpiryDocumentCloud = async (docData) => {
-  if (!docData || (!docData.id && !docData.url)) return;
-  const docId = docData.id || `DOC-${Date.now()}`;
-  const dUrl = docData.url || docData.data || '';
-  const fullDocData = { ...docData, id: docId, url: dUrl, data: dUrl, updatedAt: new Date().toISOString() };
+export const saveExpiryDocumentCloud = async (docData, options = {}) => {
+  if (!docData) return null;
 
-  // 1. Save document binary to IndexedDB
-  if (dUrl && dUrl.length > 20) {
-    saveDocBinary(docId, dUrl, fullDocData).catch(() => {});
+  const rawPayload = (typeof docData.data === 'string' && docData.data.startsWith('data:'))
+    ? docData.data
+    : (typeof docData.url === 'string' && docData.url.startsWith('data:') ? docData.url : (docData.data || ''));
+  const externalHttpsUrl = (typeof docData.url === 'string' && /^https:\/\//i.test(docData.url.trim()))
+    ? docData.url.trim()
+    : '';
+
+  // Strip non-canonical local/AK prefixes so backend assigns/enforces canonical DOC- ID
+  const reqPayload = {
+    ...docData,
+    id: isCanonicalDocId(docData.id) ? docData.id.trim() : undefined,
+    data: rawPayload,
+    url: externalHttpsUrl,
+    updatedAt: new Date().toISOString()
+  };
+
+  // Persist to backend FIRST and require confirmation before updating local caches
+  const serverRes = await saveExpiryDocumentMongo(reqPayload, options);
+  const canonicalId = serverRes?.id;
+  if (!canonicalId) {
+    const err = new Error('Server did not return a canonical document ID.');
+    err.status = 500;
+    err.code = 'MISSING_SERVER_DOC_ID';
+    throw err;
+  }
+
+  const localBinary = serverRes.data || rawPayload || serverRes.url || externalHttpsUrl || '';
+  const canonicalDocForCache = {
+    ...docData,
+    ...serverRes,
+    id: canonicalId,
+    url: localBinary || serverRes.url || '',
+    data: localBinary
+  };
+
+  if (localBinary && localBinary.length > 20 && !String(localBinary).startsWith('LOCAL_DATA_URL')) {
+    saveDocBinary(canonicalId, localBinary, canonicalDocForCache).catch(() => {});
   }
 
   if (typeof window !== 'undefined') {
     try {
       const rawExpDocs = localStorage.getItem('akesevai_expiry_docs') || '[]';
       const expDocs = JSON.parse(rawExpDocs);
-      const filtered = expDocs.filter(d => d.id !== docId && d.requirement !== docData.requirement);
-      filtered.unshift(fullDocData);
+      const filtered = expDocs.filter((d) => d && d.id !== canonicalId);
+      filtered.unshift(canonicalDocForCache);
       localStorage.setItem('akesevai_expiry_docs', JSON.stringify(filtered));
 
-      const phone = String(docData.customerPhone || docData.phone || '').replace(/\D/g, '');
+      const phone = normalizePhone(docData.customerPhone || docData.phone || serverRes.customerPhone || '');
       if (phone) {
-        ['akesevai-customer-records', 'akesevai-customers'].forEach(storageKey => {
+        ['akesevai-customer-records', 'akesevai-customers'].forEach((storageKey) => {
           const rawCusts = localStorage.getItem(storageKey);
           if (rawCusts) {
             const custs = JSON.parse(rawCusts);
             if (custs[phone]) {
               const currentDocs = custs[phone].documents || [];
-              const fDocs = currentDocs.filter(d => d.id !== docId && d.requirement !== docData.requirement);
-              custs[phone].documents = [fullDocData, ...fDocs];
+              const fDocs = currentDocs.filter((d) => d && d.id !== canonicalId);
+              custs[phone].documents = [canonicalDocForCache, ...fDocs];
               localStorage.setItem(storageKey, JSON.stringify(custs));
             }
           }
@@ -800,11 +888,7 @@ export const saveExpiryDocumentCloud = async (docData) => {
     } catch (e) {}
   }
 
-  try {
-    await saveExpiryDocumentMongo(fullDocData);
-  } catch (e) {
-    logNotice('MongoDB Document save', e);
-  }
+  return serverRes;
 };
 
 export const getDeletedDocsSet = () => {
@@ -941,25 +1025,36 @@ export const deleteExpiryDocumentCloud = async (docId, customerPhone = '', docMe
   }
 };
 
-export const uploadFileToFirebaseStorage = async (fileInput, pathFolder = 'customer_documents', customerPhone = '') => {
+export const uploadFileToFirebaseStorage = async (fileInput, pathFolder = 'customer_documents', customerPhone = '', extraMeta = {}) => {
   if (!fileInput) return null;
   const uploadRes = await uploadFileToMongoStorage(fileInput, pathFolder, customerPhone);
-  const docRecord = {
-    id: `DOC-${Date.now()}`,
+  if (!uploadRes?.url) {
+    throw new Error('Failed to read document file for upload.');
+  }
+  const baseRecord = {
+    applicationId: extraMeta.applicationId || '',
+    requirement: extraMeta.requirement || '',
     name: fileInput.name || 'document.jpg',
     type: fileInput.type || 'image/jpeg',
     size: fileInput.size || 0,
-    url: uploadRes.url,
-    storagePath: uploadRes.storagePath,
+    data: uploadRes.url,
+    url: '',
     customerPhone,
+    clientRequestId: extraMeta.clientRequestId || `REQ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     uploadedAt: new Date().toISOString()
   };
-  await saveExpiryDocumentCloud(docRecord);
-  return docRecord;
+  if (extraMeta.skipCloudSave) {
+    return { ...baseRecord, url: uploadRes.url, storagePath: uploadRes.storagePath };
+  }
+  return await saveExpiryDocumentCloud(baseRecord);
 };
 
-export const fetchSingleExpiryDocumentCloud = async (id) => {
-  return await fetchSingleExpiryDocumentMongo(id);
+export const fetchSingleExpiryDocumentCloud = async (id, options = {}) => {
+  return await fetchSingleExpiryDocumentMongo(id, options);
+};
+
+export const fetchSingleExpiryDocumentDetailedCloud = async (id, options = {}) => {
+  return await fetchSingleExpiryDocumentDetailedMongo(id, options);
 };
 
 export const uploadDataUrlToFirebaseStorage = async (dataUrl, filename = 'document.jpg', pathFolder = 'customer_photos') => {
@@ -1135,9 +1230,7 @@ export const fetchAllCloudRecords = async () => {
   let mongoApps = {};
 
   try {
-    const auth = getAuthHeaders();
-    const hasAuth = Boolean(auth && (auth['x-admin-token'] || auth['x-customer-phone']));
-    if (hasAuth) {
+    if (hasAnyApiAuth()) {
       mongoCustomers = (await fetchAllCustomerProfilesMongo()) || {};
       mongoTokens = (await fetchAllTokensMongo()) || [];
       mongoDocs = (await fetchAllExpiryDocumentsMongo()) || [];
@@ -1145,43 +1238,24 @@ export const fetchAllCloudRecords = async () => {
     }
 
     if (typeof window !== 'undefined' && window.localStorage) {
-      // Merge with existing local customer records to preserve document binary URLs without reviving deleted records
+      // Merge with existing local customer records preserving canonical server DOC- IDs
       const localCustRaw = localStorage.getItem('akesevai-customer-records');
       const localCusts = localCustRaw ? JSON.parse(localCustRaw) : {};
       const mergedCustomers = { ...mongoCustomers };
 
       Object.keys(mergedCustomers).forEach(p => {
         if (localCusts[p]) {
-          const mDocs = mergedCustomers[p].documents || [];
-          const lDocs = localCusts[p].documents || [];
-          const docMap = new Map();
-          mDocs.forEach(d => docMap.set(d.id || d.requirement || d.name, d));
-          lDocs.forEach(d => {
-            const k = d.id || d.requirement || d.name;
-            if (docMap.has(k)) {
-              const existing = docMap.get(k);
-              docMap.set(k, { ...existing, ...d, url: d.url || d.data || existing.url || existing.data, data: d.url || d.data || existing.url || existing.data });
-            }
-          });
-          mergedCustomers[p].documents = Array.from(docMap.values());
+          mergedCustomers[p].documents = mergeSyncedDocumentsPreservingIds(
+            mergedCustomers[p].documents || [],
+            localCusts[p].documents || []
+          );
         }
       });
 
-      // Merge expiry docs preserving data/url
+      // Merge expiry docs preserving canonical server IDs and cached preview URLs
       const localExpRaw = localStorage.getItem('akesevai_expiry_docs');
       const localExpDocs = localExpRaw ? JSON.parse(localExpRaw) : [];
-      const expDocMap = new Map();
-      mongoDocs.forEach(d => expDocMap.set(d.id || d.url || d.name, d));
-      localExpDocs.forEach(d => {
-        const k = d.id || d.url || d.name;
-        if (expDocMap.has(k)) {
-          const existing = expDocMap.get(k);
-          expDocMap.set(k, { ...existing, ...d, url: d.url || d.data || existing.url || existing.data, data: d.url || d.data || existing.url || existing.data });
-        } else {
-          expDocMap.set(k, d);
-        }
-      });
-      const mergedExpDocs = Array.from(expDocMap.values());
+      const mergedExpDocs = mergeSyncedDocumentsPreservingIds(mongoDocs, localExpDocs);
 
       localStorage.setItem('akesevai-customer-records', JSON.stringify(mergedCustomers));
       localStorage.setItem('akesevai-customers', JSON.stringify(mergedCustomers));
