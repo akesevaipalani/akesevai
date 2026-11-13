@@ -6,6 +6,7 @@ import {
   CheckCircle2, ArrowRight, Sparkle, ExternalLink
 } from 'lucide-react';
 import { PHOTO_TOOLS_CATALOG, PHOTO_TOOLS_CATEGORIES } from '../data/photoToolsData';
+import SpaLink from '../components/SpaLink';
 
 // Map icon strings to Lucide icon components
 const ICON_MAP = {
@@ -104,7 +105,7 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
             minHeight: '38px'
           }}
         >
-          {isTa ? 'அனைத்தும் (All 19 Tools)' : 'All 19 Tools'}
+          {isTa ? `அனைத்தும் (${PHOTO_TOOLS_CATALOG.length} Tools)` : `All ${PHOTO_TOOLS_CATALOG.length} Tools`}
         </button>
         {PHOTO_TOOLS_CATEGORIES.map((cat) => (
           <button
@@ -128,17 +129,32 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
         ))}
       </div>
 
+      {/* Category Hubs Quick Navigation */}
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '22px' }}>
+        <SpaLink to="/pdf-tools" navigate={navigate} scrollToTop style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#0052cc', padding: '7px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 800, textDecoration: 'none' }}>
+          📄 {isTa ? 'PDF கருவிகள் தொகுப்பு' : 'Dedicated PDF Tools Hub'}
+        </SpaLink>
+        <SpaLink to="/government-exam-tools" navigate={navigate} scrollToTop style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '7px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 800, textDecoration: 'none' }}>
+          🎯 {isTa ? 'அரசுத் தேர்வு போட்டோ கருவிகள்' : 'Govt Exam Photo Tools'}
+        </SpaLink>
+        <SpaLink to="/passport-photo-services" navigate={navigate} scrollToTop style={{ background: '#fefce8', border: '1px solid #fde047', color: '#854d0e', padding: '7px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 800, textDecoration: 'none' }}>
+          📸 {isTa ? 'பாஸ்போர்ட் போட்டோ சேவைகள்' : 'Passport Photo Services'}
+        </SpaLink>
+        <SpaLink to="/esevai-services" navigate={navigate} scrollToTop style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#334155', padding: '7px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 800, textDecoration: 'none' }}>
+          🏛️ {isTa ? 'தமிழ்நாடு இ-சேவை உதவி' : 'TN e-Sevai Online Guide'}
+        </SpaLink>
+      </div>
+
       {/* Tools Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '18px', marginBottom: '40px' }}>
         {filteredTools.map((tool) => {
           const IconComp = ICON_MAP[tool.icon] || Camera;
           return (
-            <div
+            <SpaLink
               key={tool.id}
-              onClick={() => {
-                if (navigate) navigate(`tools/${tool.id}`);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
+              to={tool.path}
+              navigate={navigate}
+              scrollToTop
               style={{
                 background: 'white',
                 border: '1.5px solid #e2e8f0',
@@ -150,7 +166,8 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
                 flexDirection: 'column',
                 justifyContent: 'space-between',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                textDecoration: 'none'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = '#0052cc';
@@ -184,13 +201,13 @@ export default function PhotoToolsHubPage({ navigate, lang = 'ta' }) {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', paddingTop: '12px' }}>
                 <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700 }}>
-                  ✓ 100% Free · No Limit
+                  ✓ 100% Free · Browser Private
                 </span>
                 <span style={{ fontSize: '12.5px', color: '#0052cc', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   {isTa ? 'பயன்படுத்துக' : 'Open Tool'} <ArrowRight size={14} />
                 </span>
               </div>
-            </div>
+            </SpaLink>
           );
         })}
       </div>

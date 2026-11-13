@@ -1,16 +1,175 @@
-export const getApiBaseUrl = () => {
-  const envUrl = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env.VITE_API_URL : '';
-  if (envUrl && !envUrl.includes('localhost') && envUrl.startsWith('http')) {
-    return envUrl;
+const PRODUCTION_HOSTNAMES = new Set(['www.akesevai.com', 'akesevai.com']);
+const LOCAL_DEV_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+const FORBIDDEN_PREVIEW_BACKEND_HOST = 'akesevai.onrender.com';
+export const BLOCKED_PREVIEW_API_ORIGIN = 'https://preview-api-blocked.invalid';
+
+const hasForbiddenProductionHost = (candidateUrl) => {
+  const normalized = String(candidateUrl || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized.includes(FORBIDDEN_PREVIEW_BACKEND_HOST)) return true;
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.toLowerCase();
+    return host === FORBIDDEN_PREVIEW_BACKEND_HOST || host.endsWith(`.${FORBIDDEN_PREVIEW_BACKEND_HOST}`);
+  } catch {
+    return false;
   }
-  // In real browser runtime, use relative /api
-  if (typeof window !== 'undefined' && typeof document !== 'undefined' && window.location && window.location.port !== '5001') {
-    return '/api';
-  }
-  return 'http://localhost:5001/api';
 };
 
-export const API_BASE_URL = getApiBaseUrl();
+export const resolveApiBaseConfig = (overrides = {}) => {
+  const hasImportMetaEnv = typeof import.meta !== 'undefined' && Boolean(import.meta.env);
+  const rawEnvUrl = overrides.envUrl !== undefined
+    ? overrides.envUrl
+    : (hasImportMetaEnv ? import.meta.env.VITE_API_URL : '');
+  const envUrl = String(rawEnvUrl || '').trim().replace(/\/+$/, '');
+
+  const runtimeWindow = typeof window !== 'undefined' ? window : undefined;
+  const hasBrowser = overrides.hasBrowser !== undefined
+    ? Boolean(overrides.hasBrowser)
+    : (Boolean(runtimeWindow) && typeof document !== 'undefined' && Boolean(runtimeWindow.location));
+
+  const hostname = String(
+    overrides.hostname !== undefined
+      ? (overrides.hostname ?? '')
+      : (runtimeWindow?.location?.hostname ?? '')
+  ).trim().toLowerCase();
+
+  const port = String(
+    overrides.port !== undefined
+      ? (overrides.port ?? '')
+      : (runtimeWindow?.location?.port ?? '')
+  ).trim();
+
+  const vercelEnv = String(
+    overrides.vercelEnv !== undefined
+      ? (overrides.vercelEnv ?? '')
+      : (hasImportMetaEnv ? (import.meta.env.VITE_VERCEL_ENV ?? '') : '')
+  ).trim().toLowerCase();
+
+  const isLocalHost = Boolean(hostname) && LOCAL_DEV_HOSTNAMES.has(hostname);
+  const isProdHost = Boolean(hostname) && PRODUCTION_HOSTNAMES.has(hostname);
+  const isPreviewContext = vercelEnv === 'preview' || (hasBrowser && Boolean(hostname) && !isProdHost && !isLocalHost);
+
+  if (isPreviewContext) {
+    if (!envUrl) {
+      return {
+        ok: false,
+        isPreview: true,
+        baseUrl: BLOCKED_PREVIEW_API_ORIGIN,
+        code: 'PREVIEW_MISSING_API_URL',
+        error: 'Preview isolation blocked API request: VITE_API_URL must be configured for Preview deployments.'
+      };
+    }
+    if (envUrl.startsWith('/')) {
+      return {
+        ok: false,
+        isPreview: true,
+        baseUrl: BLOCKED_PREVIEW_API_ORIGIN,
+        code: 'PREVIEW_RELATIVE_API_FORBIDDEN',
+        error: 'Preview isolation blocked API request: relative /api fallback is forbidden in Preview.'
+      };
+    }
+    let parsed;
+    try {
+      parsed = new URL(envUrl);
+    } catch {
+      return {
+        ok: false,
+        isPreview: true,
+        baseUrl: BLOCKED_PREVIEW_API_ORIGIN,
+        code: 'PREVIEW_INVALID_API_URL',
+        error: 'Preview isolation blocked API request: VITE_API_URL is not a valid absolute URL.'
+      };
+    }
+    if (!['https:', 'http:'].includes(parsed.protocol)) {
+      return {
+        ok: false,
+        isPreview: true,
+        baseUrl: BLOCKED_PREVIEW_API_ORIGIN,
+        code: 'PREVIEW_INVALID_API_URL',
+        error: 'Preview isolation blocked API request: VITE_API_URL must use http(s).'
+      };
+    }
+    const targetHost = parsed.hostname.toLowerCase();
+    if (hasForbiddenProductionHost(envUrl)) {
+      return {
+        ok: false,
+        isPreview: true,
+        baseUrl: BLOCKED_PREVIEW_API_ORIGIN,
+        code: 'PREVIEW_PRODUCTION_API_FORBIDDEN',
+        error: 'Preview isolation blocked API request: Production Render backend (akesevai.onrender.com) is forbidden in Preview.'
+      };
+    }
+    if (LOCAL_DEV_HOSTNAMES.has(targetHost)) {
+      return {
+        ok: false,
+        isPreview: true,
+        baseUrl: BLOCKED_PREVIEW_API_ORIGIN,
+        code: 'PREVIEW_LOCALHOST_API_FORBIDDEN',
+        error: 'Preview isolation blocked API request: localhost backend URLs are forbidden in Preview.'
+      };
+    }
+    return {
+      ok: true,
+      isPreview: true,
+      baseUrl: envUrl,
+      code: 'OK',
+      error: null
+    };
+  }
+
+  if (envUrl && !envUrl.includes('localhost') && /^https?:\/\//i.test(envUrl)) {
+    return { ok: true, isPreview: false, baseUrl: envUrl, code: 'OK', error: null };
+  }
+  // In real browser runtime (Production custom domains or local Vite dev), use relative /api
+  if (hasBrowser && port !== '5001') {
+    return { ok: true, isPreview: false, baseUrl: '/api', code: 'OK', error: null };
+  }
+  return { ok: true, isPreview: false, baseUrl: 'http://localhost:5001/api', code: 'OK', error: null };
+};
+
+export const isBlockedApiTarget = (url, overrides = {}) => {
+  const target = String(url || '').trim();
+  const cfg = resolveApiBaseConfig(overrides);
+  if (!cfg.ok) {
+    return { blocked: true, code: cfg.code, error: cfg.error };
+  }
+  if (!target || target.startsWith(BLOCKED_PREVIEW_API_ORIGIN)) {
+    return {
+      blocked: true,
+      code: 'PREVIEW_API_ISOLATION_BLOCKED',
+      error: 'Preview isolation blocked API request target.'
+    };
+  }
+  if (cfg.isPreview) {
+    if (target.startsWith('/')) {
+      return {
+        blocked: true,
+        code: 'PREVIEW_RELATIVE_API_FORBIDDEN',
+        error: 'Preview isolation blocked API request: relative /api request is forbidden in Preview.'
+      };
+    }
+    if (hasForbiddenProductionHost(target)) {
+      return {
+        blocked: true,
+        code: 'PREVIEW_PRODUCTION_API_FORBIDDEN',
+        error: 'Preview isolation blocked API request: Production Render backend (akesevai.onrender.com) is forbidden in Preview.'
+      };
+    }
+  }
+  return { blocked: false, code: 'OK', error: null };
+};
+
+export const getApiBaseUrl = (overrides) => {
+  const cfg = resolveApiBaseConfig(overrides);
+  if (!cfg.ok) {
+    throw new Error(cfg.error);
+  }
+  return cfg.baseUrl;
+};
+
+const _initialApiConfig = resolveApiBaseConfig();
+export const API_BASE_URL = _initialApiConfig.ok ? _initialApiConfig.baseUrl : BLOCKED_PREVIEW_API_ORIGIN;
 
 export const getAuthHeaders = () => {
   const headers = {};
@@ -23,13 +182,16 @@ export const getAuthHeaders = () => {
       }
 
       // 2. Customer Cryptographic Token (HMAC Signed)
-      const custToken = sessionStorage.getItem('akesevai-customer-token') || localStorage.getItem('akesevai-customer-token');
-      if (custToken && typeof custToken === 'string' && custToken.trim().length > 0) {
-        headers['x-customer-token'] = custToken.trim();
+      const ssToken = sessionStorage.getItem('akesevai-customer-token');
+      const lsToken = localStorage.getItem('akesevai-customer-token');
+      const custToken = (ssToken && ssToken.trim()) || (lsToken && lsToken.trim()) || '';
+      if (custToken) {
+        headers['x-customer-token'] = custToken;
       }
 
-      // 3. Customer Session Check (handles raw phone string or JSON object)
+      // 3. Customer Session Phone (only used alongside token; prefer phone matching token if present)
       const custSession = sessionStorage.getItem('akesevai-customer-session') || localStorage.getItem('akesevai-customer-session');
+      let phoneDigits = '';
       if (custSession) {
         let phoneStr = '';
         try {
@@ -40,53 +202,232 @@ export const getAuthHeaders = () => {
         }
         const digits = String(phoneStr || '').replace(/\D/g, '');
         if (digits.length >= 10) {
-          headers['x-customer-phone'] = digits.slice(-10);
+          phoneDigits = digits.slice(-10);
         }
+      }
+      if (!phoneDigits && custToken.startsWith('ctok_')) {
+        const tokenPhone = custToken.split('_')[1] || '';
+        if (/^\d{10}$/.test(tokenPhone)) phoneDigits = tokenPhone;
+      }
+      if (phoneDigits) {
+        headers['x-customer-phone'] = phoneDigits;
       }
     } catch (e) {}
   }
   return headers;
 };
 
-const fetchJson = async (url, options = {}, timeoutMs = 6000) => {
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+export const hasCustomerAuthToken = () => {
+  const auth = getAuthHeaders();
+  return Boolean(auth['x-customer-token'] && auth['x-customer-token'].startsWith('ctok_'));
+};
+
+export const hasAnyApiAuth = () => {
+  const auth = getAuthHeaders();
+  return Boolean(auth['x-admin-token'] || (auth['x-customer-token'] && auth['x-customer-token'].startsWith('ctok_')));
+};
+
+let lastAuthExpiredEventAt = 0;
+function notifyAuthExpired(status, code, url) {
+  if (typeof window === 'undefined') return;
+  const now = Date.now();
+  if (now - lastAuthExpiredEventAt < 3000) return;
+  lastAuthExpiredEventAt = now;
   try {
-    const authHeaders = getAuthHeaders();
-    const res = await fetch(url, {
-      signal: controller?.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders,
-        ...(options.headers || {})
-      },
-      ...options
-    });
-    if (timeoutId) clearTimeout(timeoutId);
-    let data = null;
+    const auth = getAuthHeaders();
+    const isAdminUrl = String(url || '').includes('/admin');
+    const role = isAdminUrl ? 'admin' : (auth['x-customer-phone'] || auth['x-customer-token'] ? 'customer' : (auth['x-admin-token'] ? 'admin' : 'anonymous'));
+    window.dispatchEvent(new CustomEvent('akesevai-auth-expired', { detail: { role, status, code, url } }));
+  } catch (e) {}
+}
+
+function classifyHttpFailure(status, data) {
+  const serverCode = data?.error || '';
+  const serverMsg = data?.message || data?.error || '';
+  if (status === 401) {
+    return {
+      code: serverCode || 'SESSION_EXPIRED',
+      message: serverMsg || 'Session expired or unauthorized. Please sign in again.',
+      retryable: false
+    };
+  }
+  if (status === 403) {
+    return {
+      code: serverCode || 'FORBIDDEN',
+      message: serverMsg || 'Access denied: you do not have permission for this document.',
+      retryable: false
+    };
+  }
+  if (status === 404) {
+    return {
+      code: serverCode || 'DOCUMENT_NOT_FOUND',
+      message: serverMsg || 'Document not found.',
+      retryable: false
+    };
+  }
+  if (status === 413) {
+    return {
+      code: 'PAYLOAD_TOO_LARGE',
+      message: serverMsg || 'File is too large for upload. Please compress below 1 MB and try again.',
+      retryable: false
+    };
+  }
+  if (status === 429) {
+    return {
+      code: 'RATE_LIMITED',
+      message: serverMsg || 'Too many requests. Please wait a moment and try again.',
+      retryable: false
+    };
+  }
+  if (status >= 500) {
+    return {
+      code: serverCode || 'SERVER_UNAVAILABLE',
+      message: serverMsg || 'Server is temporarily unavailable. Please retry in a few seconds.',
+      retryable: true
+    };
+  }
+  return {
+    code: serverCode || `HTTP_${status}`,
+    message: serverMsg || `Request failed with status ${status}.`,
+    retryable: false
+  };
+}
+
+export const fetchApiResult = async (url, options = {}, config = {}) => {
+  const blockedCheck = isBlockedApiTarget(url);
+  if (blockedCheck.blocked) {
+    return {
+      ok: false,
+      status: 0,
+      code: blockedCheck.code,
+      message: blockedCheck.error,
+      data: null,
+      needsAdminReview: false,
+      timedOut: false,
+      networkError: true,
+      retryable: false
+    };
+  }
+
+  const {
+    timeoutMs = 20000,
+    retries = 0,
+    retryDelayMs = 1200
+  } = config || {};
+
+  let attempt = 0;
+  const maxAttempts = Math.max(1, Number(retries || 0) + 1);
+
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
     try {
-      data = await res.json();
-    } catch (e) {
-      data = null;
+      const authHeaders = getAuthHeaders();
+      const res = await fetch(url, {
+        ...options,
+        signal: controller?.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+          ...(options.headers || {})
+        }
+      });
+      if (timeoutId) clearTimeout(timeoutId);
+
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (e) {
+        data = null;
+      }
+
+      if (!res.ok) {
+        const classified = classifyHttpFailure(res.status, data);
+        if (res.status === 401) {
+          notifyAuthExpired(res.status, classified.code, url);
+        }
+        if (classified.retryable && attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, retryDelayMs));
+          continue;
+        }
+        return {
+          ok: false,
+          status: res.status,
+          code: classified.code,
+          message: classified.message,
+          data,
+          needsAdminReview: Boolean(data?.needsAdminReview),
+          timedOut: false,
+          networkError: false,
+          retryable: classified.retryable
+        };
+      }
+
+      return {
+        ok: true,
+        status: res.status,
+        code: 'OK',
+        message: '',
+        data,
+        needsAdminReview: false,
+        timedOut: false,
+        networkError: false,
+        retryable: false
+      };
+    } catch (err) {
+      if (timeoutId) clearTimeout(timeoutId);
+      const isTimeout = err?.name === 'AbortError' || /abort|timeout/i.test(String(err?.message || ''));
+      if (attempt < maxAttempts) {
+        await new Promise((r) => setTimeout(r, retryDelayMs));
+        continue;
+      }
+      return {
+        ok: false,
+        status: 0,
+        code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+        message: isTimeout
+          ? 'Server request timed out (server may be waking up). Please retry.'
+          : 'Network error connecting to server. Please check connection and retry.',
+        data: null,
+        needsAdminReview: false,
+        timedOut: isTimeout,
+        networkError: !isTimeout,
+        retryable: true
+      };
     }
-    if (!res.ok) {
-      // Gracefully handle 401 Unauthorized / 403 Forbidden without throwing unhandled promise errors
-      if (res.status === 401 || res.status === 403) {
-        return null;
-      }
-      if (data && (data.message || data.error)) {
-        const error = new Error(data.message || data.error);
-        error.status = res.status;
-        error.data = data;
-        throw error;
-      }
+  }
+
+  return {
+    ok: false,
+    status: 0,
+    code: 'NETWORK_ERROR',
+    message: 'Request failed after retries.',
+    data: null,
+    needsAdminReview: false,
+    timedOut: false,
+    networkError: true,
+    retryable: true
+  };
+};
+
+const fetchJson = async (url, options = {}, timeoutMs = 20000) => {
+  const result = await fetchApiResult(url, options, { timeoutMs, retries: 0 });
+  if (!result.ok) {
+    if (result.status === 401 || result.status === 403 || result.status === 0) {
       return null;
     }
-    return data;
-  } catch (err) {
-    if (timeoutId) clearTimeout(timeoutId);
+    if (result.data && (result.data.message || result.data.error)) {
+      const error = new Error(result.data.message || result.data.error);
+      error.status = result.status;
+      error.code = result.code;
+      error.data = result.data;
+      throw error;
+    }
     return null;
   }
+  return result.data;
 };
 
 const cleanDigits = (p) => {
@@ -102,6 +443,22 @@ export const fetchSingleCustomerProfileMongo = async (phone) => {
   return await fetchJson(`${API_BASE_URL}/customers/${cleanPhone}`);
 };
 
+function sanitizeDocMetaForCustomer(docItem) {
+  if (!docItem || typeof docItem !== 'object') return null;
+  const rawUrl = typeof docItem.url === 'string' && /^https:\/\//i.test(docItem.url.trim()) ? docItem.url.trim() : '';
+  const meta = {
+    id: docItem.id || '',
+    applicationId: docItem.applicationId || '',
+    name: docItem.name || 'Document',
+    requirement: docItem.requirement || '',
+    type: docItem.type || '',
+    url: rawUrl,
+    uploadedAt: docItem.uploadedAt || ''
+  };
+  if (docItem.legacyId) meta.legacyId = docItem.legacyId;
+  return meta;
+}
+
 export const saveCustomerProfileMongo = async (phone, customerData) => {
   const cleanPhone = cleanDigits(phone);
   if (!cleanPhone) return null;
@@ -109,21 +466,34 @@ export const saveCustomerProfileMongo = async (phone, customerData) => {
   const payload = {
     phone: cleanPhone,
     name: customerData?.profile?.name || customerData?.name || 'Customer',
-    dob: customerData?.profile?.dob || customerData?.dob || '',
-    aadhaarNo: customerData?.profile?.aadhaarNo || customerData?.aadhaarNo || '',
+    dob: customerData?.profile?.dob ?? customerData?.dob,
+    aadhaarNo: customerData?.profile?.aadhaarNo ?? customerData?.aadhaarNo,
     profile: customerData?.profile || customerData || {},
-    applications: customerData?.applications || [],
-    documents: customerData?.documents || [],
-    lastToken: customerData?.lastToken || null
+    applications: Array.isArray(customerData?.applications) ? customerData.applications : undefined,
+    documents: Array.isArray(customerData?.documents)
+      ? customerData.documents.map(sanitizeDocMetaForCustomer).filter(Boolean)
+      : undefined,
+    lastToken: customerData?.lastToken || undefined,
+    allowClearDocuments: customerData?.allowClearDocuments === true,
+    explicitDocumentsReplace: customerData?.explicitDocumentsReplace === true,
+    deletedDocIds: Array.isArray(customerData?.deletedDocIds) ? customerData.deletedDocIds : undefined
   };
 
-  const res = await fetchJson(`${API_BASE_URL}/customers`, {
+  const result = await fetchApiResult(`${API_BASE_URL}/customers`, {
     method: 'POST',
     body: JSON.stringify(payload)
-  });
+  }, { timeoutMs: 25000, retries: 1 });
+
+  if (!result.ok) {
+    const error = new Error(result.message || 'Failed to save customer profile.');
+    error.status = result.status;
+    error.code = result.code;
+    error.retryable = result.retryable;
+    throw error;
+  }
 
   try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'customer', phone: cleanPhone } })); } catch (e) {}
-  return res;
+  return result.data;
 };
 
 export const fetchAllCustomerProfilesMongo = async () => {
@@ -185,29 +555,126 @@ export const fetchTrackByMobileMongo = async (phone, trackingToken = '') => {
 
 // --- EXPIRY DOCUMENTS ---
 
-export const saveExpiryDocumentMongo = async (docData) => {
-  if (!docData) return null;
-  const res = await fetchJson(`${API_BASE_URL}/documents`, {
+export const saveExpiryDocumentMongo = async (docData, options = {}) => {
+  if (!docData) {
+    const err = new Error('Document data is required.');
+    err.status = 400;
+    err.code = 'MISSING_PAYLOAD';
+    throw err;
+  }
+
+  const clientRequestId = docData.clientRequestId || `REQ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const uploadPayload = {
+    ...docData,
+    clientRequestId
+  };
+
+  const result = await fetchApiResult(`${API_BASE_URL}/documents`, {
     method: 'POST',
-    body: JSON.stringify(docData)
+    body: JSON.stringify(uploadPayload)
+  }, {
+    timeoutMs: options.timeoutMs ?? 45000,
+    retries: options.retries ?? 1,
+    retryDelayMs: options.retryDelayMs ?? 1500
   });
-  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'document', id: docData.id } })); } catch (e) {}
-  return res;
+
+  if (!result.ok || !result.data || !result.data.id) {
+    const error = new Error(result.message || 'Document upload failed.');
+    error.status = result.status;
+    error.code = result.code;
+    error.retryable = result.retryable;
+    error.data = result.data;
+    throw error;
+  }
+
+  try { window.dispatchEvent(new CustomEvent('akesevai-data-changed', { detail: { type: 'document', id: result.data.id } })); } catch (e) {}
+  return result.data;
 };
 
 export const fetchAllExpiryDocumentsMongo = async () => {
-  const auth = getAuthHeaders();
-  if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+  if (!hasAnyApiAuth()) {
     return [];
   }
-  const query = auth['x-customer-phone'] ? `?customerPhone=${auth['x-customer-phone']}` : '';
+  const auth = getAuthHeaders();
+  const query = !auth['x-admin-token'] && auth['x-customer-phone'] ? `?customerPhone=${auth['x-customer-phone']}` : '';
   return (await fetchJson(`${API_BASE_URL}/documents${query}`)) || [];
 };
 
-export const fetchSingleExpiryDocumentMongo = async (id) => {
+export const fetchSingleExpiryDocumentDetailedMongo = async (id, options = {}) => {
   const cleanId = String(id || '').trim();
-  if (!cleanId) return null;
-  return await fetchJson(`${API_BASE_URL}/documents/${encodeURIComponent(cleanId)}`);
+  if (!cleanId) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'MISSING_DOCUMENT_ID',
+      message: 'Document ID is missing.',
+      document: null,
+      retryable: false,
+      needsAdminReview: false
+    };
+  }
+
+  if (!hasAnyApiAuth()) {
+    notifyAuthExpired(401, 'SESSION_EXPIRED', `${API_BASE_URL}/documents/${cleanId}`);
+    return {
+      ok: false,
+      status: 401,
+      code: 'SESSION_EXPIRED',
+      message: 'Session expired. Please login again to view documents.',
+      document: null,
+      retryable: false,
+      needsAdminReview: false
+    };
+  }
+
+  const auth = getAuthHeaders();
+  const query = (options.customerPhone && auth['x-admin-token'])
+    ? `?customerPhone=${encodeURIComponent(cleanDigits(options.customerPhone))}`
+    : '';
+
+  const res = await fetchApiResult(`${API_BASE_URL}/documents/${encodeURIComponent(cleanId)}${query}`, {}, {
+    timeoutMs: options.timeoutMs ?? 45000,
+    retries: options.retries ?? 1,
+    retryDelayMs: options.retryDelayMs ?? 1500
+  });
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      code: res.code,
+      message: res.message,
+      document: null,
+      retryable: res.retryable,
+      needsAdminReview: Boolean(res.needsAdminReview)
+    };
+  }
+
+  return {
+    ok: true,
+    status: res.status,
+    code: 'OK',
+    message: '',
+    document: res.data,
+    retryable: false,
+    needsAdminReview: false
+  };
+};
+
+export const fetchSingleExpiryDocumentMongo = async (id, options = {}) => {
+  const res = await fetchSingleExpiryDocumentDetailedMongo(id, options);
+  if (!res.ok) {
+    if (options.throwOnError) {
+      const error = new Error(res.message || 'Failed to fetch document.');
+      error.status = res.status;
+      error.code = res.code;
+      error.retryable = res.retryable;
+      error.needsAdminReview = res.needsAdminReview;
+      throw error;
+    }
+    return null;
+  }
+  return res.document;
 };
 
 export const deleteExpiryDocumentMongo = async (id) => {
@@ -334,8 +801,7 @@ export const subscribeCustomerProfilesMongo = (callback, intervalMs = 30000) => 
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
-    const auth = getAuthHeaders();
-    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+    if (!hasAnyApiAuth()) {
       if (callback && isMounted) callback({});
       return;
     }
@@ -354,8 +820,7 @@ export const subscribeApplicationsMongo = (callback, intervalMs = 30000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
-    const auth = getAuthHeaders();
-    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+    if (!hasAnyApiAuth()) {
       if (callback && isMounted) callback({});
       return;
     }
@@ -374,8 +839,7 @@ export const subscribeTokensMongo = (callback, intervalMs = 20000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
-    const auth = getAuthHeaders();
-    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+    if (!hasAnyApiAuth()) {
       if (callback && isMounted) callback([]);
       return;
     }
@@ -394,8 +858,7 @@ export const subscribeExpiryDocumentsMongo = (callback, intervalMs = 30000) => {
   let isMounted = true;
   const poll = async () => {
     if (!isMounted) return;
-    const auth = getAuthHeaders();
-    if (!auth['x-admin-token'] && !auth['x-customer-phone']) {
+    if (!hasAnyApiAuth()) {
       // Unauthenticated: do not make network requests to /api/documents
       if (callback && isMounted) callback([]);
       return;
@@ -490,6 +953,16 @@ export const subscribeNotificationsMongo = (callback, intervalMs = 300000) => {
 export const fetchPendingNotificationsMongo = async () => {
   const res = await fetchJson(`${API_BASE_URL}/notifications/pending`);
   return res?.notifications || [];
+};
+
+export const fetchQuarantinedNotificationsMongo = async () => {
+  const res = await fetchJson(`${API_BASE_URL}/notifications/quarantined`);
+  return res?.notifications || [];
+};
+
+export const fetchNotificationRevisionsMongo = async (id) => {
+  if (!id) return null;
+  return await fetchJson(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/revisions`);
 };
 
 export const approveNotificationMongo = async (id) => {

@@ -45,7 +45,8 @@ import {
   authenticateAdminApi,
   changeAdminPasswordApi,
   logoutAdminApi,
-  verifyAdminSessionApi
+  verifyAdminSessionApi,
+  hasCustomerAuthToken
 } from './utils/mongoService';
 import { saveDocBinary, getDocBinary, deleteDocBinary, getAllDocBinaries } from './utils/idbDocStore';
 import AdvertisementBannerSection from './components/AdvertisementBannerSection';
@@ -70,8 +71,14 @@ import AdminRevenueDashboard from './components/AdminRevenueDashboard';
 import DarkModeToggle, { useDarkMode } from './components/DarkModeToggle';
 import ServiceOfTheDayBanner from './components/ServiceOfTheDayBanner';
 import DocumentReadinessScore from './components/DocumentReadinessScore';
-import PhotoBackgroundRemover from './components/PhotoBackgroundRemover';
 import BrowserNotificationOptIn from './components/BrowserNotificationOptIn';
+import SpaLink from './components/SpaLink';
+import {
+  resolveRouteSeo,
+  resolveQueryRedirect,
+  VALID_PAGE_IDS
+} from './data/seoRoutesConfig';
+import { CITY_DEDICATED_GUIDES } from './data/regionalCitiesData';
 
 // Lazy-loaded secondary route pages & heavy tool components
 const StatusTrackPage = lazy(() => import('./pages/StatusTrackPage'));
@@ -85,6 +92,24 @@ const PhotoToolPage = lazy(() => import('./pages/PhotoToolPage'));
 const XeroxPrintingPage = lazy(() => import('./pages/XeroxPrintingPage'));
 const TypingServicesPage = lazy(() => import('./pages/TypingServicesPage'));
 const SpiralBindingPage = lazy(() => import('./pages/SpiralBindingPage'));
+const CertificateServicesPage = lazy(() => import('./pages/CertificateServicesPage'));
+const OnlineApplicationAssistancePage = lazy(() => import('./pages/OnlineApplicationAssistancePage'));
+const TnGovtServicesGuidePage = lazy(() => import('./pages/TnGovtServicesGuidePage'));
+const EsevaiServicesHubPage = lazy(() => import('./pages/EsevaiServicesHubPage'));
+const PdfToolsHubPage = lazy(() => import('./pages/PdfToolsHubPage'));
+const GovtExamToolsHubPage = lazy(() => import('./pages/GovtExamToolsHubPage'));
+const PassportPhotoServicesPage = lazy(() => import('./pages/PassportPhotoServicesPage'));
+const OnlineDocumentServicesPage = lazy(() => import('./pages/OnlineDocumentServicesPage'));
+const TamilNaduRegionalGuidePage = lazy(() => import('./pages/TamilNaduRegionalGuidePage'));
+const CityOnlineGuidePage = lazy(() => import('./pages/CityOnlineGuidePage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const PanCardServicePage = lazy(() => import('./pages/PanCardServicePage'));
+const IncomeCertificatePage = lazy(() => import('./pages/IncomeCertificatePage'));
+const CommunityCertificatePage = lazy(() => import('./pages/CommunityCertificatePage'));
+const SmartRationCardPage = lazy(() => import('./pages/SmartRationCardPage'));
+const PattaChittaPage = lazy(() => import('./pages/PattaChittaPage'));
+const AadhaarGuidancePage = lazy(() => import('./pages/AadhaarGuidancePage'));
+const EsevaiApplicationAssistancePage = lazy(() => import('./pages/EsevaiApplicationAssistancePage'));
 const NotificationTables = lazy(() => import('./components/NotificationTables'));
 const AdminSevaiSmartDesk = lazy(() => import('./components/AdminSevaiSmartDesk'));
 const FirstTimeLoginModal = lazy(() => import('./components/FirstTimeLoginModal'));
@@ -323,6 +348,171 @@ const appointmentSlots = APPOINTMENT_SLOTS_30MIN;
 const isFirebaseConfigured = () => false;
 import { setInStoreApplications } from './utils/statusStore';
 
+function formatUploadFailureMessage(err) {
+  const status = err?.status || 0;
+  const code = err?.code || '';
+  if (status === 401 || code === 'SESSION_EXPIRED' || code === 'UNAUTHORIZED') {
+    return '🔐 உங்கள் அமர்வு காலாவதியானது. மீண்டும் உள்நுழையவும் (401 Session expired — please login again).';
+  }
+  if (status === 403 || code === 'FORBIDDEN') {
+    return '⛔ இந்த கணக்கில் பதிவேற்ற அனுமதி இல்லை (403 Access denied).';
+  }
+  if (status === 404 || code === 'DOCUMENT_NOT_FOUND') {
+    return '⚠️ ஆவணப் பதிவு கிடைக்கவில்லை (404 Not found).';
+  }
+  if (status === 413 || code === 'PAYLOAD_TOO_LARGE') {
+    return '⚠️ கோப்பு அளவு மிக அதிகம் (413 File too large — reduce file size and retry).';
+  }
+  if (status === 429 || code === 'RATE_LIMITED') {
+    return '⏳ அதிக கோரிக்கைகள் (429). சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.';
+  }
+  if (status >= 500 || code === 'SERVER_UNAVAILABLE') {
+    return '⚠️ சர்வர் தற்காலிகமாக கிடைக்கவில்லை (5xx). மீண்டும் முயற்சிக்கவும்.';
+  }
+  if (err?.retryable || status === 0 || code === 'TIMEOUT' || code === 'NETWORK_ERROR') {
+    return '⏳ சர்வர் பதிலளிக்க நேரம் எடுத்தது (Timeout/Network). மீண்டும் முயற்சிக்கவும் (Please retry).';
+  }
+  return `❌ Upload failed: ${err?.message || String(err || 'Unknown error')}`;
+}
+
+async function prepareFilePayloadForUpload(file, { maxPdfKb = 100, maxImageKb = 100, maxRawBytes = 15 * 1024 * 1024 } = {}) {
+  if (!file) {
+    return { ok: false, error: '⚠️ கோப்பு தேர்ந்தெடுக்கப்படவில்லை (No file selected).' };
+  }
+  if (typeof file.size === 'number' && file.size > maxRawBytes) {
+    return { ok: false, error: '⚠️ கோப்பு அளவு 15 MB-க்கு மேல் இருக்கக்கூடாது (413 File exceeds max upload limit).' };
+  }
+
+  const fileName = file.name || '';
+  const fileExt = fileName.split('.').pop().toLowerCase();
+  const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+  const isAllowedType = validExts.includes(fileExt) || file.type?.startsWith('image/') || file.type === 'application/pdf';
+  if (!isAllowedType) {
+    return { ok: false, error: '❌ தவறான கோப்பு வகை (Invalid file format)! PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும்.' };
+  }
+
+  const rawKb = Math.round((file.size || 0) / 1024);
+  const isImage = Boolean(file.type?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt));
+
+  if (!isImage && rawKb > maxPdfKb) {
+    return { ok: false, error: `⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! PDF ஆவணம் கண்டிப்பாக ${maxPdfKb} KB-க்குள் இருக்க வேண்டும்.` };
+  }
+
+  const rawDataUrl = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result || '');
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+
+  if (!rawDataUrl) {
+    return { ok: false, error: '❌ கோப்பைப் படிக்க முடியவில்லை (Failed to read file). மீண்டும் முயற்சிக்கவும்.' };
+  }
+
+  let finalDataUrl = rawDataUrl;
+  if (isImage) {
+    try {
+      finalDataUrl = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          const maxDim = 800;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+            else { w = Math.round((w * maxDim) / h); h = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+
+          let quality = 0.70;
+          let result = canvas.toDataURL('image/jpeg', quality);
+          let calcKb = Math.round((result.length * 3) / 4 / 1024);
+
+          while (calcKb > maxImageKb && quality > 0.15) {
+            quality -= 0.10;
+            result = canvas.toDataURL('image/jpeg', quality);
+            calcKb = Math.round((result.length * 3) / 4 / 1024);
+          }
+          resolve(result);
+        };
+        img.onerror = () => resolve(rawDataUrl);
+        img.src = rawDataUrl;
+      });
+    } catch (e) {
+      finalDataUrl = rawDataUrl;
+    }
+  }
+
+  const finalKb = Math.round((finalDataUrl.length * 3) / 4 / 1024);
+  if (!isImage && finalKb > maxPdfKb) {
+    return { ok: false, error: `⚠️ கோப்பின் அளவு அதிகம் (${finalKb} KB)! ஆவணம் ${maxPdfKb} KB-க்குள் இருக்க வேண்டும்.` };
+  }
+
+  return {
+    ok: true,
+    dataUrl: finalDataUrl,
+    finalKb,
+    isImage,
+    mime: file.type || (isImage ? 'image/jpeg' : 'application/pdf')
+  };
+}
+
+async function performCanonicalDocumentUpload({
+  file,
+  customerPhone,
+  requirement,
+  applicationId = '',
+  maxPdfKb = 100,
+  maxImageKb = 100
+}) {
+  const prep = await prepareFilePayloadForUpload(file, { maxPdfKb, maxImageKb });
+  if (!prep.ok) {
+    const err = new Error(prep.error);
+    err.status = 400;
+    err.code = 'CLIENT_VALIDATION_FAILED';
+    throw err;
+  }
+
+  const clientRequestId = `REQ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const serverDoc = await saveExpiryDocumentCloud({
+    applicationId,
+    requirement,
+    name: file.name,
+    type: prep.mime,
+    customerPhone,
+    data: prep.dataUrl,
+    url: '',
+    clientRequestId,
+    uploadedAt: new Date().toISOString()
+  });
+
+  if (!serverDoc || !serverDoc.id) {
+    const err = new Error('Server did not return canonical document ID.');
+    err.status = 500;
+    err.code = 'MISSING_SERVER_DOC_ID';
+    throw err;
+  }
+
+  return {
+    canonicalDoc: {
+      id: serverDoc.id,
+      applicationId: serverDoc.applicationId || applicationId || '',
+      requirement: serverDoc.requirement || requirement,
+      name: serverDoc.name || file.name,
+      type: serverDoc.type || prep.mime,
+      uploadedAt: new Date().toLocaleDateString('en-IN'),
+      data: prep.dataUrl,
+      url: prep.dataUrl,
+      customerPhone
+    },
+    finalKb: prep.finalKb
+  };
+}
+
 const readCustomerRecords = () => {
   try {
     const raw1 = localStorage.getItem(CUSTOMER_RECORDS_KEY);
@@ -351,7 +541,6 @@ const saveCustomerRecord = (record) => {
     localStorage.setItem(CUSTOMER_RECORDS_KEY, JSON.stringify(current));
     localStorage.setItem('akesevai-customers', JSON.stringify(current));
   } catch (e) {}
-  saveCustomerProfileCloud(cleanPhone, normalizedRecord);
 };
 
 const readTokenBookings = () => {
@@ -483,46 +672,58 @@ function PageLoadingFallback({ lang = 'ta' }) {
   );
 }
 
-const validPages = [
-  'home', 'services', 'status-track', 'token-generator', 'notifications',
-  'about', 'contact', 'customer', 'admin', 'weblink', 'useful-links', 'important-links', 'forms', 'software',
-  'photo-maker', 'whatsapp-poster', 'photo-tools',
-  'xerox-printing', 'typing-services', 'spiral-binding'
-];
+const validPages = VALID_PAGE_IDS;
+
+const resolveClientRoutePage = (pathnameStr = '/', searchStr = '', hashStr = '') => {
+  const searchParams = new URLSearchParams(searchStr || '');
+  const queryTool = searchParams.get('tool');
+  const queryPage = searchParams.get('page');
+
+  if (queryTool || queryPage) {
+    const queryTarget = resolveQueryRedirect({ tool: queryTool || '', page: queryPage || '' });
+    if (queryTarget) {
+      const targetResolved = resolveRouteSeo(queryTarget);
+      if (targetResolved?.pageId && targetResolved.pageId !== 'redirect') {
+        return targetResolved.pageId;
+      }
+    }
+    if (queryPage) {
+      const cleanQueryPage = queryPage.replace(/^\/+/, '').replace(/\/$/, '').toLowerCase();
+      if (validPages.includes(cleanQueryPage)) return cleanQueryPage;
+    }
+  }
+
+  const rawPath = pathnameStr || '/';
+  const direct = resolveRouteSeo(rawPath);
+  if (direct.status === 301 && direct.redirectTo) {
+    const target = resolveRouteSeo(direct.redirectTo);
+    return target.pageId || 'not-found';
+  }
+  if (direct.status === 200 && direct.pageId) {
+    return direct.pageId;
+  }
+
+  const hash = String(hashStr || '').replace('#', '').replace(/^\/+/, '').replace(/\/$/, '').trim().toLowerCase();
+  if (hash) {
+    const hashResolved = resolveRouteSeo(`/${hash}`);
+    if (hashResolved.status === 301 && hashResolved.redirectTo) {
+      return resolveRouteSeo(hashResolved.redirectTo).pageId || 'not-found';
+    }
+    if (hashResolved.status === 200 && hashResolved.pageId) {
+      return hashResolved.pageId;
+    }
+  }
+
+  return 'not-found';
+};
 
 const getInitialPage = () => {
   if (typeof window === 'undefined') return 'home';
-  const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').toLowerCase();
-  const searchParams = new URLSearchParams(window.location.search);
-  const queryPage = searchParams.get('page');
-  const queryTool = searchParams.get('tool');
-
-  if (queryTool) return `tools/${queryTool}`;
-  if (queryPage) {
-    if (queryPage === 'tools' && queryTool) return `tools/${queryTool}`;
-    if (queryPage === 'tools') return 'photo-tools';
-    if (queryPage === 'esevai' || queryPage === 'online-services') return 'services';
-    if (queryPage === 'palani-esevai-centre') return 'about';
-    if (queryPage === 'useful-links' || queryPage === 'important-links') return 'weblink';
-    return queryPage;
-  }
-
-  if (pathname === 'tools' || pathname === 'photo-tools') return 'photo-tools';
-  if (pathname === 'esevai' || pathname === 'online-services') return 'services';
-  if (pathname === 'palani-esevai-centre') return 'about';
-  if (pathname.startsWith('tools/')) return pathname;
-  if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') return 'weblink';
-  if (pathname && validPages.includes(pathname)) return pathname;
-
-  const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim().toLowerCase();
-  if (hash === 'tools' || hash === 'photo-tools') return 'photo-tools';
-  if (hash === 'esevai' || hash === 'online-services') return 'services';
-  if (hash === 'palani-esevai-centre') return 'about';
-  if (hash.startsWith('tools/')) return hash;
-  if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') return 'weblink';
-  if (hash && validPages.includes(hash)) return hash;
-
-  return 'home';
+  return resolveClientRoutePage(
+    window.location.pathname,
+    window.location.search,
+    window.location.hash
+  );
 };
 
 function App() {
@@ -543,7 +744,7 @@ function App() {
   });
   const [customer, setCustomer] = useState(() => {
     const phone = sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY);
-    if (!phone) return null;
+    if (!phone || !hasCustomerAuthToken()) return null;
     const records = readCustomerRecords();
     return records[phone] || { phone, profile: { name: 'Customer' }, applications: [], documents: [] };
   });
@@ -565,7 +766,7 @@ function App() {
 
   const t = translations[lang] || translations.en;
 
-  // Verify Admin Session with Backend on Mount
+  // Verify Admin Session with Backend on Mount & Handle 401 Auth Expiration
   useEffect(() => {
     if (adminLoggedIn) {
       verifyAdminSessionApi().then((isValid) => {
@@ -578,6 +779,28 @@ function App() {
         }
       }).catch(() => {});
     }
+
+    const handleAuthExpired = (evt) => {
+      const role = evt?.detail?.role;
+      if (role === 'admin' && sessionStorage.getItem(ADMIN_SESSION_KEY) === 'true') {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        sessionStorage.removeItem('akesevai-admin-token');
+        setAdminLoggedIn(false);
+        setToast('🔐 Admin session expired. Please log in again.');
+        return;
+      }
+      if (sessionStorage.getItem(CUSTOMER_SESSION_KEY) || localStorage.getItem(CUSTOMER_SESSION_KEY)) {
+        sessionStorage.removeItem(CUSTOMER_SESSION_KEY);
+        localStorage.removeItem(CUSTOMER_SESSION_KEY);
+        sessionStorage.removeItem('akesevai-customer-token');
+        localStorage.removeItem('akesevai-customer-token');
+        setCustomer(null);
+        setToast('🔐 உங்கள் உள்நுழைவு அமர்வு காலாவதியாகிவிட்டது. மீண்டும் உள்நுழையவும் (Session expired — please login again).');
+      }
+    };
+
+    window.addEventListener('akesevai-auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('akesevai-auth-expired', handleAuthExpired);
   }, []);
 
   useEffect(() => {
@@ -586,31 +809,11 @@ function App() {
       if (event.state && event.state.page) {
         targetPage = event.state.page;
       } else {
-        const pathname = window.location.pathname.replace(/^\/+/, '').replace(/\/$/, '').trim().toLowerCase();
-        if (pathname === 'tools' || pathname === 'photo-tools') {
-          targetPage = 'photo-tools';
-        } else if (pathname === 'esevai' || pathname === 'online-services') {
-          targetPage = 'services';
-        } else if (pathname === 'palani-esevai-centre') {
-          targetPage = 'about';
-        } else if (pathname === 'useful-links' || pathname === 'important-links' || pathname === 'weblink') {
-          targetPage = 'weblink';
-        } else if (pathname.startsWith('tools/') || validPages.includes(pathname)) {
-          targetPage = pathname;
-        } else {
-          const hash = window.location.hash.replace('#', '').replace(/^\/+/, '').trim().toLowerCase();
-          if (hash === 'tools' || hash === 'photo-tools') {
-            targetPage = 'photo-tools';
-          } else if (hash === 'esevai' || hash === 'online-services') {
-            targetPage = 'services';
-          } else if (hash === 'palani-esevai-centre') {
-            targetPage = 'about';
-          } else if (hash === 'useful-links' || hash === 'important-links' || hash === 'weblink') {
-            targetPage = 'weblink';
-          } else if (hash.startsWith('tools/') || validPages.includes(hash)) {
-            targetPage = hash;
-          }
-        }
+        targetPage = resolveClientRoutePage(
+          window.location.pathname,
+          window.location.search,
+          window.location.hash
+        );
       }
       setPage(targetPage);
       setMenuOpen(false);
@@ -624,8 +827,10 @@ function App() {
       if ((urlLang === 'en' || urlLang === 'ta') && urlLang !== lang) {
         setLang(urlLang);
       }
-      const cleanPath = (initial === 'home' ? '/' : `/${initial}`) + search;
-      window.history.replaceState({ page: initial }, '', cleanPath);
+      if (initial !== 'not-found') {
+        const cleanPath = (initial === 'home' ? '/' : `/${initial}`) + search;
+        window.history.replaceState({ page: initial }, '', cleanPath);
+      }
     } catch (e) {
       console.warn('History replaceState notice:', e);
     }
@@ -640,24 +845,6 @@ function App() {
       window.history.scrollRestoration = 'manual';
     }
     window.scrollTo(0, 0);
-
-    const pageTitles = {
-      home: 'AK E-SEVAI Palani | e-Sevai, Xerox, Printing & Online Services',
-      services: 'All eSevai Services in Palani | Aadhaar, Income & Community | www.akesevai.com',
-      'xerox-printing': 'Xerox & Printing Services in Palani | AK E-SEVAI',
-      'typing-services': 'Tamil & English Typing Centre in Palani | AK E-SEVAI',
-      'spiral-binding': 'Spiral Binding & Lamination in Palani | AK E-SEVAI',
-      'status-track': 'Track Application Status Online | AK E-SEVAI Palani | www.akesevai.com',
-      'token-generator': 'Live Token Booking | AK E-SEVAI Palani Digital Centre | www.akesevai.com',
-      notifications: 'Government Job & Exam Notifications | AK E-SEVAI Palani | www.akesevai.com',
-      about: 'About AK E-SEVAI Palani | Trusted Digital Service Centre | www.akesevai.com',
-      contact: 'Contact Us | AK E-SEVAI Palani Office Location & Phone | www.akesevai.com',
-      weblink: 'முக்கியமான இணைப்புகள் | Important Official Govt Links | AK E-SEVAI Palani'
-    };
-
-    if (!page.startsWith('tools/')) {
-      document.title = pageTitles[page] || 'AK E-SEVAI Palani | Digital Service Centre | www.akesevai.com';
-    }
   }, [page]);
 
   useEffect(() => {
@@ -1018,16 +1205,17 @@ function App() {
     };
 
     const navigate = (nextPage) => {
+      const normalizedNext = String(nextPage || 'home').replace(/^\/+/, '').replace(/\/$/, '') || 'home';
       setPage((prevPage) => {
-        if (prevPage !== nextPage) {
+        if (prevPage !== normalizedNext) {
           try {
-            const cleanPath = nextPage === 'home' ? '/' : `/${nextPage}`;
-            window.history.pushState({ page: nextPage }, '', cleanPath);
+            const cleanPath = normalizedNext === 'home' ? '/' : `/${normalizedNext}`;
+            window.history.pushState({ page: normalizedNext }, '', cleanPath);
           } catch (e) {
             console.warn('History pushState notice:', e);
           }
         }
-        return nextPage;
+        return normalizedNext;
       });
       setMenuOpen(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1142,9 +1330,19 @@ function App() {
       setCustomer(record);
       setCustomerRecords((prev) => ({ ...prev, [cleanPhone || phone]: record }));
 
-      if (isComplete) {
-        saveCustomerProfileCloud(cleanPhone, record);
+      if (regDetails) {
+        saveCustomerProfileCloud(cleanPhone, { ...record, explicitDocumentsReplace: false });
       }
+      fetchAllCloudRecords().then((cloudData) => {
+        if (cloudData) {
+          if (cloudData.customers && typeof cloudData.customers === 'object') {
+            setCustomerRecords(cloudData.customers);
+          }
+          if (Array.isArray(cloudData.documents)) {
+            setCloudExpiryDocs(cloudData.documents);
+          }
+        }
+      }).catch(() => {});
 
       recordLoginEventCloud({
         type: 'customer_login',
@@ -1158,16 +1356,21 @@ function App() {
       notify(isNew ? 'Account created. Your details will be saved for your next login.' : `Welcome back ${custName}! Your saved details are ready.`);
     };
 
-    const updateCustomer = (updater) => {
+    const updateCustomer = (updater, options = {}) => {
       setCustomer((current) => {
         const updated = typeof updater === 'function' ? updater(current) : updater;
         if (!updated) return current;
         try {
           saveCustomerRecord(updated);
         } catch (e) {}
-        if (updated.phone) {
+        if (updated.phone && options.skipRemoteSync !== true) {
           try {
-            saveCustomerProfileCloud(updated.phone, updated);
+            saveCustomerProfileCloud(updated.phone, {
+              ...updated,
+              explicitDocumentsReplace: options.explicitDocumentsReplace === true,
+              deletedDocIds: options.deletedDocIds,
+              allowClearDocuments: options.allowClearDocuments === true
+            });
           } catch (e) {}
         }
         return updated;
@@ -1208,6 +1411,17 @@ function App() {
           localStorage.removeItem('akesevai-admin-password');
           sessionStorage.removeItem('akesevai-admin-password');
           setAdminLoggedIn(true);
+          fetchAllCloudRecords().then((cloudData) => {
+            if (cloudData) {
+              if (cloudData.customers && typeof cloudData.customers === 'object') setCustomerRecords(cloudData.customers);
+              if (Array.isArray(cloudData.tokens)) setTokenBookings(cloudData.tokens);
+              if (cloudData.applications && typeof cloudData.applications === 'object') {
+                setApplicationRecords(cloudData.applications);
+                setInStoreApplications(cloudData.applications);
+              }
+              if (Array.isArray(cloudData.documents)) setCloudExpiryDocs(cloudData.documents);
+            }
+          }).catch(() => {});
           recordLoginEventCloud({
             type: 'admin_login',
             role: 'Administrator'
@@ -1284,7 +1498,7 @@ function App() {
         </Suspense>
         <header className="site-header">
           <div className="header-inner">
-            <button className="brand" onClick={() => navigate('home')} aria-label="AK e-Sevai home">
+            <SpaLink to="/" navigate={navigate} scrollToTop className="brand" aria-label="AK e-Sevai home" style={{ textDecoration: 'none' }}>
               <div className="brand-logo-container">
                 <img src="/logo.png" alt="AK e-Sevai Logo" className="brand-logo-img" />
               </div>
@@ -1296,7 +1510,7 @@ function App() {
                   {lang === 'ta' ? 'நம்பகமான இ-சேவை மையம்' : 'Your Trusted e-Sevai Centre'}
                 </small>
               </div>
-            </button>
+            </SpaLink>
 
             {/* MAIN NAVIGATION (DESKTOP & MOBILE DRAWER) */}
             <nav className={menuOpen ? 'main-nav nav-open' : 'main-nav'} id="site-navigation-drawer">
@@ -1323,17 +1537,43 @@ function App() {
 
               {/* NAVIGATION LINKS */}
               <div className="nav-links-container">
-                {menuItems.map(([id, label]) => (
-                  <button
-                    key={id}
-                    id={`nav-item-${id.replace(':', '-')}`}
-                    className={`nav-link-btn ${(page === id || (id === 'photo-tools' && page.startsWith('tools/')) || (id.startsWith('customer:') && page === 'customer' && customerTab === id.replace('customer:', '')) || (id.startsWith('admin:') && page === 'admin' && adminNavTab === id.replace('admin:', ''))) ? 'nav-active' : ''}`}
-                    onClick={() => handleNavClick(id)}
-                  >
-                    <span className="nav-link-text">{label}</span>
-                    <ChevronRight size={16} className="mobile-nav-arrow" />
-                  </button>
-                ))}
+                {menuItems.map(([id, label]) => {
+                  const isActive =
+                    page === id ||
+                    (id === 'photo-tools' && page.startsWith('tools/')) ||
+                    (id.startsWith('customer:') && page === 'customer' && customerTab === id.replace('customer:', '')) ||
+                    (id.startsWith('admin:') && page === 'admin' && adminNavTab === id.replace('admin:', ''));
+
+                  if (id.includes(':')) {
+                    return (
+                      <button
+                        key={id}
+                        id={`nav-item-${id.replace(':', '-')}`}
+                        className={`nav-link-btn ${isActive ? 'nav-active' : ''}`}
+                        onClick={() => handleNavClick(id)}
+                      >
+                        <span className="nav-link-text">{label}</span>
+                        <ChevronRight size={16} className="mobile-nav-arrow" />
+                      </button>
+                    );
+                  }
+
+                  return (
+                    <SpaLink
+                      key={id}
+                      to={id === 'home' ? '/' : `/${id}`}
+                      navigate={navigate}
+                      scrollToTop
+                      id={`nav-item-${id}`}
+                      className={`nav-link-btn ${isActive ? 'nav-active' : ''}`}
+                      onClick={() => setMenuOpen(false)}
+                      style={{ textDecoration: 'none' }}
+                    >
+                      <span className="nav-link-text">{label}</span>
+                      <ChevronRight size={16} className="mobile-nav-arrow" />
+                    </SpaLink>
+                  );
+                })}
               </div>
 
               {/* MOBILE ACTION GRID (Row 1: Language & Customer Login, Row 2: Admin) */}
@@ -1482,11 +1722,28 @@ function App() {
           <Suspense fallback={<PageLoadingFallback lang={lang} />}>
             {page === 'home' && <HomePage navigate={navigate} notify={notify} lang={lang} visitorCount={visitorCount} />}
             {page === 'services' && <ServicesPage navigate={navigate} lang={lang} />}
+            {page === 'esevai-services' && <EsevaiServicesHubPage navigate={navigate} lang={lang} />}
             {page === 'photo-tools' && <PhotoToolsHubPage navigate={navigate} lang={lang} />}
+            {page === 'pdf-tools' && <PdfToolsHubPage navigate={navigate} lang={lang} />}
+            {page === 'government-exam-tools' && <GovtExamToolsHubPage navigate={navigate} lang={lang} />}
+            {page === 'passport-photo-services' && <PassportPhotoServicesPage navigate={navigate} lang={lang} />}
+            {page === 'online-document-services' && <OnlineDocumentServicesPage navigate={navigate} lang={lang} />}
+            {page === 'tamil-nadu-district-esevai-guides' && <TamilNaduRegionalGuidePage navigate={navigate} lang={lang} />}
+            {CITY_DEDICATED_GUIDES[page] && <CityOnlineGuidePage citySlug={page} navigate={navigate} lang={lang} />}
             {page.startsWith('tools/') && <PhotoToolPage toolId={page.replace('tools/', '')} navigate={navigate} notify={notify} lang={lang} />}
             {page === 'xerox-printing' && <XeroxPrintingPage navigate={navigate} lang={lang} />}
             {page === 'typing-services' && <TypingServicesPage navigate={navigate} lang={lang} />}
             {page === 'spiral-binding' && <SpiralBindingPage navigate={navigate} lang={lang} />}
+            {page === 'certificate-services' && <CertificateServicesPage navigate={navigate} lang={lang} />}
+            {page === 'online-application-assistance' && <OnlineApplicationAssistancePage navigate={navigate} lang={lang} />}
+            {page === 'tn-govt-services-guide' && <TnGovtServicesGuidePage navigate={navigate} lang={lang} />}
+            {page === 'pan-card-service' && <PanCardServicePage navigate={navigate} lang={lang} />}
+            {page === 'income-certificate' && <IncomeCertificatePage navigate={navigate} lang={lang} />}
+            {page === 'community-certificate' && <CommunityCertificatePage navigate={navigate} lang={lang} />}
+            {page === 'smart-ration-card' && <SmartRationCardPage navigate={navigate} lang={lang} />}
+            {page === 'patta-chitta' && <PattaChittaPage navigate={navigate} lang={lang} />}
+            {page === 'aadhaar-guidance' && <AadhaarGuidancePage navigate={navigate} lang={lang} />}
+            {page === 'esevai-application-assistance' && <EsevaiApplicationAssistancePage navigate={navigate} lang={lang} />}
             {page === 'weblink' && <WeblinkPage notify={notify} lang={lang} />}
             {page === 'photo-maker' && <PhotoMakerPage notify={notify} lang={lang} />}
             {page === 'forms' && (adminLoggedIn ? <FormsPage notify={notify} lang={lang} /> : <PrivatePageGate navigate={navigate} />)}
@@ -1500,18 +1757,19 @@ function App() {
             {page === 'customer' && !customer && <OtpGate notify={notify} onVerified={loginCustomer} customerRecords={customerRecords} onClose={() => navigate('home')} />}
             {page === 'customer' && customer && <CustomerPage customer={customer} updateCustomer={updateCustomer} logout={logoutCustomer} notify={notify} saveToken={saveToken} cloudExpiryDocs={cloudExpiryDocs} activeTab={customerTab} setActiveTab={setCustomerTab} lang={lang} navigate={navigate} />}
             {page === 'admin' && <AdminPage loggedIn={adminLoggedIn} login={loginAdmin} logout={logoutAdmin} changeAdminPassword={changeAdminPassword} navigate={navigate} tokenBookings={tokenBookings} setTokenBookings={setTokenBookings} customerRecords={customerRecords} setCustomerRecords={setCustomerRecords} applicationRecords={applicationRecords} setApplicationRecords={setApplicationRecords} cloudExpiryDocs={cloudExpiryDocs} notify={notify} activeTab={adminNavTab} setActiveTab={setAdminNavTab} lang={lang} />}
+            {page === 'not-found' && <NotFoundPage navigate={navigate} lang={lang} requestedPath={typeof window !== 'undefined' ? window.location.pathname : ''} />}
           </Suspense>
         </main>
 
         <footer className="site-footer">
           <div>
-            <button className="brand footer-brand" onClick={() => navigate('home')} style={{ gap: '12px' }}>
+            <SpaLink to="/" navigate={navigate} scrollToTop className="brand footer-brand" style={{ gap: '12px', textDecoration: 'none' }}>
               <img src="/logo.png" alt="AK E-SEVAI Logo" className="brand-logo-img" style={{ height: '44px', background: 'white', padding: '4px', borderRadius: '8px' }} />
               <div>
                 <strong className="brand-name" style={{ fontSize: '18px', color: 'white' }}>AK E-SEVAI CENTRE</strong>
                 <small style={{ color: '#86efac', display: 'block', fontSize: '9px', fontWeight: 700, lineHeight: 1.25 }}>{t.tagline}</small>
               </div>
-            </button>
+            </SpaLink>
             <p>{t.footerDesc}</p>
             <div className="footer-social-links" style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
               <a href={siteConfig.youtube} target="_blank" rel="noreferrer" title="YouTube: @AkEsevai" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#FF0000', color: 'white', padding: '6px 14px', borderRadius: '20px', fontSize: '11px', fontWeight: 800, textDecoration: 'none', boxShadow: '0 3px 10px rgba(255,0,0,0.3)' }}>
@@ -1525,45 +1783,99 @@ function App() {
               </a>
             </div>
 
-            {/* In-Centre Document Services Links */}
+            {/* In-Centre Document Services Links (Palani Only) */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
               <strong style={{ fontSize: '12px', color: '#fde047', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                {lang === 'ta' ? '🖨️ நேரடி ஜெராக்ஸ், தட்டச்சு & ஸ்பைரல் பைண்டிங்:' : '🖨️ In-Centre Xerox, Typing & Binding Services:'}
+                {lang === 'ta' ? '🖨️ பழனி நேரடி ஜெராக்ஸ், தட்டச்சு & ஸ்பைரல் பைண்டிங்:' : '🖨️ Palani Walk-In Xerox, Typing & Binding Services:'}
               </strong>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
-                <button onClick={() => navigate('xerox-printing')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Colour Printing'}</button>
+                <SpaLink to="/xerox-printing" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Colour Printing'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('typing-services')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'தமிழ் & ஆங்கில தட்டச்சு' : 'Tamil & English Typing'}</button>
+                <SpaLink to="/typing-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'தமிழ் & ஆங்கில தட்டச்சு' : 'Tamil & English Typing'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('spiral-binding')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>{lang === 'ta' ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'}</button>
+                <SpaLink to="/spiral-binding" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'}</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/token-generator" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'பழனி டோக்கன்' : 'Palani Queue Token'}</SpaLink>
               </div>
             </div>
 
-            {/* Photo Tools Footer Links */}
+            {/* Tamil Nadu Statewide Online Assistance & City Guides */}
             <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
-              <strong style={{ fontSize: '12px', color: '#93c5fd', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                {lang === 'ta' ? '📸 இலவச போட்டோ & ஆவணக் கருவிகள்:' : '📸 Free Photo & Document Tools:'}
+              <strong style={{ fontSize: '12px', color: '#fde047', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                {lang === 'ta' ? '🏛️ தமிழ்நாடு ஆன்லைன் இ-சேவை & மாவட்ட வழிகாட்டிகள்:' : '🏛️ Tamil Nadu Online e-Sevai, Category Hubs & City Guides:'}
               </strong>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
-                <button onClick={() => navigate('photo-tools')} style={{ background: 'none', border: 'none', color: '#86efac', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>All Tools Hub</button>
+                <SpaLink to="/esevai-services" navigate={navigate} scrollToTop style={{ color: '#86efac', textDecoration: 'underline' }}>TN e-Sevai Hub</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/passport-size-photo')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Passport Photo</button>
+                <SpaLink to="/certificate-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'சான்றிதழ் உதவி' : 'Certificate Services'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/signature-resize')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Signature Resize (20KB)</button>
+                <SpaLink to="/online-application-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'தேர்வு விண்ணப்ப உதவி' : 'Exam Application Support'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-compress-20kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 20KB</button>
+                <SpaLink to="/tn-govt-services-guide" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>{lang === 'ta' ? 'பட்டா, ரேஷன் & EC' : 'Patta, Ration & EC Guide'}</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-compress-50kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 50KB</button>
+                <SpaLink to="/online-document-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Online Document Services</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-compress-100kb')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Compress 100KB</button>
+                <SpaLink to="/passport-photo-services" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Passport Photo Guide</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/photo-crop')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>Photo Crop</button>
+                <SpaLink to="/tamil-nadu-district-esevai-guides" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>16-City Regional Guide</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/jpg-to-pdf')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>JPG to PDF</button>
+                <SpaLink to="/chennai-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Chennai</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/png-to-jpg')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PNG to JPG</button>
+                <SpaLink to="/coimbatore-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Coimbatore</SpaLink>
                 <span style={{ color: '#475569' }}>•</span>
-                <button onClick={() => navigate('tools/pdf-compress')} style={{ background: 'none', border: 'none', color: '#e2e8f0', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>PDF Compress</button>
+                <SpaLink to="/madurai-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Madurai</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/trichy-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Trichy</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/salem-online-esevai-assistance" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Salem</SpaLink>
+              </div>
+            </div>
+
+            {/* Photo & PDF Tools Footer Links */}
+            <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.12)' }}>
+              <strong style={{ fontSize: '12px', color: '#93c5fd', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                {lang === 'ta' ? '📸 இலவச போட்டோ & PDF கருவிகள்:' : '📸 Free Photo & PDF Browser Tools:'}
+              </strong>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '11.5px' }}>
+                <SpaLink to="/photo-tools" navigate={navigate} scrollToTop style={{ color: '#86efac', textDecoration: 'underline' }}>All 31 Tools</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/pdf-tools" navigate={navigate} scrollToTop style={{ color: '#93c5fd', textDecoration: 'underline' }}>PDF Tools Hub</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/government-exam-tools" navigate={navigate} scrollToTop style={{ color: '#93c5fd', textDecoration: 'underline' }}>Exam Photo Hub</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/passport-size-photo" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Passport Photo</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/signature-resize" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Signature Resize (20KB)</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/tnpsc-photo-resizer" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>TNPSC Resizer</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/ssc-photo-resizer" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>SSC Resizer</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/rrb-photo-resizer" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>RRB Resizer</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/photo-compress-20kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 20KB</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/photo-compress-50kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 50KB</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/photo-compress-100kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 100KB</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/photo-compress-200kb" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>Compress 200KB</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/document-size-checker" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>Document Size Checker</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-merge" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Merge</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-split" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Split</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-rotate" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Rotate</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-extract" navigate={navigate} scrollToTop style={{ color: '#fcd34d', textDecoration: 'underline' }}>PDF Extract</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-to-jpg" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>PDF to JPG</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/jpg-to-pdf" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>JPG to PDF</SpaLink>
+                <span style={{ color: '#475569' }}>•</span>
+                <SpaLink to="/tools/pdf-compress" navigate={navigate} scrollToTop style={{ color: '#e2e8f0', textDecoration: 'underline' }}>PDF Compress</SpaLink>
               </div>
             </div>
           </div>
@@ -2544,91 +2856,65 @@ const getServiceVisual = (group, title = '') => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploading, setUploading] = useState(false);
 
+    const uploadingAdminRef = useRef(false);
+
     const handleAdminUpload = async (e) => {
       e.preventDefault();
+      if (uploading || uploadingAdminRef.current) return;
       if (!selectedFile) {
         notify('❌ Please select a PDF or Image file to upload.');
         return;
       }
-      const cleanPhone = String(customerPhone).replace(/\D/g, '');
-      if (!cleanPhone) {
+      const cleanPhone = String(customerPhone).replace(/\D/g, '').slice(-10);
+      if (!cleanPhone || cleanPhone.length !== 10) {
         notify('❌ Invalid customer phone number.');
         return;
       }
 
-      const fileName = selectedFile.name || '';
-      const fileExt = fileName.split('.').pop().toLowerCase();
-      const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-      const isAllowedType = validExts.includes(fileExt) || selectedFile.type.startsWith('image/') || selectedFile.type === 'application/pdf';
-
-      if (!isAllowedType) {
-        notify('❌ தவறான கோப்பு வகை (Invalid file format)! PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும்.');
-        return;
-      }
-
-      const rawKb = Math.round(selectedFile.size / 1024);
-      const isImage = selectedFile.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt);
-
-      if (!isImage && rawKb > 100) {
-        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ஆவணம் கண்டிப்பாக 100 KB-க்குள் இருக்க வேண்டும். (PDF must be <= 100 KB)`);
-        return;
-      }
-
       const requirementName = docCategory === 'Other' ? (customRequirement.trim() || 'Uploaded Document') : docCategory;
-      
+
+      uploadingAdminRef.current = true;
       setUploading(true);
       notify(`⏳ Processing & Uploading ${selectedFile.name}...`);
 
       try {
-        const docRecord = await uploadFileToFirebaseStorage(selectedFile, 'customer_documents', cleanPhone);
-        if (docRecord && docRecord.url) {
-          const docId = `AK-${cleanPhone}-${requirementName.replace(/[^a-zA-Z0-9]/g, '_')}`;
-          const newDocument = {
-            id: docId,
-            applicationId: `ADMIN-${Date.now()}`,
-            requirement: requirementName,
-            name: selectedFile.name,
-            type: selectedFile.type || 'File',
-            uploadedAt: new Date().toLocaleDateString('en-IN'),
-            data: docRecord.url,
-            url: docRecord.url,
-            customerPhone: cleanPhone,
-            storagePath: docRecord.storagePath || ''
-          };
+        const { canonicalDoc } = await performCanonicalDocumentUpload({
+          file: selectedFile,
+          customerPhone: cleanPhone,
+          requirement: requirementName,
+          applicationId: `ADMIN-${Date.now()}`,
+          maxPdfKb: 100,
+          maxImageKb: 150
+        });
 
-          // Save to 'documents' collection in Firestore
-          await saveExpiryDocumentCloud(newDocument);
+        let currentCust = readCustomerRecords()[cleanPhone] || { phone: cleanPhone, profile: { name: customerName } };
+        const existingDocs = Array.isArray(currentCust.documents) ? currentCust.documents : [];
+        const filteredDocs = existingDocs.filter((d) => d && d.id !== canonicalDoc.id);
+        const updatedCust = {
+          ...currentCust,
+          phone: cleanPhone,
+          documents: [...filteredDocs, canonicalDoc],
+          updatedAt: new Date().toISOString()
+        };
 
-          // Update customer profile in 'customers' collection in Firestore
-          let currentCust = readCustomerRecords()[cleanPhone] || { phone: cleanPhone, profile: { name: customerName } };
-          const existingDocs = Array.isArray(currentCust.documents) ? currentCust.documents : [];
-          const filteredDocs = existingDocs.filter(d => d.requirement !== requirementName && d.id !== docId);
-          const updatedCust = {
-            ...currentCust,
-            phone: cleanPhone,
-            documents: [...filteredDocs, newDocument],
-            updatedAt: new Date().toISOString()
-          };
-          await saveCustomerProfileCloud(cleanPhone, updatedCust);
+        // Sync lightweight local/cloud record without downgrading canonical DOC- ID
+        await saveCustomerProfileCloud(cleanPhone, updatedCust);
 
-          // Update React state
-          if (setCustomerRecords) {
-            setCustomerRecords(prev => ({
-              ...prev,
-              [cleanPhone]: updatedCust
-            }));
-          }
-
-          setSelectedFile(null);
-          setCustomRequirement('');
-          notify(`🎉 Document "${requirementName}" uploaded and saved successfully!`);
-        } else {
-          notify('❌ Upload failed. Please try again.');
+        if (setCustomerRecords) {
+          setCustomerRecords((prev) => ({
+            ...prev,
+            [cleanPhone]: updatedCust
+          }));
         }
+
+        setSelectedFile(null);
+        setCustomRequirement('');
+        notify(`🎉 Document "${requirementName}" uploaded and saved successfully! (${canonicalDoc.id})`);
       } catch (err) {
-        notify(`❌ Upload error: ${err.message || String(err)}`);
+        notify(formatUploadFailureMessage(err));
       } finally {
         setUploading(false);
+        uploadingAdminRef.current = false;
       }
     };
 
@@ -2915,13 +3201,13 @@ const getServiceVisual = (group, title = '') => {
       if (!docIdKey) return;
 
       const docEntry = {
-        id: d.id || d.url || d.data || docIdKey,
+        id: d.id || d.docId || '',
         applicationId: d.applicationId || '',
         requirement: d.requirement || d.title || d.name,
         name: d.name || d.title || d.requirement || 'Uploaded Document',
         uploadedAt: d.uploadedAt ? (typeof d.uploadedAt === 'string' && d.uploadedAt.includes('T') ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : d.uploadedAt) : 'Recently',
-        data: d.url || d.data,
-        url: d.url || d.data,
+        data: d.url || d.data || '',
+        url: d.url || d.data || '',
         type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
       };
 
@@ -3110,10 +3396,11 @@ const getServiceVisual = (group, title = '') => {
 
     const isDocValidAndActive = (d) => {
       if (!d) return false;
-      // Must have actual file payload or valid URL reference (skip empty checklist slots & placeholders)
+      // Must have actual file payload or canonical document ID reference (skip empty checklist slots)
       const hasContent = Boolean(
         d.url || d.data || d.storagePath || d.fileData || d.binaryId ||
-        (typeof d.dataUrl === 'string' && d.dataUrl.length > 50)
+        (typeof d.dataUrl === 'string' && d.dataUrl.length > 50) ||
+        (typeof d.id === 'string' && /^(DOC|AK)-/.test(d.id))
       );
       if (!hasContent) return false;
 
@@ -4311,7 +4598,7 @@ const getServiceVisual = (group, title = '') => {
                                       const updatedDocs = (custObj.documents || []).filter(
                                         (d) => String(d.id) !== String(docId) && d.requirement !== reqName && String(d.url || d.data) !== String(docId) && String(d.name) !== String(document.name)
                                       );
-                                      const updatedCust = { ...custObj, documents: updatedDocs, updatedAt: new Date().toISOString() };
+                                      const updatedCust = { ...custObj, documents: updatedDocs, explicitDocumentsReplace: true, deletedDocIds: [docId], updatedAt: new Date().toISOString() };
                                       saveCustomerProfileCloud(cleanPhone, updatedCust);
                                       return {
                                         ...prev,
@@ -6354,19 +6641,21 @@ const getServiceVisual = (group, title = '') => {
     const cleanPhone = String(customer.phone || '').replace(/\D/g, '');
 
     const allCustomerDocsMap = new Map();
+    const makeDocMapKey = (d) => String(d.id || d.legacyId || (d.url && d.url.length > 20 ? d.url : '') || `${d.applicationId || ''}::${d.requirement || ''}::${d.name || ''}`).trim();
+
     customerDocs.forEach((d) => {
       if (!d) return;
-      const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+      const k = makeDocMapKey(d);
       if (k && !allCustomerDocsMap.has(k)) {
         allCustomerDocsMap.set(k, {
           ...d,
-          id: d.id || k,
+          id: d.id || d.docId || '',
           applicationId: d.applicationId || '',
           requirement: d.requirement || d.title || d.name,
           name: d.name || d.title || d.requirement || 'Uploaded Document',
           uploadedAt: d.uploadedAt || 'Recently',
-          data: d.url || d.data,
-          url: d.url || d.data,
+          data: d.url || d.data || '',
+          url: d.url || d.data || '',
           type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
         });
       }
@@ -6376,16 +6665,16 @@ const getServiceVisual = (group, title = '') => {
       if (!d) return;
       const docPhone = String(d.customerPhone || '').replace(/\D/g, '');
       if (cleanPhone && docPhone && cleanPhone === docPhone) {
-        const k = String(d.id || d.url || d.data || d.requirement || d.name || '').trim();
+        const k = makeDocMapKey(d);
         if (k && !allCustomerDocsMap.has(k)) {
           allCustomerDocsMap.set(k, {
-            id: d.id || d.url || k,
+            id: d.id || d.docId || '',
             applicationId: d.applicationId || '',
             requirement: d.requirement || d.title || d.name,
             name: d.name || d.title || d.requirement || 'Uploaded Document',
             uploadedAt: d.uploadedAt ? (typeof d.uploadedAt === 'string' && d.uploadedAt.includes('T') ? new Date(d.uploadedAt).toLocaleDateString('en-IN') : d.uploadedAt) : 'Recently',
-            data: d.url || d.data,
-            url: d.url || d.data,
+            data: d.url || d.data || '',
+            url: d.url || d.data || '',
             type: d.type || (d.name?.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
           });
         }
@@ -6393,153 +6682,61 @@ const getServiceVisual = (group, title = '') => {
     });
 
     const allCustomerDocsList = Array.from(allCustomerDocsMap.values());
+    const uploadingReqsRef = useRef(new Set());
 
     const uploadDocument = async (event, requirement) => {
       const file = event.target.files?.[0];
       if (!file || !application) return;
 
-      const fileName = file.name || '';
-      const fileExt = fileName.split('.').pop().toLowerCase();
-      const validExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
-      const isAllowedType = validExts.includes(fileExt) || file.type.startsWith('image/') || file.type === 'application/pdf';
-
-      if (!isAllowedType) {
-        notify('❌ தவறான கோப்பு வகை (Invalid file format)! தயவுசெய்து PDF அல்லது JPG/PNG கோப்பை மட்டும் பதிவேற்றவும் (Select PDF or JPG/PNG).');
-        event.target.value = '';
+      const lockKey = `${application.id || 'app'}::${requirement}`;
+      if (uploadingReqsRef.current.has(lockKey)) {
+        notify('⏳ இந்த ஆவணம் ஏற்கனவே பதிவேற்றப்படுகிறது... (Upload already in progress)');
         return;
       }
 
-      const targetMaxKb = 100;
-      const rawKb = Math.round(file.size / 1024);
-      const isImage = file.type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(fileExt);
+      uploadingReqsRef.current.add(lockKey);
+      notify(`⏳ Processing & Uploading ${file.name}...`);
 
-      // PDF validation: Must be <= 100 KB
-      if (!isImage && rawKb > targetMaxKb) {
-        notify(`⚠️ கோப்பின் அளவு அதிகம் (${rawKb} KB)! ஆவணத்தின் அளவு கண்டிப்பாக 100 KB-க்குள் மட்டுமே இருக்க வேண்டும். (PDF must be <= 100 KB)`);
-        event.target.value = '';
-        return;
-      }
-
-      if (rawKb > targetMaxKb && isImage) {
-        notify(`⏳ கோப்பின் அளவு ${rawKb} KB. 100 KB வரம்பிற்குள் தானாக அமுக்கப்படுகிறது (Auto-compressing image under 100 KB)...`);
-      } else {
-        notify(`⏳ Processing ${file.name}...`);
-      }
-
-      // 1. Read file as Data URL INSTANTLY & Compress Images strictly <= 100 KB!
-      const rawDataUrl = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result || '');
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(file);
-      });
-
-      if (!rawDataUrl) {
-        notify('❌ Failed to read file. Please try again.');
-        event.target.value = '';
-        return;
-      }
-
-      let localDataUrl = rawDataUrl;
-      if (isImage) {
-        try {
-          localDataUrl = await new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => {
-              let w = img.width;
-              let h = img.height;
-              const maxDim = 800;
-              if (w > maxDim || h > maxDim) {
-                if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-                else { w = Math.round((w * maxDim) / h); h = maxDim; }
-              }
-              const canvas = document.createElement('canvas');
-              canvas.width = w;
-              canvas.height = h;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0, w, h);
-              
-              let quality = 0.70;
-              let result = canvas.toDataURL('image/jpeg', quality);
-              let calcKb = Math.round((result.length * 3) / 4 / 1024);
-              
-              // Incrementally reduce quality if needed to ensure <= 100 KB
-              while (calcKb > 100 && quality > 0.15) {
-                quality -= 0.10;
-                result = canvas.toDataURL('image/jpeg', quality);
-                calcKb = Math.round((result.length * 3) / 4 / 1024);
-              }
-              resolve(result);
-            };
-            img.onerror = () => resolve(rawDataUrl);
-            img.src = rawDataUrl;
-          });
-        } catch (e) {
-          localDataUrl = rawDataUrl;
-        }
-      }
-
-      const finalKb = Math.round((localDataUrl.length * 3) / 4 / 1024);
-      if (finalKb > targetMaxKb && !isImage) {
-        notify(`⚠️ கோப்பின் அளவு அதிகம் (${finalKb} KB)! ஆவணம் 100 KB-க்குள் இருக்க வேண்டும்.`);
-        event.target.value = '';
-        return;
-      }
-
-      // UNIQUE docId ensures EVERY document uploaded by a customer is saved separately!
-      const docId = `DOC-${cleanPhone}-${requirement.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}`;
-      const documentObj = {
-        id: docId,
-        applicationId: application.id,
-        requirement,
-        name: file.name,
-        type: file.type || (isImage ? 'image/jpeg' : 'application/pdf'),
-        uploadedAt: new Date().toLocaleDateString('en-IN'),
-        data: localDataUrl,
-        url: localDataUrl,
-        customerPhone: customer.phone,
-        storagePath: ''
-      };
-
-      // Save to IndexedDB binary store immediately for full persistence across reloads
-      saveDocBinary(docId, localDataUrl, documentObj).catch(() => {});
-
-      const existingDocs = customer?.documents || [];
-      const filteredDocs = existingDocs.filter(
-        (item) =>
-          item.id !== docId &&
-          !(
-            (item.applicationId === application.id || !item.applicationId) &&
-            item.requirement &&
-            requirement &&
-            item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()
-          )
-      );
-
-      const updatedCustomerRecord = {
-        ...customer,
-        documents: [...filteredDocs, documentObj]
-      };
-
-      // 1. Update React state immediately with full documentObj for 0ms green card display
-      updateCustomer(updatedCustomerRecord);
-
-      // 2. Persist to MongoDB backend and localStorage
-      saveExpiryDocumentCloud({
-        id: docId,
-        applicationId: application.id,
-        name: file.name,
-        requirement,
-        url: localDataUrl,
-        data: localDataUrl,
-        customerPhone: customer.phone,
-        uploadedAt: new Date().toISOString()
-      });
-
-      notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name} - ${finalKb} KB)`);
       try {
-        event.target.value = '';
-      } catch (e) {}
+        const { canonicalDoc, finalKb } = await performCanonicalDocumentUpload({
+          file,
+          customerPhone: cleanPhone || customer.phone,
+          requirement,
+          applicationId: application.id,
+          maxPdfKb: 100,
+          maxImageKb: 100
+        });
+
+        const existingDocs = customer?.documents || [];
+        const filteredDocs = existingDocs.filter(
+          (item) =>
+            item &&
+            item.id !== canonicalDoc.id &&
+            !(
+              (item.applicationId === application.id || !item.applicationId) &&
+              item.requirement &&
+              requirement &&
+              item.requirement.trim().toLowerCase() === requirement.trim().toLowerCase()
+            )
+        );
+
+        const updatedCustomerRecord = {
+          ...customer,
+          documents: [...filteredDocs, canonicalDoc]
+        };
+
+        // Update React/local state with confirmed canonical server DOC- ID; POST /api/documents already persisted Customer.documents
+        updateCustomer(updatedCustomerRecord, { skipRemoteSync: true });
+
+        notify(`🎉 UPLOAD SUCCESSFUL! (ஆவணம் வெற்றிகரமாக பதிவேற்றப்பட்டது: ${file.name} - ${finalKb} KB)`);
+      } catch (err) {
+        notify(formatUploadFailureMessage(err));
+      } finally {
+        uploadingReqsRef.current.delete(lockKey);
+        try {
+          event.target.value = '';
+        } catch (e) {}
+      }
     };
 
     const deleteDocument = async (requirement, documentObj) => {
@@ -6551,20 +6748,23 @@ const getServiceVisual = (group, title = '') => {
       const targetId = documentObj.id || `${application?.id}-${requirement}`;
       deleteDocBinary(targetId).catch(() => {});
 
-      // 1. Delete from local state instantly without deleting unrelated requirement docs
-      updateCustomer((current) => {
-        const existingDocs = current.documents || [];
-        const filtered = existingDocs.filter(
-          (item) =>
-            item.id !== targetId &&
-            item.data !== documentObj.data &&
-            item.name !== documentObj.name
-        );
-        return {
-          ...current,
-          documents: filtered
-        };
-      });
+      // 1. Delete from local state without erasing unrelated documents
+      updateCustomer(
+        (current) => {
+          const existingDocs = current.documents || [];
+          const filtered = existingDocs.filter(
+            (item) =>
+              item.id !== targetId &&
+              item.data !== documentObj.data &&
+              item.name !== documentObj.name
+          );
+          return {
+            ...current,
+            documents: filtered
+          };
+        },
+        { explicitDocumentsReplace: true, deletedDocIds: [targetId], allowClearDocuments: true }
+      );
 
       // 2. Delete from Cloud Firestore & Storage
       try {

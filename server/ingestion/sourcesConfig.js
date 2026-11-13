@@ -1,5 +1,5 @@
 // server/ingestion/sourcesConfig.js
-// Master Registry of Official Government & Competitive Exam Sources
+// Master Registry of Official Government, Competitive Exam, Insurance & PSU Sources
 
 export const OFFICIAL_EXAM_SOURCES = [
   // --- 1. TAMIL NADU STATE EXAMS ---
@@ -17,8 +17,8 @@ export const OFFICIAL_EXAM_SOURCES = [
     key: 'tnusrb',
     category: 'police_defence',
     name: 'Tamil Nadu Uniformed Services Recruitment Board (TNUSRB)',
-    url: 'https://www.tnusrb.tn.gov.in/',
-    homepage: 'https://www.tnusrb.tn.gov.in/',
+    url: 'https://tnusrb.tn.gov.in/',
+    homepage: 'https://tnusrb.tn.gov.in/',
     enabled: true,
     parserType: 'html_links',
     expectedFields: ['service', 'detailsLink']
@@ -27,21 +27,21 @@ export const OFFICIAL_EXAM_SOURCES = [
     key: 'trb_tn',
     category: 'teaching',
     name: 'Teachers Recruitment Board Tamil Nadu (TRB)',
-    url: 'https://trb.tn.gov.in/',
+    url: 'https://trb.tn.gov.in/notification.php?language=LG-1&status=Active',
     homepage: 'https://trb.tn.gov.in/',
     enabled: true,
-    parserType: 'html_links',
-    expectedFields: ['service', 'detailsLink']
+    parserType: 'html_table',
+    expectedFields: ['notificationNo', 'service', 'openingDate', 'closingDate', 'examDate', 'detailsLink']
   },
   {
     key: 'mrb_tn',
     category: 'medical',
     name: 'Medical Services Recruitment Board Tamil Nadu (MRB)',
-    url: 'https://www.mrb.tn.gov.in/',
+    url: 'https://www.mrb.tn.gov.in/content.php?menu_id=MTkw&dept_id=ODAw&lang=MQ==',
     homepage: 'https://www.mrb.tn.gov.in/',
     enabled: true,
     parserType: 'html_table',
-    expectedFields: ['service', 'closingDate', 'detailsLink']
+    expectedFields: ['notificationNo', 'service', 'detailsLink']
   },
 
   // --- 2. BANKING & FINANCIAL INSTITUTIONS ---
@@ -78,17 +78,17 @@ export const OFFICIAL_EXAM_SOURCES = [
 
   // --- 3. RAILWAY RECRUITMENT ---
   {
-    key: 'rrb_central',
+    key: 'rrb_chennai',
     category: 'railway',
-    name: 'Railway Recruitment Boards Centralized Portal (RRB Apply)',
-    url: 'https://www.rrbapply.gov.in/',
-    homepage: 'https://www.rrbapply.gov.in/',
+    name: 'Railway Recruitment Board Chennai (Indian Railways / CEN)',
+    url: 'https://rrbchennai.gov.in/',
+    homepage: 'https://rrbchennai.gov.in/',
     enabled: true,
     parserType: 'html_table',
     expectedFields: ['notificationNo', 'service', 'detailsLink']
   },
 
-  // --- 4. CENTRAL GOVERNMENT & UPSC ---
+  // --- 4. CENTRAL GOVERNMENT & UPSC / SSC ---
   {
     key: 'upsc_active',
     category: 'upsc',
@@ -96,18 +96,18 @@ export const OFFICIAL_EXAM_SOURCES = [
     url: 'https://upsc.gov.in/examinations/active-exams',
     homepage: 'https://upsc.gov.in/',
     enabled: true,
-    parserType: 'html_table',
+    parserType: 'views_rows',
     expectedFields: ['service', 'openingDate', 'closingDate', 'detailsLink']
   },
   {
     key: 'ssc_notices',
     category: 'ssc',
-    name: 'Staff Selection Commission (SSC Central Portal)',
-    url: 'https://ssc.gov.in/',
+    name: 'Staff Selection Commission (SSC Official Portal API)',
+    url: 'https://ssc.gov.in/api/general-website/portal/notice-boards?contentType=notice-boards&key=createdAt&order=DESC&isAttachment=true&language=english&attributes=id,headline,examId,contentType,redirectUrl,startDate,endDate,language,createdAt',
     homepage: 'https://ssc.gov.in/',
     enabled: true,
-    parserType: 'html_links',
-    expectedFields: ['service', 'detailsLink']
+    parserType: 'rest_api_json',
+    expectedFields: ['service', 'detailsLink', 'publishedDate']
   },
   {
     key: 'india_post_gds',
@@ -129,16 +129,17 @@ export const OFFICIAL_EXAM_SOURCES = [
     homepage: 'https://joinindianarmy.nic.in/',
     enabled: true,
     parserType: 'html_links',
-    expectedFields: ['service', 'detailsLink']
+    expectedFields: ['service', 'detailsLink'],
+    requiresCaptcha: true
   },
   {
     key: 'indian_navy',
     category: 'police_defence',
-    name: 'Join Indian Navy (Nausena Bharti)',
-    url: 'https://www.joinindiannavy.gov.in/',
+    name: 'Join Indian Navy (Nausena Bharti / Current Events)',
+    url: 'https://www.joinindiannavy.gov.in/en/page/current-events.html',
     homepage: 'https://www.joinindiannavy.gov.in/',
     enabled: true,
-    parserType: 'html_links',
+    parserType: 'html_events',
     expectedFields: ['service', 'detailsLink']
   },
   {
@@ -166,19 +167,63 @@ export const OFFICIAL_EXAM_SOURCES = [
   {
     key: 'kvs_delhi',
     category: 'teaching',
-    name: 'Kendriya Vidyalaya Sangathan (KVS)',
-    url: 'https://kvsangathan.nic.in/employment-notice',
-    homepage: 'https://kvsangathan.nic.in/',
+    name: 'Kendriya Vidyalaya Sangathan (KVS Interview & Recruitment)',
+    url: 'https://kvs.gov.in/interview-notice/',
+    homepage: 'https://kvs.gov.in/',
     enabled: true,
     parserType: 'html_table',
+    expectedFields: ['notificationNo', 'service', 'publishedDate', 'detailsLink']
+  },
+
+  // --- 7. INSURANCE CORPORATIONS ---
+  {
+    key: 'lic_careers',
+    category: 'banking',
+    name: 'Life Insurance Corporation of India (LIC Careers)',
+    url: 'https://licindia.in/web/guest/careers',
+    homepage: 'https://licindia.in/',
+    enabled: true,
+    parserType: 'html_links',
+    expectedFields: ['service', 'detailsLink']
+  },
+  {
+    key: 'niacl_careers',
+    category: 'banking',
+    name: 'New India Assurance Co. Ltd. (NIACL Recruitment)',
+    url: 'https://www.newindia.co.in/recruitment/list',
+    homepage: 'https://www.newindia.co.in/',
+    enabled: true,
+    parserType: 'html_links',
+    expectedFields: ['service', 'detailsLink']
+  },
+
+  // --- 8. PUBLIC SECTOR UNDERTAKINGS (PSU) ---
+  {
+    key: 'bel_psu',
+    category: 'psu',
+    name: 'Bharat Electronics Limited (BEL Job Notifications)',
+    url: 'https://bel-india.in/job-notifications/',
+    homepage: 'https://bel-india.in/',
+    enabled: true,
+    parserType: 'html_links',
+    expectedFields: ['service', 'detailsLink']
+  },
+  {
+    key: 'bhel_psu',
+    category: 'psu',
+    name: 'Bharat Heavy Electricals Limited (BHEL Current Openings)',
+    url: 'https://careers.bhel.in/index.jsp',
+    homepage: 'https://careers.bhel.in/',
+    enabled: true,
+    parserType: 'html_links',
     expectedFields: ['service', 'detailsLink']
   }
 ];
 
 export const INGESTION_CONFIG = {
-  requestTimeoutMs: 12000,
+  requestTimeoutMs: 15000,
   maxConcurrentRequests: 2,
-  rateLimitDelayMs: 2000,
-  maxRecordsPerSource: 8,
+  rateLimitDelayMs: 1500,
+  maxRecordsPerSource: 10,
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 AkEsevai-Notification-Engine/2.0'
 };

@@ -1,56 +1,23 @@
-# Robots.txt for AkEsevai Digital Service Centre Palani (https://www.akesevai.com/)
-# Optimized for Google, Bing, Yahoo, ChatGPT, Gemini, Perplexity, and AI Search Engines
+# Robots.txt for AK E-SEVAI Digital Service Centre (https://www.akesevai.com/)
 
 User-agent: *
 Allow: /
-Allow: /services
+Allow: /esevai-services
 Allow: /photo-tools
+Allow: /pdf-tools
+Allow: /government-exam-tools
+Allow: /passport-photo-services
+Allow: /online-document-services
+Allow: /tamil-nadu-district-esevai-guides
 Allow: /tools/
-Allow: /tools/passport-size-photo
-Allow: /tools/passport-size-photo-maker
-Allow: /tools/passport-photo-maker
-Allow: /tools/passport-photo-online
-Allow: /tools/passport-photo-crop
-Allow: /tools/passport-photo-resize
-Allow: /tools/photo-crop
-Allow: /tools/photo-compress
-Allow: /tools/photo-compressor
-Allow: /tools/image-compressor
-Allow: /tools/photo-compress-20kb
-Allow: /tools/compress-image-to-20kb
-Allow: /tools/photo-compress-50kb
-Allow: /tools/compress-image-to-50kb
-Allow: /tools/photo-compress-100kb
-Allow: /tools/compress-image-to-100kb
-Allow: /tools/image-compressor-100kb
-Allow: /tools/100kb-photo-compressor
-Allow: /tools/photo-resizer
-Allow: /tools/photo-resize
-Allow: /tools/photo-editor
-Allow: /tools/online-photo-editor
-Allow: /tools/photo-background-change
-Allow: /tools/passport-photo-background-change
-Allow: /tools/photo-background-editor
-Allow: /tools/photo-to-jpg
-Allow: /tools/webp-to-jpg
-Allow: /tools/photo-format-converter
-Allow: /tools/photo-to-png
-Allow: /tools/jpg-to-png
-Allow: /tools/png-to-jpg
-Allow: /tools/jpg-to-pdf
-Allow: /tools/png-to-pdf
-Allow: /tools/image-to-pdf
-Allow: /tools/pdf-maker
-Allow: /tools/pdf-to-jpg
-Allow: /tools/pdf-compress
-Allow: /tools/pdf-compressor
-Allow: /status-track
-Allow: /token-generator
-Allow: /notifications
-Allow: /about
-Allow: /contact
 
-# Explicitly Allow All Leading AI & Search Engine Crawlers
+# Explicitly Allow Major Search Engine & AI Crawlers
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
 User-agent: GPTBot
 Allow: /
 
@@ -58,12 +25,6 @@ User-agent: ChatGPT-User
 Allow: /
 
 User-agent: Google-Extended
-Allow: /
-
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
 Allow: /
 
 User-agent: PerplexityBot
@@ -75,10 +36,12 @@ Allow: /
 User-agent: Applebot
 Allow: /
 
-# Protect private admin panel from search indexation
+# Protect private dashboards, workspace utilities & directories from search indexation
 Disallow: /admin
 Disallow: /weblink
 Disallow: /forms
 Disallow: /software
+Disallow: /customer
+Disallow: /api/
 
 Sitemap: https://www.akesevai.com/sitemap.xml

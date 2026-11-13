@@ -52,3 +52,7 @@ qa_*.cjs
 scripts/
 real_browser_downloads/
 test_downloads/
+
+# Vercel deployment & build artifacts
+.vercel/
+api/_template/
