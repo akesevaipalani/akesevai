@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Upload, ImagePlus, Download, RefreshCw } from 'lucide-react';
 import { validatePhotoUpload } from '../utils/documentHelper';
+import { replaceCornerBackgroundColor } from '../utils/imageToolsHelper';
 
 const BG_COLORS = [
   { label: '⬜ வெள்ளை (White)', value: '#FFFFFF', style: { background: '#FFFFFF', border: '1.5px solid #e2e8f0' } },
@@ -12,59 +13,6 @@ const BG_COLORS = [
   { label: '🎨 வெளிர் நீலம் (Sky Blue)', value: '#87CEEB', style: { background: '#87CEEB' } },
   { label: '🟫 சாம்பல் (Gray)', value: '#808080', style: { background: '#808080' } },
 ];
-
-function hexToRgb(hex) {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : null;
-}
-
-function colorDistance(r1, g1, b1, r2, g2, b2) {
-  return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
-}
-
-// Simple background removal using flood fill from corners/edges
-function removeBackground(canvas, ctx, bgColor, tolerance) {
-  const { r: br, g: bg, b: bb } = hexToRgb(bgColor);
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  const w = canvas.width;
-  const h = canvas.height;
-  const visited = new Uint8Array(w * h);
-  const queue = [];
-
-  // Seed from all 4 corners and edges
-  const seeds = [];
-  for (let x = 0; x < w; x++) { seeds.push([x, 0]); seeds.push([x, h - 1]); }
-  for (let y = 0; y < h; y++) { seeds.push([0, y]); seeds.push([w - 1, y]); }
-
-  seeds.forEach(([x, y]) => {
-    const idx = (y * w + x);
-    if (!visited[idx]) {
-      const pi = idx * 4;
-      const dist = colorDistance(data[pi], data[pi + 1], data[pi + 2], br, bg, bb);
-      if (dist < tolerance) { queue.push([x, y]); visited[idx] = 1; }
-    }
-  });
-
-  // BFS flood fill
-  while (queue.length > 0) {
-    const [cx, cy] = queue.pop();
-    const pi = (cy * w + cx) * 4;
-    data[pi + 3] = 0; // Make transparent
-    const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
-    for (const [nx, ny] of neighbors) {
-      if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-        const ni = ny * w + nx;
-        if (!visited[ni]) {
-          const npi = ni * 4;
-          const dist = colorDistance(data[npi], data[npi + 1], data[npi + 2], br, bg, bb);
-          if (dist < tolerance) { visited[ni] = 1; queue.push([nx, ny]); }
-        }
-      }
-    }
-  }
-  ctx.putImageData(imageData, 0, 0);
-}
 
 export default function PhotoBackgroundRemover() {
   const [original, setOriginal] = useState(null);
@@ -96,22 +44,16 @@ export default function PhotoBackgroundRemover() {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
-      removeBackground(canvas, ctx, selectedBg, tolerance);
 
-      // Now draw on new bg color
-      const finalCanvas = document.createElement('canvas');
-      finalCanvas.width = img.width;
-      finalCanvas.height = img.height;
-      const fctx = finalCanvas.getContext('2d');
-      // Fill with chosen bg
-      fctx.fillStyle = selectedBg;
-      fctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
-      fctx.drawImage(canvas, 0, 0);
+      const { canvas: finalCanvas } = replaceCornerBackgroundColor(canvas, selectedBg, tolerance);
       setResult(finalCanvas.toDataURL('image/jpeg', 0.92));
+      setProcessing(false);
+    };
+    img.onerror = () => {
       setProcessing(false);
     };
     img.src = original;

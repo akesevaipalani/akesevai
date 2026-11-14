@@ -104,13 +104,6 @@ export default function AdminCounterVoiceAnnouncer() {
     };
 
     saveLiveQueueCloud(queueState);
-    try {
-      fetch('/api/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'queueState', data: queueState })
-      });
-    } catch (e) { }
   };
 
   // Sync token queue with Firebase Cloud
@@ -203,16 +196,7 @@ export default function AdminCounterVoiceAnnouncer() {
       customerName: newMobileCustomerName.trim()
     };
 
-    // Push to central server API
-    try {
-      await fetch('/api/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'token', data: newTok })
-      });
-    } catch (err) { }
-
-    // Save to Firebase Cloud
+    // Persist token via guarded dataService -> mongoService API layer
     saveTokenBookingCloud({
       tokenNo: newTok.tokenNo,
       customerName: newTok.name,

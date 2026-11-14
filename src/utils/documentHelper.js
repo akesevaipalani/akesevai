@@ -1,6 +1,112 @@
-// Robust Document Helper for View & Download — Supports PNG, JPG, PDF, SVG, WEBP, Blob URLs & Remote URLs
+// Robust Document Helper for View & Download — Supports PNG, JPG, PDF, WEBP, SVG, Blob URLs & Authenticated On-Demand Fetch
 import { getDocBinary, saveDocBinary } from './idbDocStore.js';
-import { fetchSingleExpiryDocumentMongo } from './mongoService.js';
+import { fetchSingleExpiryDocumentDetailedMongo } from './mongoService.js';
+
+const trackedBlobUrls = new Set();
+
+export const getTrackedBlobUrlsCount = () => trackedBlobUrls.size;
+
+export const createTrackedBlobUrl = (blob) => {
+  if (!blob || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return '';
+  const blobUrl = URL.createObjectURL(blob);
+  if (blobUrl) trackedBlobUrls.add(blobUrl);
+  return blobUrl;
+};
+
+export const revokeTrackedBlobUrl = (blobUrl) => {
+  if (!blobUrl) return false;
+  trackedBlobUrls.delete(blobUrl);
+  if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+    try {
+      URL.revokeObjectURL(blobUrl);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  return false;
+};
+
+export const revokeAllTrackedBlobUrls = () => {
+  for (const blobUrl of Array.from(trackedBlobUrls)) {
+    revokeTrackedBlobUrl(blobUrl);
+  }
+};
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', revokeAllTrackedBlobUrls);
+  window.addEventListener('beforeunload', revokeAllTrackedBlobUrls);
+}
+
+function escapeViewerHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export const isSafeDocumentPayload = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  const trimmed = rawUrl.trim();
+  if (trimmed.length < 15 || trimmed.startsWith('LOCAL_DATA_URL')) return false;
+
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('vbscript:') ||
+    lower.startsWith('data:text/html') ||
+    lower.startsWith('data:application/xhtml') ||
+    lower.startsWith('data:text/javascript')
+  ) {
+    return false;
+  }
+
+  if (lower.startsWith('data:')) {
+    const commaIdx = trimmed.indexOf(',');
+    if (commaIdx === -1) return false;
+    const header = lower.slice(0, commaIdx);
+    const mimeMatch = header.match(/^data:([^;,]+)/);
+    const mime = mimeMatch ? mimeMatch[1].trim() : '';
+    const allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml', 'application/pdf'];
+    if (mime && !allowedMimes.includes(mime)) {
+      return false;
+    }
+
+    const rawBody = trimmed.slice(commaIdx + 1);
+    let inspectText = '';
+    if (header.includes(';base64')) {
+      try {
+        const cleanB64 = rawBody.replace(/\s/g, '').slice(0, 1024);
+        if (typeof atob === 'function') {
+          inspectText = atob(cleanB64).toLowerCase();
+        } else if (typeof Buffer !== 'undefined') {
+          inspectText = Buffer.from(cleanB64, 'base64').toString('latin1').toLowerCase();
+        }
+      } catch (e) {
+        return false;
+      }
+    } else {
+      try {
+        inspectText = decodeURIComponent(rawBody.slice(0, 1024)).toLowerCase();
+      } catch (e) {
+        inspectText = rawBody.slice(0, 1024).toLowerCase();
+      }
+    }
+
+    const htmlPatterns = ['<html', '<!doctype html', '<script', '<iframe', 'javascript:', 'onerror=', 'onload='];
+    if (htmlPatterns.some((p) => inspectText.includes(p))) {
+      return false;
+    }
+    return true;
+  }
+
+  if (lower.startsWith('https://') || lower.startsWith('blob:')) {
+    return true;
+  }
+  return false;
+};
 
 export const validatePhotoUpload = (file, customMaxMb = 1) => {
   if (!file) return { valid: false, error: 'கோப்பு எதுவும் தேர்ந்தெடுக்கப்படவில்லை (No file selected).' };
@@ -113,65 +219,345 @@ export const createBlobFromDataUrl = (dataUrl, defaultMime = 'image/jpeg') => {
 };
 
 /**
- * Resolves document data/URL using exact 4-tier priority:
- * A. doc.url / doc.data if valid
+ * Resolves document data/URL with full error status discrimination:
+ * A. doc.data / doc.url if valid & safe
  * B. IndexedDB idbDocStore cache
- * C. Cloud fallback: GET /api/documents/:id using authenticated mongoService
- * D. Auto-cache retrieved cloud binary into IndexedDB
- * E. Fail gracefully with clean Preview Unavailable (NEVER restore fake SVG)
+ * C. Authenticated on-demand fetch: GET /api/documents/:id (with 45s timeout + transient retry)
+ * D. Auto-cache retrieved cloud binary into IndexedDB under canonical docId
  */
-export const resolveDocumentUrl = async (docObj) => {
-  if (!docObj) return '';
+export const resolveDocumentDetailed = async (docObj, options = {}) => {
+  if (!docObj) {
+    return { ok: false, url: '', source: '', status: 400, code: 'MISSING_DOC', message: 'Document reference is missing.', retryable: false };
+  }
+
   if (typeof docObj === 'string') {
-    if (docObj.length > 20 && !docObj.startsWith('LOCAL_DATA_URL')) return docObj;
+    if (isSafeDocumentPayload(docObj)) {
+      return { ok: true, url: docObj, source: 'direct', status: 200, code: 'OK', message: '', retryable: false };
+    }
+    if (docObj.trim().toLowerCase().startsWith('data:text/html') || /<html|<script/i.test(docObj)) {
+      return { ok: false, url: '', source: '', status: 400, code: 'UNSAFE_CONTENT_BLOCKED', message: 'Unsafe HTML/script content blocked.', retryable: false };
+    }
   }
 
-  // Priority A: doc.url / doc.data if valid string
-  let directUrl = docObj.data || docObj.url || docObj.fileUrl || docObj.dataUrl || '';
-  if (directUrl && directUrl.length > 20 && !directUrl.startsWith('LOCAL_DATA_URL')) {
-    return directUrl;
+  // Priority A: inline doc.data / doc.url if already hydrated safely
+  const directCandidates = [docObj.data, docObj.url, docObj.fileUrl, docObj.dataUrl].filter(Boolean);
+  for (const candidate of directCandidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 20 && !candidate.startsWith('LOCAL_DATA_URL')) {
+      if (!isSafeDocumentPayload(candidate)) {
+        return {
+          ok: false,
+          url: '',
+          source: 'direct',
+          status: 400,
+          code: 'UNSAFE_CONTENT_BLOCKED',
+          message: 'Blocked unsafe HTML/script content disguised as a document.',
+          retryable: false
+        };
+      }
+      return { ok: true, url: candidate, source: 'direct', status: 200, code: 'OK', message: '', retryable: false };
+    }
   }
 
-  const docId = docObj.id || docObj.docId || docObj.url || docObj.name;
+  const rawId = docObj.id || docObj.docId || docObj.legacyId || (typeof docObj.url === 'string' && /^(DOC|AK)-/.test(docObj.url.trim()) ? docObj.url.trim() : '');
+  const docId = rawId ? String(rawId).trim() : '';
 
-  // Priority B: IndexedDB idbDocStore cache
+  // Priority B: Origin-local IndexedDB cache
   if (docId) {
     try {
       const idbUrl = await getDocBinary(docId);
-      if (idbUrl && idbUrl.length > 20 && !idbUrl.startsWith('LOCAL_DATA_URL')) {
-        return idbUrl;
+      if (idbUrl && isSafeDocumentPayload(idbUrl)) {
+        return { ok: true, url: idbUrl, source: 'indexeddb', status: 200, code: 'OK', message: '', retryable: false };
       }
     } catch (e) {}
   }
 
-  // Priority C: Cloud fallback (GET /api/documents/:id with authenticated context)
-  if (docId && typeof fetchSingleExpiryDocumentMongo === 'function') {
+  // Priority C: Authenticated Cloud Fallback (GET /api/documents/:id)
+  if (!docId) {
+    return {
+      ok: false,
+      url: '',
+      source: '',
+      status: 404,
+      code: 'DOCUMENT_ID_MISSING',
+      message: 'Document ID is missing; cannot retrieve file from cloud vault.',
+      retryable: false,
+      needsAdminReview: true
+    };
+  }
+
+  const cloudRes = await fetchSingleExpiryDocumentDetailedMongo(docId, {
+    timeoutMs: options.timeoutMs ?? 45000,
+    retries: options.retries ?? 1,
+    retryDelayMs: options.retryDelayMs ?? 1500,
+    customerPhone: docObj.customerPhone || docObj.phone
+  });
+
+  if (cloudRes.ok && cloudRes.document) {
+    const cloudUrl = cloudRes.document.data || cloudRes.document.url || '';
+    if (!cloudUrl) {
+      return {
+        ok: false,
+        url: '',
+        source: 'cloud',
+        status: 404,
+        code: 'DOCUMENT_BINARY_EMPTY',
+        message: 'Document record has no stored image/PDF data.',
+        retryable: false,
+        needsAdminReview: true
+      };
+    }
+    if (!isSafeDocumentPayload(cloudUrl)) {
+      return {
+        ok: false,
+        url: '',
+        source: 'cloud',
+        status: 400,
+        code: 'UNSAFE_CONTENT_BLOCKED',
+        message: 'Blocked potentially malicious HTML/script content.',
+        retryable: false
+      };
+    }
+
+    // Priority D: Auto-cache retrieved binary under canonical server ID
+    const cacheId = cloudRes.document.id || docId;
     try {
-      const cloudDoc = await fetchSingleExpiryDocumentMongo(docId);
-      const cloudUrl = cloudDoc?.url || cloudDoc?.data || '';
-      if (cloudUrl && cloudUrl.length > 20 && !cloudUrl.startsWith('LOCAL_DATA_URL')) {
-        // Priority D: Auto-cache retrieved binary into IndexedDB for instant offline access
-        try {
-          await saveDocBinary(docId, cloudUrl, { ...docObj, ...cloudDoc });
-        } catch (e) {}
-        return cloudUrl;
-      }
+      await saveDocBinary(cacheId, cloudUrl, { ...docObj, ...cloudRes.document });
     } catch (e) {}
+
+    return { ok: true, url: cloudUrl, source: 'cloud', status: 200, code: 'OK', message: '', document: cloudRes.document, retryable: false };
   }
 
-  // Priority E: If all sources fail, return empty
-  return '';
+  return {
+    ok: false,
+    url: '',
+    source: 'cloud',
+    status: cloudRes.status ?? 404,
+    code: cloudRes.code || 'DOCUMENT_NOT_FOUND',
+    message: cloudRes.message || 'Document preview could not be retrieved.',
+    retryable: Boolean(cloudRes.retryable),
+    needsAdminReview: Boolean(cloudRes.needsAdminReview)
+  };
 };
 
-export const handleViewDocument = async (docObj, notify) => {
-  const docName = docObj?.name || docObj?.requirement || 'Document';
-  const docReq = docObj?.requirement || '';
-  const uploadedAt = docObj?.uploadedAt || 'Recently';
+export const resolveDocumentUrl = async (docObj, options = {}) => {
+  const res = await resolveDocumentDetailed(docObj, options);
+  return res.ok ? res.url : '';
+};
 
-  let rawUrl = await resolveDocumentUrl(docObj);
+function describePreviewFailure(resolution) {
+  const status = resolution?.status || 0;
+  const code = resolution?.code || '';
+  if (status === 401 || code === 'SESSION_EXPIRED' || code === 'UNAUTHORIZED') {
+    return {
+      badge: 'SESSION EXPIRED • மீண்டும் உள்நுழையவும்',
+      title: 'Session Expired / Authentication Required',
+      detail: 'Your login session has expired or is missing a security token. Please sign in again to view this document.',
+      notifyMsg: '🔐 அமர்வு காலாவதியானது (401). ஆவணத்தைப் பார்க்க மீண்டும் உள்நுழையவும். (Session expired — please login again.)'
+    };
+  }
+  if (status === 403 || code === 'FORBIDDEN') {
+    return {
+      badge: 'ACCESS DENIED • அனுமதி மறுக்கப்பட்டது',
+      title: 'Access Denied (403)',
+      detail: 'You do not have permission to view this private document.',
+      notifyMsg: '⛔ இந்த ஆவணத்தை அணுக அனுமதி இல்லை (403 Access Denied).'
+    };
+  }
+  if (code === 'UNSAFE_CONTENT_BLOCKED') {
+    return {
+      badge: 'SECURITY BLOCKED • பாதுகாப்பு தடுப்பு',
+      title: 'Unsupported or Unsafe File Content',
+      detail: 'Potentially dangerous HTML or script content was blocked from rendering.',
+      notifyMsg: '🛡️ பாதுகாப்பற்ற கோப்பு உள்ளடக்கம் தடுக்கப்பட்டது.'
+    };
+  }
+  if (status === 429 || code === 'RATE_LIMITED') {
+    return {
+      badge: 'TOO MANY REQUESTS • சிறிது நேரம் கழித்து முயற்சிக்கவும்',
+      title: 'Too Many Requests (429)',
+      detail: 'Please wait a few seconds before trying to open this document again.',
+      notifyMsg: '⏳ அதிக கோரிக்கைகள் (429). சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.'
+    };
+  }
+  if (status >= 500 || code === 'SERVER_UNAVAILABLE' || code === 'DOCUMENT_DECRYPTION_FAILED') {
+    return {
+      badge: 'SERVER UNAVAILABLE • மீண்டும் முயற்சிக்கவும்',
+      title: 'Server Temporarily Unavailable',
+      detail: resolution?.message || 'The document server is temporarily unavailable. Please retry in a few seconds.',
+      notifyMsg: '⚠️ சர்வர் தற்காலிகமாக கிடைக்கவில்லை (5xx). சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.'
+    };
+  }
+  if (resolution?.retryable || status === 0 || code === 'TIMEOUT' || code === 'NETWORK_ERROR') {
+    return {
+      badge: 'CONNECTION TIMED OUT • மீண்டும் முயற்சிக்கவும்',
+      title: 'Server Waking Up / Request Timed Out',
+      detail: 'Could not download the document in time (server may be waking up). Please click Retry or open again.',
+      notifyMsg: '⏳ சர்வர் பதிலளிக்க நேரம் எடுத்தது (Timeout). மீண்டும் முயற்சிக்கவும் (Retry).'
+    };
+  }
+  if (code === 'LEGACY_DOCUMENT_UNRESOLVED' || resolution?.needsAdminReview) {
+    return {
+      badge: 'ADMIN REVIEW REQUIRED • மறுஆய்வு தேவை',
+      title: 'Legacy Document Requires Review (404)',
+      detail: 'This legacy document record does not contain a recoverable binary in cloud storage and requires Admin review or re-upload.',
+      notifyMsg: '⚠️ பழைய ஆவணக் கோப்பு காணப்படவில்லை (Admin Review / Re-upload required).'
+    };
+  }
+  return {
+    badge: 'DOCUMENT NOT FOUND • ஆவணம் கிடைக்கவில்லை',
+    title: 'Document Not Found (404)',
+    detail: 'This document binary was not found on the server. Please re-upload it in your Document Vault.',
+    notifyMsg: '⚠️ ஆவணக் கோப்பு சர்வரில் கிடைக்கவில்லை (404). தயவுசெய்து மீண்டும் பதிவேற்றவும்.'
+  };
+}
 
-  // If no URL available, show clean Preview Unavailable view (NOT fake SVG)
-  if (!rawUrl || rawUrl.length < 15 || rawUrl.startsWith('LOCAL_DATA_URL')) {
+function generateViewerId() {
+  return `v_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildViewerLifecycleScript(viewerId) {
+  const safeId = String(viewerId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  return `<script>
+(function () {
+  var viewerId = "${safeId}";
+  function notifyOpener(type) {
+    try {
+      if (window.opener && !window.opener.closed && typeof window.opener.postMessage === 'function') {
+        window.opener.postMessage(
+          { source: 'akesevai-vault-viewer', viewerId: viewerId, type: type },
+          window.location.origin
+        );
+      }
+    } catch (e) {}
+  }
+  window.addEventListener('DOMContentLoaded', function () { notifyOpener('viewer-ready'); });
+  window.addEventListener('load', function () { notifyOpener('viewer-loaded'); });
+  window.addEventListener('pagehide', function () { notifyOpener('viewer-closed'); });
+})();
+</script>`;
+}
+
+/**
+ * Cleanly manage Blob URLs for an opened same-origin HTML viewer window.
+ * Never attaches unload/pagehide listeners to the initial about:blank navigation state,
+ * preventing premature Blob URL revocation in Chrome while the popup navigates to the viewer.
+ */
+function attachWindowBlobCleanup(targetWin, urls = [], optionsOrDelay = {}) {
+  const validUrls = Array.from(new Set(urls.filter((u) => typeof u === 'string' && u.startsWith('blob:'))));
+  if (validUrls.length === 0) return { cleanup: () => {}, blocked: !targetWin };
+
+  const opts = typeof optionsOrDelay === 'number'
+    ? { cleanupDelayMs: optionsOrDelay }
+    : (optionsOrDelay || {});
+  const viewerId = opts.viewerId || '';
+  const explicitDelayMs = typeof opts.cleanupDelayMs === 'number' && opts.cleanupDelayMs > 0
+    ? opts.cleanupDelayMs
+    : null;
+
+  let cleaned = false;
+  let pollTimer = null;
+  let delayTimer = null;
+
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    if (delayTimer !== null) {
+      clearTimeout(delayTimer);
+      delayTimer = null;
+    }
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      try { window.removeEventListener('message', onViewerMessage); } catch (e) {}
+    }
+    validUrls.forEach((u) => revokeTrackedBlobUrl(u));
+  };
+
+  function onViewerMessage(event) {
+    const data = event?.data;
+    if (!data || data.source !== 'akesevai-vault-viewer') return;
+    if (viewerId && data.viewerId !== viewerId) return;
+    const sameOrigin = typeof window !== 'undefined' && window.location?.origin
+      ? event.origin === window.location.origin
+      : true;
+    if (event.source !== targetWin && !sameOrigin) return;
+    if (data.type === 'viewer-closed') {
+      cleanup();
+    }
+  }
+
+  // If popup was blocked or already closed, immediately revoke created Blob URLs to avoid leaks.
+  if (!targetWin || targetWin.closed === true) {
+    cleanup();
+    return { cleanup, blocked: true };
+  }
+
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('message', onViewerMessage);
+  }
+
+  // Poll window.closed for reliable disposal even if the browser skips pagehide on tab kill.
+  if (typeof targetWin.closed === 'boolean') {
+    pollTimer = setInterval(() => {
+      try {
+        if (!targetWin || targetWin.closed) {
+          cleanup();
+        }
+      } catch (e) {
+        cleanup();
+      }
+    }, 400);
+    if (pollTimer && typeof pollTimer.unref === 'function') pollTimer.unref();
+  }
+
+  // Only honor an explicit caller-supplied cleanup delay (e.g. headless mock unit tests).
+  if (explicitDelayMs !== null) {
+    delayTimer = setTimeout(cleanup, explicitDelayMs);
+    if (delayTimer && typeof delayTimer.unref === 'function') delayTimer.unref();
+  }
+
+  return { cleanup, blocked: false };
+}
+
+function openViewerHtmlWindow({ htmlContent, viewerId, mediaUrls = [], notify, preNotifyMsg = '', options = {} }) {
+  const htmlBlob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+  const viewerUrl = createTrackedBlobUrl(htmlBlob);
+  const allUrls = [viewerUrl, ...mediaUrls];
+  const win = window.open(viewerUrl, '_blank');
+  const { blocked } = attachWindowBlobCleanup(win, allUrls, {
+    viewerId,
+    cleanupDelayMs: options.blobCleanupDelayMs
+  });
+
+  if (blocked) {
+    if (typeof notify === 'function') {
+      notify(
+        preNotifyMsg ||
+        '⚠️ பாப்-அப் சாளரம் உலாவியால் தடுக்கப்பட்டது (Popup blocked by browser). தயவுசெய்து pop-ups அனுமதிக்கவும் அல்லது Download பொத்தானைப் பயன்படுத்தவும்.'
+      );
+    }
+    return { popupBlocked: true };
+  }
+
+  if (preNotifyMsg && typeof notify === 'function') {
+    notify(preNotifyMsg);
+  }
+  return { popupBlocked: false };
+}
+
+export const handleViewDocument = async (docObj, notify, options = {}) => {
+  const docNameRaw = docObj?.name || docObj?.requirement || 'Document';
+  const docName = escapeViewerHtml(docNameRaw);
+  const docReq = escapeViewerHtml(docObj?.requirement || '');
+  const uploadedAt = escapeViewerHtml(docObj?.uploadedAt || 'Recently');
+
+  const resolution = await resolveDocumentDetailed(docObj, options);
+
+  if (!resolution.ok || !resolution.url) {
+    const failureInfo = describePreviewFailure(resolution);
+    const viewerId = generateViewerId();
     const unavailableHtml = `<!DOCTYPE html>
 <html lang="ta">
 <head>
@@ -181,7 +567,7 @@ export const handleViewDocument = async (docObj, notify) => {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-    .card { background: #1e293b; border: 2px solid #334155; border-radius: 16px; padding: 32px; max-width: 500px; width: 100%; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
+    .card { background: #1e293b; border: 2px solid #334155; border-radius: 16px; padding: 32px; max-width: 520px; width: 100%; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
     .icon { font-size: 48px; margin-bottom: 16px; }
     .badge { background: #d97706; color: white; font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 6px; display: inline-block; margin-bottom: 12px; }
     h2 { font-size: 20px; color: #f8fafc; margin-bottom: 8px; }
@@ -195,9 +581,9 @@ export const handleViewDocument = async (docObj, notify) => {
 <body>
   <div class="card">
     <div class="icon">⚠️</div>
-    <span class="badge">முன்னோட்டம் கிடைக்கவில்லை • PREVIEW UNAVAILABLE</span>
+    <span class="badge">${escapeViewerHtml(failureInfo.badge)}</span>
     <h2>${docName}</h2>
-    <p>இந்த ஆவணத்தின் நேரடி முன்னோட்டம் கிடைக்கவில்லை. தயவுசெய்து ஆவணத்தை மீண்டும் பதிவேற்றவும்.<br><small>(Direct file preview unavailable. Please re-upload this document in your vault.)</small></p>
+    <p><strong>${escapeViewerHtml(failureInfo.title)}</strong><br>${escapeViewerHtml(failureInfo.detail)}</p>
     <div class="meta">
       <div>📄 <strong>கோப்பு பெயர் (File):</strong> ${docName}</div>
       ${docReq ? `<div>📋 <strong>தேவை (Requirement):</strong> ${docReq}</div>` : ''}
@@ -205,29 +591,36 @@ export const handleViewDocument = async (docObj, notify) => {
     </div>
     <button onclick="window.close()" class="btn btn-close">✕ மூடு (Close Window)</button>
   </div>
+  ${buildViewerLifecycleScript(viewerId)}
 </body>
 </html>`;
-    const htmlBlob = new Blob([unavailableHtml], { type: 'text/html;charset=utf-8' });
-    const viewerUrl = URL.createObjectURL(htmlBlob);
-    const win = window.open(viewerUrl, '_blank');
-    if (!win) window.location.href = viewerUrl;
-    if (typeof notify === 'function') notify('⚠️ ஆவண முன்னோட்டம் கிடைக்கவில்லை. தயவுசெய்து மீண்டும் பதிவேற்றவும்.');
-    return;
+    const viewOpen = openViewerHtmlWindow({
+      htmlContent: unavailableHtml,
+      viewerId,
+      notify,
+      preNotifyMsg: failureInfo.notifyMsg,
+      options
+    });
+    return viewOpen.popupBlocked ? { ...resolution, popupBlocked: true } : resolution;
   }
 
+  const rawUrl = resolution.url;
   const mime = getMimeType(docObj, rawUrl);
-  const isPdf = mime === 'application/pdf' || (docName && docName.toLowerCase().endsWith('.pdf'));
+  const isPdf = mime === 'application/pdf' || (docNameRaw && docNameRaw.toLowerCase().endsWith('.pdf'));
 
   // 1. Handle PDF Documents
   if (isPdf) {
     let pdfBlobUrl = rawUrl;
+    let createdMediaUrl = '';
     if (rawUrl.startsWith('data:')) {
       const blob = createBlobFromDataUrl(rawUrl, 'application/pdf');
       if (blob) {
-        pdfBlobUrl = URL.createObjectURL(blob);
+        createdMediaUrl = createTrackedBlobUrl(blob);
+        pdfBlobUrl = createdMediaUrl;
       }
     }
 
+    const viewerId = generateViewerId();
     const pdfViewerHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -262,24 +655,31 @@ export const handleViewDocument = async (docObj, notify) => {
     </div>
   </header>
   <iframe src="${pdfBlobUrl}#toolbar=1" class="pdf-frame" title="${docName}"></iframe>
+  ${buildViewerLifecycleScript(viewerId)}
 </body>
 </html>`;
-    const htmlBlob = new Blob([pdfViewerHtml], { type: 'text/html;charset=utf-8' });
-    const viewerUrl = URL.createObjectURL(htmlBlob);
-    const win = window.open(viewerUrl, '_blank');
-    if (!win) window.location.href = viewerUrl;
-    return;
+    const viewOpen = openViewerHtmlWindow({
+      htmlContent: pdfViewerHtml,
+      viewerId,
+      mediaUrls: [createdMediaUrl],
+      notify,
+      options
+    });
+    return viewOpen.popupBlocked ? { ...resolution, popupBlocked: true } : resolution;
   }
 
   // 2. Handle Real Image Documents (JPG, PNG, WEBP, SVG)
   let imageDisplayUrl = rawUrl;
+  let createdImageUrl = '';
   if (rawUrl.startsWith('data:') && rawUrl.includes(';base64')) {
     const blob = createBlobFromDataUrl(rawUrl, mime);
     if (blob) {
-      imageDisplayUrl = URL.createObjectURL(blob);
+      createdImageUrl = createTrackedBlobUrl(blob);
+      imageDisplayUrl = createdImageUrl;
     }
   }
 
+  const viewerId = generateViewerId();
   const imageViewerHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -317,24 +717,31 @@ export const handleViewDocument = async (docObj, notify) => {
   <main class="image-container">
     <img src="${imageDisplayUrl}" alt="${docName}" />
   </main>
+  ${buildViewerLifecycleScript(viewerId)}
 </body>
 </html>`;
 
-  const htmlBlob = new Blob([imageViewerHtml], { type: 'text/html;charset=utf-8' });
-  const viewerUrl = URL.createObjectURL(htmlBlob);
-  const win = window.open(viewerUrl, '_blank');
-  if (!win) window.location.href = viewerUrl;
+  const viewOpen = openViewerHtmlWindow({
+    htmlContent: imageViewerHtml,
+    viewerId,
+    mediaUrls: [createdImageUrl],
+    notify,
+    options
+  });
+  return viewOpen.popupBlocked ? { ...resolution, popupBlocked: true } : resolution;
 };
 
-export const handleDownloadDocument = async (docObj, notify) => {
-  let rawUrl = await resolveDocumentUrl(docObj);
+export const handleDownloadDocument = async (docObj, notify, options = {}) => {
+  const resolution = await resolveDocumentDetailed(docObj, options);
+  const rawUrl = resolution.ok ? resolution.url : '';
   let fileName = docObj?.name || docObj?.requirement || 'document.jpg';
 
-  if (!rawUrl || rawUrl.length < 15 || rawUrl.startsWith('LOCAL_DATA_URL')) {
+  if (!rawUrl || !isSafeDocumentPayload(rawUrl)) {
+    const failureInfo = describePreviewFailure(resolution);
     if (typeof notify === 'function') {
-      notify('⚠️ ஆவணக் கோப்பு கிடைக்கவில்லை. தயவுசெய்து மீண்டும் பதிவேற்றவும். (Document file not found, please re-upload)');
+      notify(failureInfo.notifyMsg);
     }
-    return;
+    return resolution;
   }
 
   const mime = getMimeType(docObj, rawUrl);
@@ -357,47 +764,47 @@ export const handleDownloadDocument = async (docObj, notify) => {
     link.click();
     document.body.removeChild(link);
     if (typeof notify === 'function') notify(`✅ ${fileName} பதிவிறக்கம் தொடங்கப்பட்டது!`);
-    return;
+    return resolution;
   }
 
   // 2. Handle Data URL
   if (rawUrl.startsWith('data:')) {
     const blob = createBlobFromDataUrl(rawUrl, mime);
     if (blob) {
-      const blobUrl = URL.createObjectURL(blob);
+      const blobUrl = createTrackedBlobUrl(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      setTimeout(() => revokeTrackedBlobUrl(blobUrl), options.blobCleanupDelayMs ?? 1500);
       if (typeof notify === 'function') notify(`✅ ${fileName} பதிவிறக்கம் தொடங்கப்பட்டது!`);
-      return;
+      return resolution;
     }
   }
 
-  // 3. Handle HTTP / HTTPS / Remote URLs via fetch + blob download
-  if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+  // 3. Handle HTTPS URLs via fetch + blob download
+  if (rawUrl.startsWith('https://')) {
     try {
       if (typeof notify === 'function') notify(`⏳ ${fileName} பதிவிறக்கப்படுகிறது... (Downloading...)`);
       const response = await fetch(rawUrl);
       const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
+      const blobUrl = createTrackedBlobUrl(blob);
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = fileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      setTimeout(() => revokeTrackedBlobUrl(blobUrl), options.blobCleanupDelayMs ?? 1500);
       if (typeof notify === 'function') notify(`✅ ${fileName} பதிவிறக்கம் முடிவடைந்தது!`);
-      return;
+      return resolution;
     } catch (e) {
       window.open(rawUrl, '_blank');
-      return;
+      return resolution;
     }
   }
 
-  window.open(rawUrl, '_blank');
+  return resolution;
 };

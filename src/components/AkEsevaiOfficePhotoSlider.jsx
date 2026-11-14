@@ -4,27 +4,27 @@ import { Camera, ChevronLeft, ChevronRight, MapPin, Building } from 'lucide-reac
 const OFFICE_PHOTOS = [
   {
     id: 1,
-    src: '/office1.jpg',
+    src: '/office1-web.jpg',
     title: '🏢 வாடிக்கையாளர் காத்திருப்பு அரங்கம்',
     subtitle: 'Customer Lounge & Reception Desk',
-    location: 'மில் ரோடு, சண்முகபுரம், பழனி',
-    desk: 'AkEsevai Reception & Lounge'
+    location: 'மில் ரோடு, சண்முகபுரம், அண்ணா நகர், பழனி 624601',
+    desk: 'AK E-SEVAI Digital Service Centre Reception'
   },
   {
     id: 2,
-    src: '/office2.jpg',
+    src: '/office2-web.jpg',
     title: '🖥️ நவீன கணினி & சேவை கவுண்டர்கள்',
     subtitle: 'High-Speed Digital Workstation Counters',
-    location: 'சண்முகபுரம், பழனி - 624601',
-    desk: 'AkEsevai Digital Workstation'
+    location: 'மில் ரோடு, சண்முகபுரம், பழனி - 624601',
+    desk: 'AK E-SEVAI Digital Workstation'
   },
   {
     id: 3,
-    src: '/office3.jpg',
+    src: '/office3-web.jpg',
     title: '👨‍💻 முதன்மை ஆபரேட்டர் சேவை மையம்',
     subtitle: 'Main Operator Counter Desk',
-    location: 'சண்முகபுரம், பழனி',
-    desk: 'AK e-Sevai Main Desk'
+    location: 'மில் ரோடு, சண்முகபுரம், பழனி - 624601',
+    desk: 'AK E-SEVAI Digital Service Centre Main Desk'
   }
 ];
 
@@ -254,7 +254,11 @@ export default function AkEsevaiOfficePhotoSlider() {
           id="home-centre-hero-image"
           key={current.id}
           src={current.src}
-          alt={`AkEsevai Gallery - ${current.title}`}
+          alt={`AK E-SEVAI Digital Service Centre Palani Mill Road - ${current.subtitle}`}
+          width="960"
+          height="540"
+          decoding="async"
+          fetchPriority="high"
           className="office-gallery-img home-centre-hero-img"
         />
 

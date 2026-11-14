@@ -15,13 +15,13 @@ jobs:
     steps:
       - name: Trigger Ingestion API Endpoint
         env:
-          INGESTION_SECRET: ${{ secrets.INGESTION_SECRET_KEY }}
+          INGESTION_SECRET: ${{ secrets.INGESTION_SECRET_KEY || secrets.INGESTION_SECRET }}
         run: |
           echo "Starting AK E-SEVAI All-India Exam Ingestion Job..."
 
           # Fail-closed guard: Refuse execution if INGESTION_SECRET_KEY is not configured
           if [ -z "$INGESTION_SECRET" ]; then
-            echo "::error::INGESTION_SECRET_KEY is missing or empty in GitHub Secrets. Request aborted."
+            echo "::error::INGESTION_SECRET_KEY is missing or empty in GitHub Secrets. Please ensure INGESTION_SECRET_KEY is defined in Repository Settings -> Secrets and variables -> Actions. Request aborted."
             exit 1
           fi
 

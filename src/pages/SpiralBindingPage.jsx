@@ -5,6 +5,7 @@ import {
   Sparkles, FileText, Check
 } from 'lucide-react';
 import { siteConfig } from '../config/siteConfig';
+import SpaLink from '../components/SpaLink';
 
 export const pageMeta = { id: 'spiral-binding', title: 'Palani Spiral Binding & Lamination Centre' };
 
@@ -82,13 +83,13 @@ export default function SpiralBindingPage({ navigate, lang = 'ta' }) {
     <div className="inner-page-shell" style={{ maxWidth: '1180px', margin: '0 auto', padding: '24px 16px 60px' }}>
       {/* 1. BREADCRUMB */}
       <nav aria-label="Breadcrumb" style={{ display: 'flex', gap: '8px', fontSize: '13px', color: '#64748b', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => navigate('home')} style={{ background: 'none', border: 'none', color: '#0052cc', cursor: 'pointer', padding: 0, fontWeight: 700 }}>
+        <SpaLink to="/" navigate={navigate} scrollToTop style={{ color: '#0052cc', fontWeight: 700, textDecoration: 'none' }}>
           {isTa ? 'முகப்பு' : 'Home'}
-        </button>
+        </SpaLink>
         <span>/</span>
-        <button onClick={() => navigate('services')} style={{ background: 'none', border: 'none', color: '#0052cc', cursor: 'pointer', padding: 0, fontWeight: 700 }}>
+        <SpaLink to="/services" navigate={navigate} scrollToTop style={{ color: '#0052cc', fontWeight: 700, textDecoration: 'none' }}>
           {isTa ? 'சேவைகள்' : 'Services'}
-        </button>
+        </SpaLink>
         <span>/</span>
         <span style={{ color: '#0f172a', fontWeight: 800 }}>
           {isTa ? 'ஸ்பைரல் பைண்டிங் & லேமினேஷன்' : 'Spiral Binding & Lamination'}
@@ -267,24 +268,46 @@ export default function SpiralBindingPage({ navigate, lang = 'ta' }) {
           🔗 {isTa ? 'தொடர்புடைய சேவைகள்:' : 'Explore Related Services:'}
         </h3>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-          <button
-            onClick={() => navigate('xerox-printing')}
-            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          <SpaLink
+            to="/xerox-printing"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             🖨️ {isTa ? 'ஜெராக்ஸ் & கலர் பிரிண்டிங்' : 'Xerox & Colour Printing'} <ArrowRight size={14} />
-          </button>
-          <button
-            onClick={() => navigate('typing-services')}
-            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          </SpaLink>
+          <SpaLink
+            to="/typing-services"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             ⌨️ {isTa ? 'தமிழ் & ஆங்கில டைப்பிங்' : 'Tamil & English Typing'} <ArrowRight size={14} />
-          </button>
-          <button
-            onClick={() => navigate('tools/passport-size-photo')}
-            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          </SpaLink>
+          <SpaLink
+            to="/tools/passport-size-photo"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             📷 {isTa ? 'பாஸ்போர்ட் போட்டோ' : 'Passport Photo Studio'} <ArrowRight size={14} />
-          </button>
+          </SpaLink>
+          <SpaLink
+            to="/token-generator"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            🎫 {isTa ? 'பழனி டோக்கன் முன்பதிவு' : 'Palani Token Booking'} <ArrowRight size={14} />
+          </SpaLink>
+          <SpaLink
+            to="/esevai-services"
+            navigate={navigate}
+            scrollToTop
+            style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#334155', padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            📄 {isTa ? 'தமிழ்நாடு இ-சேவை வழிகாட்டி' : 'TN e-Sevai Guidance Hub'} <ArrowRight size={14} />
+          </SpaLink>
         </div>
       </section>
 
@@ -352,15 +375,18 @@ export default function SpiralBindingPage({ navigate, lang = 'ta' }) {
             <MapPin size={16} /> {isTa ? 'மையத்தின் முகவரி & நேரம்' : 'Centre Address & Timings'}
           </div>
           <strong style={{ color: '#0f172a', fontSize: '15px', display: 'block', marginTop: '4px' }}>
-            AK E-SEVAI, Mill Rd, Sanmugapuram, Anna Nagar, Palani, Tamil Nadu 624601
+            AK E-SEVAI Digital Service Centre, Mill Road, Sanmugapuram, Anna Nagar, Palani, Tamil Nadu 624601
           </strong>
-          <small style={{ color: '#64748b', fontSize: '13px' }}>
+          <small style={{ color: '#64748b', fontSize: '13px', display: 'block' }}>
             ⏰ {isTa ? 'திங்கள் – சனி: காலை 10:00 – இரவு 8:00 (ஞாயிறு விடுமுறை)' : 'Monday – Saturday: 10:00 AM – 8:00 PM (Sunday Closed)'}
+          </small>
+          <small style={{ color: '#475569', fontSize: '12px', display: 'block', marginTop: '4px' }}>
+            {isTa ? 'குறிப்பு: ஸ்பைரல் பைண்டிங் & லேமினேஷன் பழனி மையத்தில் மட்டுமே செய்யப்படும் (தனியார் சேவை மையம்).' : 'Note: Walk-in spiral binding & lamination are available exclusively at our Palani centre (independent private service centre).'}
           </small>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <a
-            href="tel:9342318844"
+            href="tel:+919342318844"
             style={{
               background: '#4338ca',
               color: 'white',
@@ -374,10 +400,12 @@ export default function SpiralBindingPage({ navigate, lang = 'ta' }) {
               gap: '6px'
             }}
           >
-            <Phone size={15} /> 93423 18844
+            <Phone size={15} /> +91 93423 18844
           </a>
-          <button
-            onClick={() => navigate('contact')}
+          <SpaLink
+            to="/contact"
+            navigate={navigate}
+            scrollToTop
             style={{
               background: 'white',
               color: '#4338ca',
@@ -386,11 +414,11 @@ export default function SpiralBindingPage({ navigate, lang = 'ta' }) {
               borderRadius: '10px',
               fontSize: '13px',
               fontWeight: 800,
-              cursor: 'pointer'
+              textDecoration: 'none'
             }}
           >
             {isTa ? 'வரைபடம் & வழிகாட்டுதல்' : 'Map & Directions'}
-          </button>
+          </SpaLink>
         </div>
       </section>
     </div>

@@ -9,20 +9,20 @@ export default function HeroBannerSlider({ navigate }) {
       id: 1,
       leftTitle: 'பிறப்பு முதல்',
       leftHighlight: 'இறப்பு வரை',
-      leftSub: 'ஆன்லைன் சம்பந்தப்பட்ட அனைத்து வேலைகளும் செய்து தரப்படும்',
-      rightBadge: 'பழனி & திண்டுக்கல் மாவட்ட',
-      rightTitle: 'பொது இ-சேவை மையம்',
-      rightSub: 'உரிமையாளர்கள் நலச்சங்கம் • AkEsevai டிஜிட்டல் மையம்',
+      leftSub: 'ஆன்லைன் விண்ணப்ப வழிகாட்டுதல் & ஆவண உதவி செய்யப்படும்',
+      rightBadge: 'பழனி & திண்டுக்கல் மாவட்டம்',
+      rightTitle: 'அக் இ-சேவை டிஜிட்டல் மையம்',
+      rightSub: 'தனியார் ஆன்லைன் உதவி மையம் • மில் ரோடு, பழனி 624601',
       badgeColor: '#e11d48'
     },
     {
       id: 2,
-      leftTitle: '⚡ ஆதாரில் மொபைல் எண் & Mail ID ⚡',
-      leftHighlight: 'இணைக்க மற்றும் மாற்ற',
-      leftSub: 'ஆதாரில் முகவரி மாற்றம் செய்ய உடனடியாக அணுகவும்',
-      rightBadge: 'அரசு ஆதார் சேவை மையம்',
-      rightTitle: 'ஆதார் திருத்த சேவைகள்',
-      rightSub: 'உங்கள் அருகில் உள்ள ஆதார் சேவை மையத்தை அணுகவும்',
+      leftTitle: '⚡ ஆதார் ஆவண வழிகாட்டுதல் ⚡',
+      leftHighlight: 'முகவரி மாற்றம் & பதிவிறக்கம்',
+      leftSub: 'மொபைல் எண் / பயோமெட்ரிக் மாற்றத்திற்கு அருகிலுள்ள அரசு ஆதார் மையத்தை அணுகவும்',
+      rightBadge: 'ஆன்லைன் வழிகாட்டு உதவி',
+      rightTitle: 'ஆதார் ஆன்லைன் சேவை உதவி',
+      rightSub: 'e-Aadhaar பதிவிறக்கம், PVC கார்டு ஆர்டர் & முகவரி மாற்ற வழிகாட்டுதல்',
       badgeColor: '#16a34a'
     },
     {
@@ -93,7 +93,14 @@ export default function HeroBannerSlider({ navigate }) {
           <div className="slide-right-block">
             <div className="slide-emblem-badge">
               <div className="emblem-circle">
-                <img src="/logo.png" alt="AkEsevai Crest" className="emblem-img" />
+                <img
+                  src="/logo-128.png"
+                  alt="AK E-SEVAI Digital Service Centre Palani Emblem"
+                  width="64"
+                  height="64"
+                  decoding="async"
+                  className="emblem-img"
+                />
               </div>
             </div>
             <div className="right-district-tag">
