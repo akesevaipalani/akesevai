@@ -17,6 +17,20 @@ import {
   runAllIngestionJobs
 } from './server/ingestion/ingestionManager.js';
 import {
+  shouldDeleteExpiredExamNotification,
+  runExpiredExamCleanupSchedulerTick,
+  CleanupScheduleState
+} from './server/cleanup/expiredExamCleanupHelper.js';
+import {
+  extractMongoDatabaseName,
+  maskMongoUri,
+  resolveAppEnvironment,
+  validateDatabaseEnvironmentIsolation,
+  validateActualConnectedDatabase,
+  isCleanupSchedulerAllowedInEnvironment
+} from './server/db/databaseIsolation.js';
+import { getKolkataToday } from './src/utils/notificationDateHelper.js';
+import {
   escapeHtml,
   safeJsonLdStringify,
   resolveQueryRedirect,
@@ -70,7 +84,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || (isProd ? '' : 'mongodb://127.0.0.1:27017/akesevai');
+const MONGODB_URI = process.env.MONGODB_URI || (isProd ? '' : 'mongodb://127.0.0.1:27017/akesevai_dev');
 
 // Security: Disable x-powered-by banner
 app.disable('x-powered-by');
@@ -1390,7 +1404,7 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
   }
 ];
 
-// Master Sync Function for All Exam Categories (Protects manualOverrideLock, corrigenda, rejected & quarantined)
+// Master Sync Function for All Exam Categories (Protects manualOverrideLock, corrigenda, rejected, quarantined & past expired exams)
 const syncAllVerifiedNotificationsFeed = async () => {
   try {
     const protectedDocs = await Notification.find(
@@ -1405,9 +1419,11 @@ const syncAllVerifiedNotificationsFeed = async () => {
       { id: 1 }
     ).lean();
     const protectedIds = new Set((protectedDocs || []).map((d) => d.id));
+    const kolkataToday = getKolkataToday();
 
     const ops = VERIFIED_ALL_EXAM_NOTIFICATIONS
       .filter((notif) => !protectedIds.has(notif.id))
+      .filter((notif) => !shouldDeleteExpiredExamNotification(notif, kolkataToday))
       .map((notif) => ({
         updateOne: {
           filter: { id: notif.id },
@@ -1439,11 +1455,44 @@ app.get('/api/health', (req, res) => {
   const provider = (process.env.SMS_GATEWAY_PROVIDER || '').trim().replace(/^["']|["']$/g, '') || (fast2smsKey ? 'fast2sms' : 'none');
   const route = (process.env.FAST2SMS_ROUTE || 'q').trim().replace(/^["']|["']$/g, '');
 
+  let appEnv = 'development';
+  try {
+    appEnv = resolveAppEnvironment(process.env);
+  } catch (_) {
+    appEnv = 'misconfigured';
+  }
+
+  const activeDbName = mongoose.connection.name || extractMongoDatabaseName(MONGODB_URI) || 'unknown';
+  const schedulerGate = isCleanupSchedulerAllowedInEnvironment({
+    env: process.env,
+    activeDbName
+  });
+
+  const isIsolated =
+    (appEnv === 'staging' && activeDbName === 'akesevai_staging') ||
+    (appEnv === 'development' && activeDbName === 'akesevai_dev') ||
+    (appEnv === 'production' && activeDbName === 'akesevai');
+
   res.json({
     status: 'ok',
     database: {
       connected: mongoose.connection.readyState === 1,
-      provider: 'MongoDB Atlas Cloud'
+      provider: 'MongoDB Atlas Cloud',
+      name: activeDbName,
+      isIsolated
+    },
+    environment: isProd ? 'production' : 'development',
+    environmentDetails: {
+      appEnv,
+      nodeEnv: process.env.NODE_ENV || 'development',
+      isRender: Boolean(process.env.RENDER === 'true' || process.env.RENDER_SERVICE_NAME),
+      serviceName: process.env.RENDER_SERVICE_NAME || 'local'
+    },
+    cleanupScheduler: {
+      allowed: schedulerGate.allowed,
+      reason: schedulerGate.reason || 'ALLOWED',
+      purgeEnabled: process.env.ENABLE_EXPIRED_EXAM_PURGE === 'true',
+      schedulerEnabled: process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false'
     },
     smsGateway: {
       provider,
@@ -1451,7 +1500,6 @@ app.get('/api/health', (req, res) => {
       configured: Boolean(fast2smsKey && fast2smsKey !== 'your_fast2sms_api_key_here'),
       keyLength: fast2smsKey ? fast2smsKey.length : 0
     },
-    environment: isProd ? 'production' : 'development',
     timestamp: new Date().toISOString()
   });
 });
@@ -4413,6 +4461,7 @@ registerNotificationAndIngestionRoutes(app, {
   IngestionLock,
   IngestionSourceHealth,
   IngestionRunLog,
+  CleanupScheduleModel: CleanupScheduleState,
   mongooseConnection: mongoose.connection,
   resolveAuthContext,
   syncAllVerifiedNotificationsFeed,
@@ -4658,13 +4707,32 @@ app.use((err, req, res, next) => {
 
 const connectWithRetry = async () => {
   try {
+    // 1. Mandatory Pre-Connection Database & Environment Isolation Validation
+    validateDatabaseEnvironmentIsolation({
+      uri: MONGODB_URI,
+      env: process.env,
+      exitOnError: true
+    });
+
     await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 15000,
       socketTimeoutMS: 45000,
       autoIndex: true
     });
+
+    const actualConnectedDb = mongoose.connection.db?.databaseName || mongoose.connection.name;
+    const resolvedAppEnv = resolveAppEnvironment(process.env);
+
+    // 2. Mandatory Post-Connection Runtime Verification of Actual Connected Database
+    validateActualConnectedDatabase({
+      connectedDbName: actualConnectedDb,
+      appEnv: resolvedAppEnv,
+      exitOnError: true
+    });
+
     console.log(`🌐 ✅ Connected Successfully to MongoDB Atlas Cloud Database!`);
-    console.log(`📡 Database URI: ${MONGODB_URI.replace(/:([^@]+)@/, ':****@')}`);
+    console.log(`📡 Database Target: ${maskMongoUri(MONGODB_URI)}`);
+    console.log(`🔒 [Database Isolation Verified]: Target Database = ${actualConnectedDb}`);
 
     // Initialize & bootstrap Admin Authentication record in MongoDB
     await initializeAdminAuth();
@@ -4742,6 +4810,37 @@ const startServer = async () => {
       runDurableSchedulerTick('startup_recovery');
       setInterval(() => runDurableSchedulerTick('in_process_interval'), 4 * 60 * 60 * 1000);
     }, 2 * 60 * 1000);
+  }
+
+  // 10-Day Expired Exam Cleanup Scheduler (02:00 AM Asia/Kolkata, Singleton Locked, Dry-Run by Default)
+  if (process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false') {
+    const schedulerGate = isCleanupSchedulerAllowedInEnvironment({
+      env: process.env,
+      activeDbName: mongoose.connection.name || extractMongoDatabaseName(MONGODB_URI)
+    });
+
+    if (!schedulerGate.allowed) {
+      console.log(`ℹ️ [Cleanup Scheduler]: Skipped starting in-process cleanup interval: ${schedulerGate.reason} (Target DB: ${schedulerGate.dbName || 'unknown'})`);
+    } else {
+      setTimeout(() => {
+        runExpiredExamCleanupSchedulerTick({
+          NotificationModel: Notification,
+          CleanupScheduleModel: CleanupScheduleState
+        }).catch((err) => {
+          console.warn('⚠️ [Cleanup Scheduler Warning]:', err.message);
+        });
+
+        // Periodic evaluation every 15 minutes to trigger precisely when 02:00 AM IST is reached
+        setInterval(() => {
+          runExpiredExamCleanupSchedulerTick({
+            NotificationModel: Notification,
+            CleanupScheduleModel: CleanupScheduleState
+          }).catch((err) => {
+            console.warn('⚠️ [Cleanup Scheduler Warning]:', err.message);
+          });
+        }, 15 * 60 * 1000);
+      }, 60 * 1000);
+    }
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {

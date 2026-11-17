@@ -19,6 +19,10 @@ import {
   getIngestionStatus,
   recomputeJobSummary
 } from './ingestionManager.js';
+import {
+  isCleanupSchedulerAllowedInEnvironment,
+  resolveAppEnvironment
+} from '../db/databaseIsolation.js';
 
 export const normalizeCategoryStr = (cat) => {
   if (!cat) return 'all';
@@ -68,6 +72,7 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
     IngestionLock = null,
     IngestionSourceHealth = null,
     IngestionRunLog = null,
+    CleanupScheduleModel = null,
     mongooseConnection = null,
     resolveAuthContext,
     syncAllVerifiedNotificationsFeed,
@@ -674,6 +679,63 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
       });
     } catch (err) {
       res.status(500).json({ success: false, error: 'STATUS_ERROR' });
+    }
+  });
+
+  // 12. 10-Day Expired Exam Cleanup Status Endpoint (Strictly Read-Only Telemetry)
+  app.get('/api/notifications/cleanup-status', async (req, res) => {
+    try {
+      const auth = resolveAuthContext(req);
+      const isSecretValid = verifyIngestionSecretHeader(req, env);
+      if (!auth.isAdmin && !isSecretValid) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'Admin authorization or valid X-Ingestion-Secret header is required.'
+        });
+      }
+
+      const purgeEnabled = String(env.ENABLE_EXPIRED_EXAM_PURGE || '').trim().toLowerCase() === 'true';
+      let scheduleState = null;
+
+      if (CleanupScheduleModel && isDbReady()) {
+        scheduleState = await CleanupScheduleModel.findOne({ taskKey: 'expired_exam_cleanup' }).lean();
+      }
+
+      const activeDbName = (CleanupScheduleModel?.db?.name) || 'unknown';
+      let appEnv = 'development';
+      try {
+        appEnv = resolveAppEnvironment(env);
+      } catch (_) {
+        appEnv = 'misconfigured';
+      }
+      const schedulerGate = isCleanupSchedulerAllowedInEnvironment({
+        env,
+        activeDbName
+      });
+
+      res.json({
+        success: true,
+        purgeEnabled,
+        mode: purgeEnabled ? 'live_deletion' : 'dry_run',
+        scheduleIntervalDays: 10,
+        scheduleTargetIst: '02:00:00 AM IST',
+        database: {
+          name: activeDbName,
+          isIsolated: activeDbName === 'akesevai_staging' || activeDbName === 'akesevai_dev' || activeDbName === 'akesevai'
+        },
+        schedulerGate: {
+          allowed: schedulerGate.allowed,
+          appEnv: schedulerGate.appEnv,
+          reason: schedulerGate.reason || 'ALLOWED'
+        },
+        scheduleState: scheduleState || {
+          taskKey: 'expired_exam_cleanup',
+          status: 'not_initialized'
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: 'CLEANUP_STATUS_ERROR', message: err.message });
     }
   });
 }
