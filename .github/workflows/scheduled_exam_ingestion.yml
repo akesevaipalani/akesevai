@@ -147,5 +147,6 @@ jobs:
           elif [ "$CONSECUTIVE_LOCK_WAIT_COUNT" -eq "$MAX_BATCH_ITERATIONS" ]; then
             echo "ℹ️ Ingestion is actively running on another worker/container across all ticks. Distributed lock respected (idempotent skip)."
           else
-            echo "⚠️ Completed $MAX_BATCH_ITERATIONS batches. Any remaining sources will resume safely in next scheduled tick."
+            echo "::error::Ingestion incomplete after $MAX_BATCH_ITERATIONS batches. Pending sources remain unfinished."
+            exit 1
           fi
