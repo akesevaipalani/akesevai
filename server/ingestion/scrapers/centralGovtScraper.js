@@ -7,7 +7,7 @@ import { toKolkataIsoDate } from '../../../src/utils/notificationDateHelper.js';
  * Scrapes UPSC Active Examinations & Notices
  */
 export async function scrapeUpscNotifications(sourceConfig) {
-  const url = sourceConfig.url;
+  const url = sourceConfig.url || 'https://upsc.gov.in/active-examinations';
   const res = await safeFetchHtml(url);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
@@ -15,26 +15,27 @@ export async function scrapeUpscNotifications(sourceConfig) {
 
   const $ = cheerio.load(res.html);
   const items = [];
-  const seenTitles = new Set();
+  const rows = $('table tr');
 
-  $('.views-row').each((_, row) => {
-    const a = $(row).find('a').first();
-    const rawTitle = $(row).text().replace(/\s+/g, ' ').trim();
+  rows.each((i, row) => {
+    if (i === 0) return; // Skip table header: Examination Name | Notice No | Date of Commencement | Last Date
+    const cols = $(row).find('td');
+    if (cols.length < 3) return;
+
+    const titleEl = $(cols[0]);
+    const a = titleEl.find('a').first();
+    const rawTitle = titleEl.text().replace(/\s+/g, ' ').trim();
+    if (!rawTitle || rawTitle.toLowerCase().includes('examination name')) return;
+
+    const notifNo = $(cols[1]).text().replace(/\s+/g, ' ').trim().replace(/^[—\-]+$/, '');
+    const examDate = $(cols[2]).text().replace(/\s+/g, ' ').trim();
+    const closingDate = cols.length >= 4 ? $(cols[3]).text().replace(/\s+/g, ' ').trim().replace(/^(?:NA|—|-)$/i, '') : '';
+
     let href = a.attr('href') || '';
-    if (!rawTitle || !href) return;
-
-    const lower = rawTitle.toLowerCase();
-    // Exclude final marks, archived lists if not an active notice/exam
-    if (lower.startsWith('final result:') || lower.includes('marks of recommended candidates')) {
-      return;
+    let absLink = url;
+    if (href) {
+      absLink = href.startsWith('http') ? href : new URL(href, 'https://upsc.gov.in/').toString();
     }
-
-    if (seenTitles.has(rawTitle)) return;
-    seenTitles.add(rawTitle);
-
-    let absLink = href.startsWith('http')
-      ? href
-      : `https://upsc.gov.in/${href.startsWith('/') ? href.slice(1) : href}`;
 
     items.push({
       sourceKey: 'upsc_active',
@@ -42,16 +43,17 @@ export async function scrapeUpscNotifications(sourceConfig) {
       organization: 'Union Public Service Commission (UPSC)',
       service: rawTitle,
       postName: rawTitle.replace(/^(Notice:|Written Result:|Interview Schedule:)\s*/i, '').trim(),
-      notificationNo: '',
+      notificationNo: notifNo || '',
       openingDate: '',
-      closingDate: '',
-      examDate: 'As per UPSC Calendar',
-      qualification: 'Degree of a recognized University in relevant discipline',
-      ageLimit: '21 - 32 Years (Relaxation as per Rules)',
-      applicationFee: '₹100 (Female/SC/ST/PwBD Exempted)',
+      closingDate: closingDate || '',
+      examDate: examDate || 'To Be Announced',
+      qualification: 'Refer Official Notification',
+      ageLimit: 'Refer Official Notification',
+      applicationFee: 'Refer Official Notification',
+      vacancies: 'Not Specified',
       detailsLink: absLink,
       applyLink: 'https://upsconline.nic.in/',
-      source: 'Official UPSC Examination Portal (upsc.gov.in)',
+      source: 'Official UPSC Active Examinations Portal (upsc.gov.in)',
       sourceUrl: url
     });
   });
@@ -104,10 +106,11 @@ export async function scrapeSscNotifications(sourceConfig) {
         notificationNo: notice.id || '',
         openingDate: startIso || publishedDate || '',
         closingDate: endIso || '',
-        examDate: 'Announced Soon',
-        qualification: '10th / 12th / Any Degree (as per post)',
-        ageLimit: '18 - 30 Years (Post wise)',
-        applicationFee: '₹100 (Women/SC/ST/ESM Exempted)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink,
         applyLink: 'https://ssc.gov.in/',
         source: 'Official Staff Selection Commission Portal (ssc.gov.in)',
@@ -183,10 +186,11 @@ export async function scrapeRrbNotifications(sourceConfig) {
         notificationNo: cenNo,
         openingDate: notifDate,
         closingDate: '',
-        examDate: 'Announced Soon',
-        qualification: '10th / ITI / Diploma / Degree as per post',
-        ageLimit: '18 - 33 Years (Relaxations Applicable)',
-        applicationFee: '₹500 (₹400 Refundable after CBT)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://rrbchennai.gov.in/',
         source: 'Official Railway Recruitment Board Portal (rrbchennai.gov.in)',
@@ -236,9 +240,10 @@ export async function scrapeIndiaPostNotifications(sourceConfig) {
         openingDate: '',
         closingDate: '',
         examDate: 'Merit-Based (No Written Exam)',
-        qualification: 'Secondary School Examination pass certificate of 10th standard',
-        ageLimit: '18 - 40 Years',
-        applicationFee: '₹100 (Female/SC/ST/PwD Exempted)',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://indiapostgdsonline.gov.in/',
         source: 'Official India Post GDS Online Portal',

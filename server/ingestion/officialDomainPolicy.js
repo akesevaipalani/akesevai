@@ -5,6 +5,7 @@
 
 import net from 'net';
 import { OFFICIAL_EXAM_SOURCES } from './sourcesConfig.js';
+import { DISTRICT_OFFICIAL_SOURCES_REGISTRY, TAMIL_NADU_38_DISTRICTS } from './districtSourcesInventory.js';
 
 export const URL_SHORTENER_HOSTS = new Set([
   'bit.ly',
@@ -31,7 +32,7 @@ export const URL_SHORTENER_HOSTS = new Set([
  */
 export const EXPLICIT_SOURCE_DOMAIN_MAP = {
   tnpsc: {
-    allowedNoticeHosts: ['www.tnpsc.gov.in', 'tnpsc.gov.in'],
+    allowedNoticeHosts: ['www.tnpsc.gov.in', 'tnpsc.gov.in', 'cdnbbsr.s3waas.gov.in'],
     allowedApplyHosts: ['apply.tnpscexams.in', 'www.tnpscexams.in', 'www.tnpsc.gov.in', 'tnpsc.gov.in']
   },
   tnusrb: {
@@ -48,31 +49,33 @@ export const EXPLICIT_SOURCE_DOMAIN_MAP = {
   },
   ibps: {
     allowedNoticeHosts: ['www.ibps.in', 'ibps.in'],
-    allowedApplyHosts: ['ibpsonline.ibps.in', 'www.ibps.in', 'ibps.in']
+    allowedApplyHosts: ['ibpsonline.ibps.in', 'ibpsreg.ibps.in', 'www.ibps.in', 'ibps.in']
   },
   sbi_careers: {
-    allowedNoticeHosts: ['sbi.co.in', 'www.sbi.co.in', 'bank.sbi', 'www.bank.sbi'],
-    allowedApplyHosts: ['sbi.co.in', 'www.sbi.co.in', 'bank.sbi', 'www.bank.sbi', 'recruitment.bank.sbi', 'ibpsonline.ibps.in']
+    allowedNoticeHosts: ['sbi.co.in', 'www.sbi.co.in', 'sbi.bank.in', 'www.sbi.bank.in', 'bank.sbi', 'www.bank.sbi', 'recruitment.sbi.bank.in'],
+    allowedApplyHosts: ['sbi.co.in', 'www.sbi.co.in', 'sbi.bank.in', 'www.sbi.bank.in', 'bank.sbi', 'www.bank.sbi', 'recruitment.bank.sbi', 'recruitment.sbi.bank.in', 'ibpsonline.ibps.in', 'ibpsreg.ibps.in']
   },
   rbi_vacancies: {
     allowedNoticeHosts: ['opportunities.rbi.org.in', 'rbi.org.in', 'www.rbi.org.in'],
-    allowedApplyHosts: ['opportunities.rbi.org.in', 'rbi.org.in', 'www.rbi.org.in', 'ibpsonline.ibps.in']
+    allowedApplyHosts: ['opportunities.rbi.org.in', 'rbi.org.in', 'www.rbi.org.in', 'ibpsonline.ibps.in', 'ibpsreg.ibps.in']
   },
   rrb_chennai: {
-    allowedNoticeHosts: ['rrbchennai.gov.in', 'www.rrbchennai.gov.in'],
-    allowedApplyHosts: ['rrbchennai.gov.in', 'www.rrbchennai.gov.in', 'www.rrbapply.gov.in', 'rrbapply.gov.in']
+    allowedNoticeHosts: ['rrbchennai.gov.in', 'www.rrbchennai.gov.in', 'cdnbbsr.s3waas.gov.in'],
+    allowedApplyHosts: ['rrbchennai.gov.in', 'www.rrbchennai.gov.in', 'www.rrbapply.gov.in', 'rrbapply.gov.in'],
+    reviewOnlyApplyHosts: ['cdn.digialm.com', 'www.digialm.com']
   },
   upsc_active: {
-    allowedNoticeHosts: ['upsc.gov.in', 'www.upsc.gov.in'],
+    allowedNoticeHosts: ['upsc.gov.in', 'www.upsc.gov.in', 'cdnbbsr.s3waas.gov.in'],
     allowedApplyHosts: ['upsconline.nic.in', 'www.upsconline.nic.in', 'upsconline.gov.in', 'upsc.gov.in', 'www.upsc.gov.in']
   },
   ssc_notices: {
-    allowedNoticeHosts: ['ssc.gov.in', 'www.ssc.gov.in'],
-    allowedApplyHosts: ['ssc.gov.in', 'www.ssc.gov.in']
+    allowedNoticeHosts: ['ssc.gov.in', 'www.ssc.gov.in', 'cdnbbsr.s3waas.gov.in'],
+    allowedApplyHosts: ['ssc.gov.in', 'www.ssc.gov.in'],
+    reviewOnlyApplyHosts: ['cdn.digialm.com', 'www.digialm.com']
   },
   india_post_gds: {
-    allowedNoticeHosts: ['indiapostgdsonline.gov.in', 'www.indiapostgdsonline.gov.in'],
-    allowedApplyHosts: ['indiapostgdsonline.gov.in', 'www.indiapostgdsonline.gov.in']
+    allowedNoticeHosts: ['indiapostgdsonline.gov.in', 'www.indiapostgdsonline.gov.in', 'indiapostgdsonline.cept.gov.in'],
+    allowedApplyHosts: ['indiapostgdsonline.gov.in', 'www.indiapostgdsonline.gov.in', 'indiapostgdsonline.cept.gov.in']
   },
   indian_army: {
     allowedNoticeHosts: ['joinindianarmy.nic.in', 'www.joinindianarmy.nic.in'],
@@ -96,20 +99,76 @@ export const EXPLICIT_SOURCE_DOMAIN_MAP = {
   },
   lic_careers: {
     allowedNoticeHosts: ['licindia.in', 'www.licindia.in'],
-    allowedApplyHosts: ['licindia.in', 'www.licindia.in', 'ibpsonline.ibps.in']
+    allowedApplyHosts: ['licindia.in', 'www.licindia.in', 'ibpsonline.ibps.in', 'ibpsreg.ibps.in']
   },
   niacl_careers: {
     allowedNoticeHosts: ['www.newindia.co.in', 'newindia.co.in'],
-    allowedApplyHosts: ['www.newindia.co.in', 'newindia.co.in', 'ibpsonline.ibps.in']
+    allowedApplyHosts: ['www.newindia.co.in', 'newindia.co.in', 'ibpsonline.ibps.in', 'ibpsreg.ibps.in']
   },
   bel_psu: {
     allowedNoticeHosts: ['bel-india.in', 'www.bel-india.in'],
     allowedApplyHosts: ['bel-india.in', 'www.bel-india.in'],
-    reviewOnlyApplyHosts: ['jobapply.in', 'www.jobapply.in']
+    reviewOnlyApplyHosts: ['jobapply.in', 'www.jobapply.in', 'cdn.digialm.com', 'www.digialm.com']
   },
   bhel_psu: {
     allowedNoticeHosts: ['careers.bhel.in', 'www.bhel.com', 'bhel.in'],
     allowedApplyHosts: ['careers.bhel.in']
+  },
+  tn_forest_tnfusrc: {
+    allowedNoticeHosts: ['forests.tn.gov.in', 'www.forests.tn.gov.in'],
+    allowedApplyHosts: ['forests.tn.gov.in', 'www.forests.tn.gov.in']
+  },
+  tn_coop_srb: {
+    allowedNoticeHosts: ['tncoopsrb.in', 'www.tncoopsrb.in'],
+    allowedApplyHosts: ['tncoopsrb.in', 'www.tncoopsrb.in']
+  },
+  tn_dme_health: {
+    allowedNoticeHosts: ['tnhealth.tn.gov.in', 'www.tnhealth.tn.gov.in'],
+    allowedApplyHosts: ['tnhealth.tn.gov.in', 'www.tnhealth.tn.gov.in']
+  },
+  rrc_sr_chennai: {
+    allowedNoticeHosts: ['rrcmas.in', 'www.rrcmas.in'],
+    allowedApplyHosts: ['rrcmas.in', 'www.rrcmas.in']
+  },
+  nabard_careers: {
+    allowedNoticeHosts: ['nabard.org', 'www.nabard.org'],
+    allowedApplyHosts: ['nabard.org', 'www.nabard.org', 'ibpsonline.ibps.in', 'ibpsreg.ibps.in']
+  },
+  gic_careers: {
+    allowedNoticeHosts: ['gicre.in', 'www.gicre.in'],
+    allowedApplyHosts: ['gicre.in', 'www.gicre.in', 'ibpsonline.ibps.in', 'ibpsreg.ibps.in']
+  },
+  indian_coast_guard: {
+    allowedNoticeHosts: ['joinindiancoastguard.cdac.in', 'www.joinindiancoastguard.cdac.in'],
+    allowedApplyHosts: ['joinindiancoastguard.cdac.in', 'www.joinindiancoastguard.cdac.in']
+  },
+  capf_crpf: {
+    allowedNoticeHosts: ['rect.crpf.gov.in', 'www.rect.crpf.gov.in', 'crpf.gov.in'],
+    allowedApplyHosts: ['rect.crpf.gov.in', 'www.rect.crpf.gov.in']
+  },
+  drdo_careers: {
+    allowedNoticeHosts: ['drdo.gov.in', 'www.drdo.gov.in', 'rac.gov.in'],
+    allowedApplyHosts: ['rac.gov.in', 'drdo.gov.in']
+  },
+  isro_careers: {
+    allowedNoticeHosts: ['isro.gov.in', 'www.isro.gov.in'],
+    allowedApplyHosts: ['isro.gov.in', 'www.isro.gov.in']
+  },
+  csir_careers: {
+    allowedNoticeHosts: ['csir.res.in', 'www.csir.res.in'],
+    allowedApplyHosts: ['csir.res.in', 'www.csir.res.in']
+  },
+  icar_asrb: {
+    allowedNoticeHosts: ['asrb.org.in', 'www.asrb.org.in'],
+    allowedApplyHosts: ['asrb.org.in', 'www.asrb.org.in']
+  },
+  aiims_exams: {
+    allowedNoticeHosts: ['aiimsexams.ac.in', 'www.aiimsexams.ac.in'],
+    allowedApplyHosts: ['aiimsexams.ac.in', 'www.aiimsexams.ac.in']
+  },
+  central_univ_cutn: {
+    allowedNoticeHosts: ['cutn.ac.in', 'www.cutn.ac.in', 'curec.samarth.ac.in'],
+    allowedApplyHosts: ['cutn.ac.in', 'curec.samarth.ac.in']
   }
 };
 
@@ -263,19 +322,45 @@ export function isShortenerHost(hostname) {
  */
 export function getAllowedHostsForSource(sourceKey) {
   const policy = EXPLICIT_SOURCE_DOMAIN_MAP[sourceKey];
-  if (!policy) {
+  if (policy) {
     return {
-      known: false,
-      noticeHosts: new Set(),
-      applyHosts: new Set(),
-      reviewOnlyApplyHosts: new Set()
+      known: true,
+      noticeHosts: new Set((policy.allowedNoticeHosts || []).map((h) => h.toLowerCase())),
+      applyHosts: new Set((policy.allowedApplyHosts || policy.allowedNoticeHosts || []).map((h) => h.toLowerCase())),
+      reviewOnlyApplyHosts: new Set((policy.reviewOnlyApplyHosts || []).map((h) => h.toLowerCase()))
     };
   }
+
+  // Phase B2-C: Support for District Official Sources Registry (Pilot Districts & Beyond)
+  if (sourceKey && (sourceKey.startsWith('dist_') || sourceKey.startsWith('corp_'))) {
+    const distSource = DISTRICT_OFFICIAL_SOURCES_REGISTRY.find(s => s.sourceKey === sourceKey);
+    let dom = distSource?.officialDomainPattern;
+    if (!dom && sourceKey.startsWith('dist_')) {
+      const parts = sourceKey.split('_');
+      const distId = parts[1];
+      const d = TAMIL_NADU_38_DISTRICTS.find(x => x.id === distId);
+      if (d) dom = d.domain;
+    }
+    if (dom) {
+      const cleanDom = dom.toLowerCase();
+      const hosts = [cleanDom, `www.${cleanDom}`, 'cdnbbsr.s3waas.gov.in', 'cdn.s3waas.gov.in'];
+      if (distSource?.departmentId === 'other_institutions' || cleanDom.includes('ecourts') || sourceKey.includes('ecourts')) {
+        hosts.push('districts.ecourts.gov.in', 'ecourts.gov.in');
+      }
+      return {
+        known: true,
+        noticeHosts: new Set(hosts.map(h => h.toLowerCase())),
+        applyHosts: new Set(hosts.map(h => h.toLowerCase())),
+        reviewOnlyApplyHosts: new Set()
+      };
+    }
+  }
+
   return {
-    known: true,
-    noticeHosts: new Set((policy.allowedNoticeHosts || []).map((h) => h.toLowerCase())),
-    applyHosts: new Set((policy.allowedApplyHosts || policy.allowedNoticeHosts || []).map((h) => h.toLowerCase())),
-    reviewOnlyApplyHosts: new Set((policy.reviewOnlyApplyHosts || []).map((h) => h.toLowerCase()))
+    known: false,
+    noticeHosts: new Set(),
+    applyHosts: new Set(),
+    reviewOnlyApplyHosts: new Set()
   };
 }
 
@@ -350,7 +435,16 @@ export function validateExplicitSourceUrl(rawUrl, sourceKey, linkKind = 'notice'
     if (allowed.applyHosts.has(host)) {
       return { valid: true, host, protocol, parsedUrl: parsed };
     }
-    if (allowed.reviewOnlyApplyHosts.has(host)) {
+    const isReviewOnlyVendor =
+      allowed.reviewOnlyApplyHosts.has(host) ||
+      Array.from(allowed.reviewOnlyApplyHosts).some((allowedH) => host === allowedH || host.endsWith(`.${allowedH}`)) ||
+      host === 'cdn.digialm.com' ||
+      host === 'www.digialm.com' ||
+      host.endsWith('.digialm.com') ||
+      host === 'jobapply.in' ||
+      host.endsWith('.jobapply.in');
+
+    if (isReviewOnlyVendor) {
       return {
         valid: false,
         reviewOnlyVendor: true,
@@ -370,4 +464,3 @@ export function validateExplicitSourceUrl(rawUrl, sourceKey, linkKind = 'notice'
 
   return { valid: true, host, protocol, parsedUrl: parsed };
 }
-

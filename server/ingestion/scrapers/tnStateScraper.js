@@ -3,11 +3,70 @@ import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
 
 /**
- * Scrapes TNPSC Official Notification Table
+ * Classifies TNPSC Recruitment Group / Service category
  */
-export async function scrapeTnpscNotifications(sourceConfig) {
-  const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+export function classifyTnpscGroup(serviceTitle = '') {
+  const t = String(serviceTitle || '').toLowerCase();
+  if (/\bgroup[- ]?i\b|group[- ]?1\b|civil services examination[- ]?i\b/i.test(t)) {
+    return 'Group 1 Services';
+  }
+  if (/\bgroup[- ]?ii[- ]?a\b|group[- ]?2[- ]?a\b/i.test(t)) {
+    return 'Group 2A Services';
+  }
+  if (/\bgroup[- ]?ii\b|group[- ]?2\b|civil services examination[- ]?ii\b/i.test(t)) {
+    return 'Group 2 Services';
+  }
+  if (/\bgroup[- ]?iv\b|group[- ]?4\b|civil services examination[- ]?iv\b|vaio|village administrative officer/i.test(t)) {
+    return 'Group 4 Services (VAO)';
+  }
+  if (/\bgroup[- ]?v[- ]?a\b|group[- ]?5[- ]?a\b/i.test(t)) {
+    return 'Group 5A Services';
+  }
+  if (/\bcombined engineering|assistant engineer|cese\b/i.test(t)) {
+    return 'Combined Engineering Services';
+  }
+  if (/\bcombined technical|technical services\b/i.test(t)) {
+    return 'Combined Technical Services';
+  }
+  return 'TNPSC State Recruitment';
+}
+
+function extractPdfLink($, row, baseUrl) {
+  let pdfLink = '';
+  let fallbackLink = '';
+  $(row).find('a').each((_, a) => {
+    const href = $(a).attr('href') || '';
+    const text = $(a).text().trim().toLowerCase();
+    if (!href || href === '#' || href.startsWith('javascript:')) return;
+    const abs = href.startsWith('http') ? href : new URL(href, baseUrl).toString();
+    if (href.toLowerCase().endsWith('.pdf') || text.includes('pdf') || text.includes('notification')) {
+      if (!pdfLink) pdfLink = abs;
+    } else if (!fallbackLink) {
+      fallbackLink = abs;
+    }
+  });
+  return pdfLink || fallbackLink || baseUrl;
+}
+
+function extractExamDateFromCols(cols, serviceText) {
+  if (cols.length >= 6) {
+    const rawCol = cols.eq(5).text().trim().replace(/\s+/g, ' ');
+    if (rawCol && rawCol.length > 2 && !/date of exam|sl\.?no|name of the/i.test(rawCol)) {
+      return rawCol;
+    }
+  }
+  const match = String(serviceText || '').match(/exam(?:ination)?\s*(?:date|on)?[:\s]+(\d{1,2}[-/.]\d{1,2}[-/.]\d{4})/i);
+  if (match) return match[1];
+  return 'NOT_ANNOUNCED';
+}
+
+/**
+ * Scrapes TNPSC Official Notification Table & Annual Planner
+ * Covers Group 1, Group 2/2A, Group 4, Engineering, Technical recruitments and Corrigenda
+ */
+export async function scrapeTnpscNotifications(sourceConfig, options = {}) {
+  const url = sourceConfig.url || 'https://www.tnpsc.gov.in/English/Notification.aspx';
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -15,7 +74,7 @@ export async function scrapeTnpscNotifications(sourceConfig) {
   const $ = cheerio.load(res.html);
   const items = [];
 
-  // Table structure parsing (Standard TNPSC Notification.aspx)
+  // Table structure parsing (Standard TNPSC Notification.aspx & Annual Planner)
   $('table tr').each((i, row) => {
     if (i === 0) return;
     const cols = $(row).find('td');
@@ -23,40 +82,75 @@ export async function scrapeTnpscNotifications(sourceConfig) {
       const notifNo = $(cols[1]).text().trim();
       const serviceEl = $(cols[2]);
       const rawService = serviceEl.clone().children().remove().end().text().trim() || serviceEl.text().trim();
+      const hasCorrigendum = /addendum|corrigendum/i.test(serviceEl.text()) || /ADDENDUM_[0-9A-Z]+/i.test(serviceEl.text());
       const cleanService = rawService.replace(/APPLY ONLINE|Download Hall Ticket|ADDENDUM_[0-9A-Z]+/gi, '').replace(/\s+/g, ' ').trim();
       const openingDate = $(cols[3]).text().trim();
       const closingDate = $(cols[4]).text().trim();
+      const examDate = extractExamDateFromCols(cols, rawService);
 
-      let link = serviceEl.find('a').attr('href') || $(cols[1]).find('a').attr('href') || $(cols[cols.length - 1]).find('a').attr('href') || '';
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
+      let link = extractPdfLink($, row, url);
 
-      if (cleanService && cleanService.length > 3) {
+      if (cleanService && cleanService.length > 3 && !cleanService.toLowerCase().includes('name of the post')) {
+        const groupTag = classifyTnpscGroup(cleanService);
         items.push({
           sourceKey: 'tnpsc',
           category: 'tnpsc',
           organization: 'Tamil Nadu Public Service Commission (TNPSC)',
           service: cleanService,
           postName: cleanService,
+          group: groupTag,
           notificationNo: notifNo || '',
           openingDate: openingDate || '',
           closingDate: closingDate || '',
-          examDate: 'Announced Soon',
-          qualification: 'SSLC / HSC / Degree as per official rules',
-          ageLimit: '18 - 32 Years (Relaxations Applicable)',
-          applicationFee: '₹100 (One Time Registration ₹150)',
+          examDate: examDate || 'To Be Announced',
+          qualification: 'Refer Official Notification',
+          ageLimit: 'Refer Official Notification',
+          applicationFee: 'Refer Official Notification',
+          vacancies: 'Not Specified',
           detailsLink: link || url,
           applyLink: 'https://apply.tnpscexams.in/',
           source: 'Official TNPSC Portal (tnpsc.gov.in)',
           sourceUrl: url,
-          sourcePublishedAt: openingDate || ''
+          sourcePublishedAt: openingDate || '',
+          isCorrigendum: Boolean(hasCorrigendum)
+        });
+      }
+    } else if (cols.length >= 4) {
+      // Annual planner table format: [0: S.No, 1: Name of Post/Exam, 2: Notification Month, 3: Vacancies, 4: Exam Month]
+      const postCol = $(cols[1]).text().trim().replace(/\s+/g, ' ');
+      const notifMonth = $(cols[2]).text().trim();
+      const vacCol = cols.length >= 4 ? $(cols[3]).text().trim() : '';
+      const examCol = cols.length >= 5 ? $(cols[4]).text().trim() : '';
+
+      if (postCol && postCol.length > 5 && !postCol.toLowerCase().includes('name of the post') && (notifMonth || examCol)) {
+        const groupTag = classifyTnpscGroup(postCol);
+        items.push({
+          sourceKey: 'tnpsc',
+          category: 'tnpsc',
+          organization: 'Tamil Nadu Public Service Commission (TNPSC)',
+          service: postCol,
+          postName: postCol,
+          group: groupTag,
+          notificationNo: '',
+          openingDate: notifMonth || '',
+          closingDate: '',
+          examDate: examCol || 'To Be Announced',
+          qualification: 'Refer Official Notification',
+          ageLimit: 'Refer Official Notification',
+          applicationFee: 'Refer Official Notification',
+          vacancies: vacCol || 'Not Specified',
+          detailsLink: url,
+          applyLink: 'https://apply.tnpscexams.in/',
+          source: 'Official TNPSC Portal (tnpsc.gov.in)',
+          sourceUrl: url,
+          sourcePublishedAt: notifMonth || '',
+          isTentativePlanner: true
         });
       }
     }
   });
 
-  return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
+  return { success: true, source: sourceConfig.key, items: items.slice(0, 15) };
 }
 
 /**
@@ -96,10 +190,11 @@ export async function scrapeTnusrbNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'Written Test & Physical Efficiency Test',
-        qualification: '10th / 12th / Any Degree (as per post)',
-        ageLimit: '18 - 26 Years (Relaxation for BC/MBC/SC/ST)',
-        applicationFee: '₹500',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: absLink,
         source: 'Official TNUSRB Portal',
@@ -150,10 +245,11 @@ export async function scrapeTrbNotifications(sourceConfig) {
           notificationNo: notifNo || '',
           openingDate: openingDate || '',
           closingDate: closingDate || '',
-          examDate: examDate || 'Announced Soon',
-          qualification: 'B.Ed / D.T.Ed / Post Graduation / NET / SLET',
-          ageLimit: 'Up to 50 Years',
-          applicationFee: '₹500 (SC/ST ₹250)',
+          examDate: examDate || 'To Be Announced',
+          qualification: 'Refer Official Notification',
+          ageLimit: 'Refer Official Notification',
+          applicationFee: 'Refer Official Notification',
+          vacancies: 'Not Specified',
           detailsLink: link || url,
           applyLink: link || url,
           source: 'Official TRB Portal',
@@ -206,7 +302,7 @@ export async function scrapeMrbNotifications(sourceConfig) {
       // Extract a clean post name
       let postName = '';
       const postMatch = descText.match(/for the post of ([^\(\)\.]+)/i) ||
-                        descText.match(/Notification for ([^\(\)\.]+)/i);
+        descText.match(/Notification for ([^\(\)\.]+)/i);
       if (postMatch) {
         postName = postMatch[1].trim();
       } else {
@@ -223,10 +319,11 @@ export async function scrapeMrbNotifications(sourceConfig) {
           notificationNo: notifNo,
           openingDate: '',
           closingDate: '',
-          examDate: 'Announced Soon',
-          qualification: 'MBBS / BDS / Diploma in Pharmacy / B.Sc Nursing (as per post)',
-          ageLimit: '18 - 35 Years (Relaxations as per Rules)',
-          applicationFee: '₹1000 (SC/ST/SCA/DAP ₹500)',
+          examDate: 'To Be Announced',
+          qualification: 'Refer Official Notification',
+          ageLimit: 'Refer Official Notification',
+          applicationFee: 'Refer Official Notification',
+          vacancies: 'Not Specified',
           detailsLink: link || url,
           applyLink: url,
           source: 'Official MRB Portal (mrb.tn.gov.in)',

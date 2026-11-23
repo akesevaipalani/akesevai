@@ -45,6 +45,7 @@ import {
   scrapeBelNotifications,
   scrapeBhelNotifications
 } from './scrapers/insurancePsuScraper.js';
+import { scrapePilotDistrictSource } from './scrapers/districtRecruitmentScraper.js';
 
 // Handler map from source key to scraper function
 const SCRAPER_MAP = {
@@ -329,10 +330,80 @@ async function persistSourceHealthTelemetry(IngestionSourceHealth, params) {
   );
 }
 
-function classifyFailureStatus(result = {}) {
+export function classifyFailureStatus(result = {}) {
   const errLower = String(result.error || '').toLowerCase();
-  if (result.requiresCaptcha || errLower.includes('captcha')) return 'captcha_blocked';
-  if (errLower.includes('timed out') || errLower.includes('timeout')) return 'timeout';
+  const failureCode = String(result.failureCode || '').toUpperCase();
+  const status = Number(result.status);
+
+  // 1. CAPTCHA challenges & Bot detection walls
+  if (result.requiresCaptcha || /captcha|challenge-running|cf-turnstile|recaptcha/i.test(errLower)) {
+    return 'captcha_blocked';
+  }
+
+  // 2. DNS Resolution failures
+  if (
+    failureCode === 'ENOTFOUND' ||
+    failureCode === 'EAI_AGAIN' ||
+    failureCode === 'DNS_EMPTY' ||
+    /getaddrinfo\s+enotfound|dns resolution returned no addresses|dns_empty/i.test(errLower)
+  ) {
+    return 'dns_failed';
+  }
+
+  // 3. TCP Connection failures (refused, unreachable host/network, connection reset)
+  if (
+    failureCode === 'ECONNREFUSED' ||
+    failureCode === 'EHOSTUNREACH' ||
+    failureCode === 'ENETUNREACH' ||
+    failureCode === 'ECONNRESET' ||
+    /econnrefused|ehostunreach|enetunreach|econnreset|connection refused|host unreachable/i.test(errLower)
+  ) {
+    return 'tcp_failed';
+  }
+
+  // 4. TLS / SSL Certificate / Handshake failures
+  if (
+    failureCode === 'CERT_HAS_EXPIRED' ||
+    failureCode === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
+    failureCode === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
+    failureCode === 'ERR_TLS_CERT_ALTNAME_INVALID' ||
+    failureCode === 'CERT_UNTRUSTED' ||
+    /tls|ssl|handshake|certificate|unable to verify leaf|cert_has_expired/i.test(errLower)
+  ) {
+    return 'tls_failed';
+  }
+
+  // 5. Geographic / IP Blocking
+  if (/geo[-_]?block|geographic|region[-_]?block|country[-_]?block/i.test(errLower)) {
+    return 'geo_blocked';
+  }
+
+  // 6. HTTP 403 Forbidden
+  if (status === 403 || /\b403\b|forbidden/i.test(errLower)) {
+    return 'http_403';
+  }
+
+  // 7. HTTP 404 Not Found
+  if (status === 404 || /\b404\b|not found/i.test(errLower)) {
+    return 'http_404';
+  }
+
+  // 8. Timeouts (Socket, Wall-clock, Connect)
+  if (
+    failureCode === 'ETIMEDOUT' ||
+    failureCode === 'WALL_CLOCK_TIMEOUT' ||
+    failureCode === 'SOCKET_TIMEOUT' ||
+    status === 408 ||
+    /timed out|timeout|etimedout/i.test(errLower)
+  ) {
+    return 'timeout';
+  }
+
+  // 9. Server 5xx Errors
+  if ((status >= 500 && status < 600) || /internal server error|\b502\b|\b503\b|\b504\b|bad gateway|service unavailable/i.test(errLower)) {
+    return 'server_error';
+  }
+
   return 'failed';
 }
 
@@ -656,7 +727,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
         }
       }
 
-      const scraperFn = options.scraperOverrides?.[source.key] || SCRAPER_MAP[source.key];
+      const scraperFn = options.scraperOverrides?.[source.key] || SCRAPER_MAP[source.key] || ((source.districtId || source.key?.startsWith('dist_') || source.key?.startsWith('corp_')) ? scrapePilotDistrictSource : null);
       if (!scraperFn) {
         const failErr = 'No scraper implemented';
         slot.status = 'failed';

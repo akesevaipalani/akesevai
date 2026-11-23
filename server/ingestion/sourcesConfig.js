@@ -9,6 +9,8 @@ export const OFFICIAL_EXAM_SOURCES = [
     name: 'Tamil Nadu Public Service Commission (TNPSC)',
     url: 'https://www.tnpsc.gov.in/English/Notification.aspx',
     homepage: 'https://www.tnpsc.gov.in/',
+    plannerUrl: 'https://www.tnpsc.gov.in/English/annual_planner.aspx',
+    corrigendumUrl: 'https://www.tnpsc.gov.in/English/corrigendum.aspx',
     enabled: true,
     parserType: 'html_table',
     expectedFields: ['notificationNo', 'service', 'openingDate', 'closingDate', 'detailsLink']
@@ -93,11 +95,11 @@ export const OFFICIAL_EXAM_SOURCES = [
     key: 'upsc_active',
     category: 'upsc',
     name: 'Union Public Service Commission (UPSC Active Exams)',
-    url: 'https://upsc.gov.in/examinations/active-exams',
+    url: 'https://upsc.gov.in/active-examinations',
     homepage: 'https://upsc.gov.in/',
     enabled: true,
-    parserType: 'views_rows',
-    expectedFields: ['service', 'openingDate', 'closingDate', 'detailsLink']
+    parserType: 'html_table',
+    expectedFields: ['notificationNo', 'service', 'closingDate', 'examDate', 'detailsLink']
   },
   {
     key: 'ssc_notices',

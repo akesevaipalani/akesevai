@@ -288,13 +288,13 @@ const notificationSchema = new mongoose.Schema({
   organization: { type: String, default: 'Official Government / Exam Authority' },
   service: { type: String, required: true },
   postName: { type: String, default: '' },
-  qualification: { type: String, default: 'Any Graduation / Degree' },
-  ageLimit: { type: String, default: '18 - 30 Years' },
-  posts: { type: String, default: 'Multiple Posts' },
+  qualification: { type: String, default: 'Refer Official Notification' },
+  ageLimit: { type: String, default: 'Refer Official Notification' },
+  posts: { type: String, default: 'Not Specified' },
   openingDate: { type: String, default: '' },
   closingDate: { type: String, default: '' },
-  examDate: { type: String, default: 'Announced Soon' },
-  applicationFee: { type: String, default: '₹100 (SC/ST/Women Exempted)' },
+  examDate: { type: String, default: 'To Be Announced' },
+  applicationFee: { type: String, default: 'Refer Official Notification' },
   notificationDate: { type: String, default: '' },
   importantDetails: { type: String, default: '' },
   detailsLink: { type: String, default: 'https://www.india.gov.in/' },
@@ -1207,23 +1207,32 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     id: 'aiims-norcet-7-2026',
     category: 'medical',
     organization: 'All India Institute of Medical Sciences (AIIMS New Delhi)',
-    service: 'AIIMS NORCET-7 (Nursing Officer Recruitment Common Eligibility Test) 2026',
+    service: 'AIIMS NORCET-7 (Nursing Officer Recruitment Common Eligibility Test) [Advt 115/2024 - Completed]',
     postName: 'Nursing Officer (Group B) across AIIMS Institutions in India',
     qualification: 'B.Sc (Hons.) Nursing / B.Sc Nursing or Diploma in GNM with 2 years experience in 50 bedded Hospital',
     ageLimit: '18 - 30 Years (OBC 33, SC/ST 35)',
     posts: '4000+ Posts (AIIMS Madurai & All India AIIMS)',
-    openingDate: '01/08/2026',
-    closingDate: '21/11/2026',
-    examDate: 'Stage I (Prelims) & Stage II (Mains)',
+    openingDate: '01/08/2024',
+    closingDate: '21/08/2024',
+    examDate: '15/09/2024 & 25/10/2024',
     applicationFee: '₹3000 (SC/ST/EWS ₹2400 / PwBD Exempted)',
-    notificationDate: '01/08/2026',
-    importantDetails: 'Premier Central Govt Hospital Career • Level 7 Pay Matrix (₹44,900 - ₹1,42,400) + Central Allowances',
+    notificationDate: '01/08/2024',
+    importantDetails: 'Legacy 2024 Examination (Advt No. 115/2024) • Applications Closed 21/08/2024 • Stage I & Stage II Completed • Archived for Reference',
     detailsLink: 'https://www.aiimsexams.ac.in/',
     applyLink: 'https://www.aiimsexams.ac.in/',
     isVerified: true,
     source: 'Official AIIMS Examination Section',
-    isNew: true,
-    status: 'active'
+    isNew: false,
+    status: 'closed',
+    isExpired: true,
+    isLegacy: true,
+    auditNote: 'Legacy 2024 recruitment (Advt No. 115/2024). Preserved for audit/reference. Applications closed on 21/08/2024; Stage I on 15/09/2024; Stage II on 25/10/2024.',
+    revisionHistory: [
+      {
+        revisionDate: '18/11/2026',
+        reason: 'Audit correction: Restored official 2024 dates and marked completed/closed; prevented false-positive 2026 application window.'
+      }
+    ]
   },
 
   // --- 9. 🎓 NATIONAL & STATE ENTRANCE EXAMS ---
@@ -4883,4 +4892,3 @@ export {
   isSafeHttpsUrl,
   activeAdminTokensSet
 };
-

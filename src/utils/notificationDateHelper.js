@@ -23,14 +23,33 @@ export const NOTIFICATION_UI_LABELS = {
     deleteConfirm: 'இந்த அறிவிப்பை நீக்க வேண்டுமா? (Delete this notification?)',
     searchPlaceholder: '🔍 தேர்வுப் பெயர், அமைப்பு (UPSC, TNPSC, SSC, SBI, RRB...), பதவி, தகுதி தேடவும்...',
     resultsCountSuffix: 'Results',
-    hideFinished: '🚫 தேர்வு முடிந்தவற்றை மட்டும் மறை (Hide Finished)',
+    hideFinished: '🚫 பழைய / முடிந்தவற்றை மறை (Hide Expired & Completed)',
     filterHeading: 'வடிகட்டிகள் (Filter):',
-    filterAll: '📋 அனைத்து அறிவிப்புகள் (All)',
+    filterAll: '📋 அனைத்து நேரலை அறிவிப்புகள் (All Active)',
     filterActiveApp: '🔥 விண்ணப்பம் நடைபெறுகிறது (Active Applications)',
+    filterActiveJobs: '💼 நடப்பு அரசு வேலைகள் (Current Govt Jobs)',
     filterUpcomingExam: '📚 தேர்வு நடைபெற உள்ளது (Upcoming Exams)',
+    filterUpcomingInterviews: '🎙️ நேர்காணல் தேர்வுகள் (Upcoming Interviews)',
+    filterClosingSoon: '⏰ விரைவில் முடியும் விண்ணப்பங்கள் (Closing Soon)',
+    filterLatestVerified: '✅ சமீபத்திய சரிபார்க்கப்பட்டவை (Latest Verified)',
     filterAppClosed: '🔴 விண்ணப்ப காலம் முடிந்தது (Application Closed)',
     filterExamCompleted: '🔴 தேர்வு முடிந்தது (Exam Completed)',
+    filterArchived: '📦 பழைய / முடிந்த அறிவிப்புகள் (Archived)',
     filterUpdates: '📢 முடிவுகள் / நுழைவுச் சீட்டு (Results & Updates)',
+    interviewDateLabel: 'நேர்காணல் தேதி (Interview Date):',
+    dvDateLabel: 'சான்றிதழ் சரிபார்ப்பு (Doc Verification):',
+    prelimsLabel: 'முதல்நிலைத் தேர்வு (Prelims):',
+    mainsLabel: 'முதன்மைத் தேர்வு (Mains):',
+    nextEventPrefix: '⏳ அடுத்த முக்கிய நிகழ்வு:',
+    notApplicable: 'பொருந்தாது (Not Applicable)',
+    interviewNotApplicable: 'நேர்காணல் பொருந்தாது (Not Applicable)',
+    cardPrelimsPrefix: '📝 முதல்நிலை:',
+    cardMainsPrefix: '📚 முதன்மை:',
+    cardInterviewPrefix: '🎙️ நேர்காணல்:',
+    cardDvPrefix: '📄 சான்றிதழ் சரிபார்ப்பு:',
+    adminPendingCurrent: 'நடப்பு ஒப்புதல்கள் (Current Pending)',
+    adminPendingExpired: 'காலாவதியானவை (Expired Pending)',
+    adminMissingDate: 'தேதி சரிபார்ப்பு தேவை (Missing Date)',
     emptyTitle: 'அறிவிப்புகள் எதுவும் கிடைக்கவில்லை / No Notifications Found',
     emptySubtitle: 'தேர்ந்தெடுக்கப்பட்ட வடிகட்டியில் அறிவிப்புகள் இல்லை. புதிய அறிவிப்புகளைப் பெற கீழே உள்ள பொத்தானை அழுத்தவும்.',
     syncAllAction: '🔄 அனைத்துத் தேர்வுகளையும் உடனே புதுப்பிக்க (Sync Master Feed)',
@@ -53,6 +72,8 @@ export const NOTIFICATION_UI_LABELS = {
     applyNowBtn: 'விண்ணப்பிக்க',
     applyNowCardLink: 'விண்ணப்பிக்க / அதிகாரப்பூர்வ இணைப்பு',
     applyPendingReviewBtn: 'Admin சரிபார்ப்பு நிலுவையில்',
+    officialNotificationAwaitedBtn: 'அரசு அறிவிப்பு எதிர்பார்க்கப்படுகிறது',
+    vacancyAwaited: 'காலிப்பணியிடங்கள்: அரசு அறிவிப்பு எதிர்பார்க்கப்படுகிறது',
     applyClosedBtn: 'விண்ணப்பம் முடிந்தது',
     applyNotStartedBtn: 'விண்ணப்பம் தொடங்கவில்லை',
     applyDateUnverifiedBtn: 'தேதி சரிபார்க்கப்படவில்லை',
@@ -124,14 +145,33 @@ export const NOTIFICATION_UI_LABELS = {
     deleteConfirm: 'Are you sure you want to delete this notification?',
     searchPlaceholder: '🔍 Search exam title, agency (UPSC, TNPSC, SSC, SBI, RRB...), post, qualification...',
     resultsCountSuffix: 'Results',
-    hideFinished: '🚫 Hide Finished Exams',
+    hideFinished: '🚫 Hide Expired & Finished Exams',
     filterHeading: 'Filter:',
-    filterAll: '📋 All Notifications',
+    filterAll: '📋 All Active Notifications',
     filterActiveApp: '🔥 Active Applications',
+    filterActiveJobs: '💼 Current Government Jobs',
     filterUpcomingExam: '📚 Upcoming Exams',
+    filterUpcomingInterviews: '🎙️ Upcoming Interviews',
+    filterClosingSoon: '⏰ Applications Closing Soon',
+    filterLatestVerified: '✅ Latest Verified Notifications',
     filterAppClosed: '🔴 Application Closed',
     filterExamCompleted: '🔴 Exam Completed',
+    filterArchived: '📦 Archived / Completed',
     filterUpdates: '📢 Results & Updates',
+    interviewDateLabel: 'Interview Date:',
+    dvDateLabel: 'Doc Verification Date:',
+    prelimsLabel: 'Preliminary Exam (Prelims):',
+    mainsLabel: 'Main Examination (Mains):',
+    nextEventPrefix: '⏳ Next Important Event:',
+    notApplicable: 'Not Applicable',
+    interviewNotApplicable: 'Interview Not Applicable',
+    cardPrelimsPrefix: '📝 Prelims:',
+    cardMainsPrefix: '📚 Mains:',
+    cardInterviewPrefix: '🎙️ Interview:',
+    cardDvPrefix: '📄 Doc Verification:',
+    adminPendingCurrent: 'Current Pending Approvals',
+    adminPendingExpired: 'Expired Pending Approvals',
+    adminMissingDate: 'Missing Date Verification',
     emptyTitle: 'No Notifications Found',
     emptySubtitle: 'No notifications match the selected filter. Click the button below to refresh the live feed.',
     syncAllAction: '🔄 Sync Master Feed Now',
@@ -154,6 +194,8 @@ export const NOTIFICATION_UI_LABELS = {
     applyNowBtn: 'Apply Now',
     applyNowCardLink: 'Apply Now / Official Link',
     applyPendingReviewBtn: 'Application Verification Pending',
+    officialNotificationAwaitedBtn: 'Official Notification Awaited',
+    vacancyAwaited: 'Vacancy details awaiting official notification',
     applyClosedBtn: 'Application Closed',
     applyNotStartedBtn: 'Application Not Started',
     applyDateUnverifiedBtn: 'Date Not Verified',
@@ -240,6 +282,42 @@ const MONTH_NAME_MAP = {
   dec: 12, december: 12
 };
 
+export const TAMIL_MONTH_MAP = {
+  'ஜனவரி': 1, 'பிப்ரவரி': 2, 'மார்ச்': 3, 'ஏப்ரல்': 4,
+  'மே': 5, 'ஜூன்': 6, 'ஜூலை': 7, 'ஆகஸ்ட்': 8,
+  'செப்டம்பர்': 9, 'செப்': 9, 'அக்டோபர்': 10, 'அக்': 10,
+  'நவம்பர்': 11, 'நவம்': 11, 'டிசம்பர்': 12, 'டிசம்': 12,
+  'சித்திரை': 4, 'வைகாசி': 5, 'ஆனி': 6, 'ஆடி': 7,
+  'ஆவணி': 8, 'புரட்டாசி': 9, 'ஐப்பசி': 10, 'கார்த்திகை': 11,
+  'மார்கழி': 12, 'தை': 1, 'மாசி': 2, 'பங்குனி': 3
+};
+
+export const ALL_MONTH_MAP = { ...MONTH_NAME_MAP, ...TAMIL_MONTH_MAP };
+
+export const DATE_STATUS = {
+  VERIFIED: 'VERIFIED',
+  NOT_ANNOUNCED: 'NOT_ANNOUNCED',
+  NEEDS_REVIEW: 'NEEDS_REVIEW',
+  INVALID: 'INVALID'
+};
+
+export const RECRUITMENT_STAGES = {
+  APPLICATION_NOT_STARTED: 'APPLICATION_NOT_STARTED',
+  APPLICATION_OPEN: 'APPLICATION_OPEN',
+  APPLICATION_CLOSED: 'APPLICATION_CLOSED',
+  ADMIT_CARD_RELEASED: 'ADMIT_CARD_RELEASED',
+  PRELIMS_UPCOMING: 'PRELIMS_UPCOMING',
+  PRELIMS_COMPLETED: 'PRELIMS_COMPLETED',
+  MAINS_UPCOMING: 'MAINS_UPCOMING',
+  MAINS_COMPLETED: 'MAINS_COMPLETED',
+  INTERVIEW_UPCOMING: 'INTERVIEW_UPCOMING',
+  INTERVIEW_COMPLETED: 'INTERVIEW_COMPLETED',
+  DOCUMENT_VERIFICATION_UPCOMING: 'DOCUMENT_VERIFICATION_UPCOMING',
+  RESULT_AWAITED: 'RESULT_AWAITED',
+  FINAL_SELECTION_COMPLETED: 'FINAL_SELECTION_COMPLETED',
+  RECRUITMENT_CANCELLED: 'RECRUITMENT_CANCELLED'
+};
+
 /**
  * Get current date in Asia/Kolkata timezone with zero time component.
  * Guaranteed safe against UTC midnight shift and browser system timezone offset.
@@ -288,16 +366,43 @@ export function toKolkataIsoDate(instantInput) {
  * Supported date-only formats:
  * - YYYY-MM-DD, YYYY/MM/DD
  * - DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
- * - DD Mon YYYY (e.g. "23 Oct 2026", "23 October 2026")
+ * - DD Mon YYYY (e.g. "23 Oct 2026", "23 October 2026", "15th September, 2024")
  * - Mon DD, YYYY / Mon DD YYYY (e.g. "Oct 23, 2026")
+ * - Tamil formats (e.g. "15 நவம்பர் 2026", "நவம்பர் 15, 2026")
  *
- * Also supports ISO-8601 timestamps containing time + explicit offset (e.g. Z, +05:30),
- * projecting them into Asia/Kolkata calendar dates.
+ * Uses standardized dateStatus:
+ * - VERIFIED: Parsed valid calendar date / timestamp
+ * - NOT_ANNOUNCED: Missing or unannounced placeholder (NOT_ANNOUNCED, TBA, Announced Soon)
+ * - NEEDS_REVIEW: Descriptive text, interview schedule without exact date, or multi-stage
+ * - INVALID: Strictly invalid calendar numbers (e.g. 30-02-2026, 31-04-2026, month 13)
  *
  * @param {string|Date|number} dateInput
- * @returns {{ valid: boolean, kind: 'calendar'|'timestamp'|'empty'|'descriptive'|'invalid_calendar', components: Object|null, instantMs: number|null, reason?: string }}
+ * @returns {{ valid: boolean, kind: 'calendar'|'timestamp'|'empty'|'descriptive'|'not_announced'|'invalid_calendar', dateStatus: 'VERIFIED'|'NOT_ANNOUNCED'|'NEEDS_REVIEW'|'INVALID', components: Object|null, instantMs: number|null, reason?: string, scheduleType?: string, isMultiStage?: boolean }}
  */
 export function parseDateDetailed(dateInput) {
+  const res = _parseDateDetailedInner(dateInput);
+  let dateStatus = DATE_STATUS.INVALID;
+  if (res.valid) {
+    dateStatus = DATE_STATUS.VERIFIED;
+  } else if (res.kind === 'empty' || res.kind === 'not_announced') {
+    dateStatus = DATE_STATUS.NOT_ANNOUNCED;
+  } else if (res.kind === 'descriptive') {
+    dateStatus = DATE_STATUS.NEEDS_REVIEW;
+  } else if (res.kind === 'invalid_calendar') {
+    dateStatus = DATE_STATUS.INVALID;
+  }
+
+  const rawStr = typeof dateInput === 'string' ? dateInput.trim() : '';
+  const isMultiStage = Boolean(rawStr && /\b(?:stage|tier|phase)\s+(?:[iI1]|[iI]{2}|2)\b|prelim(?:s|inary)?.*main(?:s)?/i.test(rawStr));
+
+  return {
+    ...res,
+    dateStatus,
+    ...(isMultiStage ? { isMultiStage: true } : {})
+  };
+}
+
+function _parseDateDetailedInner(dateInput) {
   if (dateInput === null || dateInput === undefined) {
     return { valid: false, kind: 'empty', components: null, instantMs: null, reason: 'EMPTY_DATE' };
   }
@@ -374,11 +479,12 @@ export function parseDateDetailed(dateInput) {
     return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'INVALID_CALENDAR_DATE' };
   }
 
-  // 3. DD Mon YYYY (e.g. "23 Oct 2026", "09 November 2026")
-  const dMonYMatch = rawStr.match(/^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$/);
+  // 3. DD Mon YYYY (e.g. "23 Oct 2026", "15th September, 2024", "15 நவம்பர் 2026")
+  const dMonYMatch = rawStr.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z\u0B80-\u0BFF]{3,12}),?\s+(\d{4})$/i);
   if (dMonYMatch) {
     const day = parseInt(dMonYMatch[1], 10);
-    const month = MONTH_NAME_MAP[dMonYMatch[2].toLowerCase()];
+    const mStr = dMonYMatch[2].toLowerCase();
+    const month = ALL_MONTH_MAP[mStr];
     const year = parseInt(dMonYMatch[3], 10);
     if (month && isValidDateComponents(year, month, day)) {
       return { valid: true, kind: 'calendar', components: buildDateComponents(year, month, day, rawStr), instantMs: null };
@@ -386,10 +492,11 @@ export function parseDateDetailed(dateInput) {
     return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'INVALID_CALENDAR_DATE' };
   }
 
-  // 4. Mon DD, YYYY / Mon DD YYYY (e.g. "Oct 23, 2026")
-  const monDYMatch = rawStr.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/);
+  // 4. Mon DD, YYYY / Mon DD YYYY (e.g. "Oct 23, 2026", "நவம்பர் 15, 2026")
+  const monDYMatch = rawStr.match(/^([A-Za-z\u0B80-\u0BFF]{3,12})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/i);
   if (monDYMatch) {
-    const month = MONTH_NAME_MAP[monDYMatch[1].toLowerCase()];
+    const mStr = monDYMatch[1].toLowerCase();
+    const month = ALL_MONTH_MAP[mStr];
     const day = parseInt(monDYMatch[2], 10);
     const year = parseInt(monDYMatch[3], 10);
     if (month && isValidDateComponents(year, month, day)) {
@@ -398,14 +505,19 @@ export function parseDateDetailed(dateInput) {
     return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'INVALID_CALENDAR_DATE' };
   }
 
-  // 5. Fallback extraction inside descriptive strings like "25/11/2026 (Prelims) & 19/02/2027 (Mains)"
+  // 5. Fallback extraction inside descriptive strings like:
+  // "Stage I (Preliminary) on 15th September, 2024 & Stage II on 20th October, 2024", "Walk-in Interview on 15/11/2026"
+  const isInterview = /(?:^|[\s,;:(])(interview|walk[- ]?in|நேர்காணல்)/i.test(rawStr) || /நேர்காணல்/.test(rawStr);
+  const isWalkIn = /(?:^|[\s,;:(])(walk[- ]?in|நேரடி\s*நேர்காணல்)/i.test(rawStr) || /நேரடி\s*நேர்காணல்/.test(rawStr);
+  const scheduleType = isWalkIn ? 'walk_in' : (isInterview ? 'interview' : 'scheduled_exam');
+
   const embeddedIso = rawStr.match(/(?<!\d)(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?!\d)/);
   if (embeddedIso) {
     const year = parseInt(embeddedIso[1], 10);
     const month = parseInt(embeddedIso[2], 10);
     const day = parseInt(embeddedIso[3], 10);
     if (isValidDateComponents(year, month, day)) {
-      return { valid: true, kind: 'calendar', components: buildDateComponents(year, month, day, rawStr), instantMs: null };
+      return { valid: true, kind: 'calendar', scheduleType, components: buildDateComponents(year, month, day, rawStr), instantMs: null };
     }
     return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'INVALID_CALENDAR_DATE' };
   }
@@ -416,28 +528,175 @@ export function parseDateDetailed(dateInput) {
     const month = parseInt(embeddedDmy[2], 10);
     const year = parseInt(embeddedDmy[3], 10);
     if (isValidDateComponents(year, month, day)) {
-      return { valid: true, kind: 'calendar', components: buildDateComponents(year, month, day, rawStr), instantMs: null };
+      return { valid: true, kind: 'calendar', scheduleType, components: buildDateComponents(year, month, day, rawStr), instantMs: null };
     }
     return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'INVALID_CALENDAR_DATE' };
   }
 
-  // Distinguish genuine descriptive placeholders (e.g. "January 2027", "Announced Soon") from malformed dates
+  const embeddedDMonY = rawStr.match(/(?<!\d)(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z\u0B80-\u0BFF]{3,12}),?\s+(\d{4})/i);
+  if (embeddedDMonY) {
+    const day = parseInt(embeddedDMonY[1], 10);
+    const mStr = embeddedDMonY[2].toLowerCase();
+    const month = ALL_MONTH_MAP[mStr];
+    const year = parseInt(embeddedDMonY[3], 10);
+    if (month && isValidDateComponents(year, month, day)) {
+      return { valid: true, kind: 'calendar', scheduleType, components: buildDateComponents(year, month, day, rawStr), instantMs: null };
+    }
+    return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'INVALID_CALENDAR_DATE' };
+  }
+
+  const embeddedMonDY = rawStr.match(/([A-Za-z\u0B80-\u0BFF]{3,12})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i);
+  if (embeddedMonDY) {
+    const mStr = embeddedMonDY[1].toLowerCase();
+    const month = ALL_MONTH_MAP[mStr];
+    const day = parseInt(embeddedMonDY[2], 10);
+    const year = parseInt(embeddedMonDY[3], 10);
+    if (month && isValidDateComponents(year, month, day)) {
+      return { valid: true, kind: 'calendar', scheduleType, components: buildDateComponents(year, month, day, rawStr), instantMs: null };
+    }
+    return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'INVALID_CALENDAR_DATE' };
+  }
+
+  // 6. Check for unannounced phrases ("NOT_ANNOUNCED", "Announced Soon", "தேதி பின்னர் அறிவிக்கப்படும்")
+  if (isUnannouncedDateText(rawStr)) {
+    return { valid: false, kind: 'not_announced', scheduleType: 'not_announced', components: null, instantMs: null, reason: 'UNANNOUNCED_SCHEDULE' };
+  }
+
+  // 7. Check for descriptive schedule phrases ("Stage I / Stage II", "Prelims / Mains", "CBT", "Written Test", etc.)
   if (isKnownDescriptiveDateText(rawStr)) {
-    return { valid: false, kind: 'descriptive', components: null, instantMs: null, reason: 'UNPARSED_DESCRIPTIVE_DATE' };
+    return { valid: false, kind: 'descriptive', scheduleType, components: null, instantMs: null, reason: 'UNPARSED_DESCRIPTIVE_DATE' };
+  }
+
+  // 8. If text has NO date-like digits at all (e.g. purely descriptive words like "Refer Notification PDF"), treat as descriptive
+  if (!/\d{1,4}/.test(rawStr)) {
+    return { valid: false, kind: 'descriptive', scheduleType, components: null, instantMs: null, reason: 'UNPARSED_DESCRIPTIVE_DATE' };
   }
 
   return { valid: false, kind: 'invalid_calendar', components: null, instantMs: null, reason: 'UNRECOGNIZED_INVALID_DATE' };
 }
 
-function isKnownDescriptiveDateText(rawStr) {
+export function isUnannouncedDateText(rawStr) {
   const lower = String(rawStr || '').trim().toLowerCase();
   if (!lower) return true;
-  if (/(soon|tba|tbd|announce|shortly|later|ongoing|open|quarter|half|அறிவி|விரைவில்)/i.test(lower)) {
+  return /(not[ _-]?announced|unannounced|tba|tbd|to be announced|to be notified|will be announced|intimated later|announced soon|shortly|தேதி பின்னர் அறிவிக்கப்படும்|விரைவில் அறிவிக்கப்படும்|அறிவிக்கப்படும்|பின்னர் அறிவிக்கப்படும்)/i.test(lower);
+}
+
+export function isInterviewOrScheduleText(rawStr) {
+  const lower = String(rawStr || '').trim().toLowerCase();
+  if (!lower) return false;
+  // CBT, CBT-1, CBT-2, Written Test, Written Exam are strictly written examination stages, NOT interview stages.
+  const isWrittenExam = /(cbt|computer\s*based\s*test|written\s*test|written\s*exam|cee\s*exam|objective\s*test|tier\s*[iI\d]|stage\s*[iI\d]|எழுத்துத்\s*தேர்வு)/i.test(lower);
+  if (isWrittenExam) return false;
+
+  return /(interview|walk[- ]?in|viva[- ]?voce|personality\s*test|counselling|screening|merit|gate\s*score|pet|pst|physical\s*test|physical\s*efficiency|rally|trade\s*test|skill\s*test|document\s*verification|நேர்காணல்|நேரடி\s*நேர்காணல்|கலந்தாய்வு|சான்றிதழ்\s*சரிபார்ப்பு)/i.test(lower);
+}
+
+export function isKnownDescriptiveDateText(rawStr) {
+  const lower = String(rawStr || '').trim().toLowerCase();
+  if (!lower) return true;
+  if (isUnannouncedDateText(lower) || isInterviewOrScheduleText(lower)) {
     return true;
   }
-  const monthNames = Object.keys(MONTH_NAME_MAP).join('|');
+  // English recruitment descriptions: stages, prelims/mains, CBT, tests, merit, scores, rallies, etc.
+  if (/(stage\s*[iIvVx\d]+|tier\s*[iIvVx\d]+|phase\s*[iIvVx\d]+)/i.test(lower)) {
+    return true;
+  }
+  if (/(prelim|main|cbt|written\s*test|written\s*exam|interview|walk[- ]?in|merit|no\s*written|without\s*(?:written\s*)?exam|no\s*exam|as\s*per|schedule|gate\s*score|gate\s*exam|pet|pst|physical\s*test|physical\s*efficiency|physical\s*endurance|pmt|rally|trade\s*test|skill\s*test|typing\s*test|counselling|document\s*verification|fitness|screening|tentative|refer|notification|rules|pdf|brochure|planner|soon|ongoing|open|quarter|half)/i.test(lower)) {
+    return true;
+  }
+  // Tamil recruitment descriptions
+  if (/(நேர்காணல்|நேரடி\s*நேர்காணல்|எழுத்துத்\s*தேர்வு|தேர்வு\s*இல்லை|எழுத்துத்\s*தேர்வு\s*இல்லை|மதிப்பெண்|மதிப்பெண்கள்|தகுதிப்\s*பட்டியல்|அட்டவணை|அட்டவணைப்படி|அறிவிக்கப்படும்|விரைவில்|உடற்தகுதி|உடல்தகுதி|உடல்திறன்|சான்றிதழ்\s*சரிபார்ப்பு|கலந்தாய்வு)/.test(lower)) {
+    return true;
+  }
+  const monthNames = Object.keys(ALL_MONTH_MAP).join('|');
   const monthYearRegex = new RegExp(`\\b(${monthNames})\\b[\\s,/&-]+\\d{4}|\\b(${monthNames})\\b.*\\b(${monthNames})\\b`, 'i');
   return monthYearRegex.test(lower);
+}
+
+/**
+ * Evaluates whether a raw date/schedule string indicates a future month or ongoing pending stage
+ * (e.g. "December 2026", "Online Computer Based Test December 2026", "November / December 2026",
+ * "March 2027", "Interview based on GATE Score", "Interview November 2026", "Walk-in Interview").
+ *
+ * Prevents premature archival of active recruitment notifications where application has closed
+ * but exams, interviews, or selection stages remain scheduled or pending in the current/future cycle.
+ *
+ * @param {string} rawText
+ * @param {Object} [rawTodayObj=getKolkataToday()]
+ * @returns {boolean}
+ */
+export function hasFutureMonthOrPendingStage(rawText, rawTodayObj = getKolkataToday()) {
+  if (!rawText) return false;
+  const str = String(rawText).trim();
+  if (!str) return false;
+  const lower = str.toLowerCase();
+
+  const todayObj = resolveTodayObject(rawTodayObj);
+  const currentYear = todayObj.year;
+  const currentMonth = todayObj.month;
+
+  // 1. Check for 4-digit years
+  const yearMatches = [...str.matchAll(/(?<!\d)(20\d\d)(?!\d)/g)];
+  if (yearMatches.length > 0) {
+    let hasFutureYear = false;
+    let hasCurrentYear = false;
+    let hasPastOnly = true;
+
+    for (const ym of yearMatches) {
+      const y = parseInt(ym[1], 10);
+      if (y > currentYear) {
+        hasFutureYear = true;
+        hasPastOnly = false;
+      } else if (y === currentYear) {
+        hasCurrentYear = true;
+        hasPastOnly = false;
+      }
+    }
+
+    if (hasFutureYear) return true;
+
+    if (hasCurrentYear) {
+      const monthKeys = Object.keys(ALL_MONTH_MAP).sort((a, b) => b.length - a.length);
+      const monthTokensFound = [];
+      for (const mKey of monthKeys) {
+        const regex = new RegExp(`(^|[^a-z\u0B80-\u0BFF])${mKey}([^a-z\u0B80-\u0BFF]|$)`, 'i');
+        if (regex.test(lower)) {
+          monthTokensFound.push(ALL_MONTH_MAP[mKey]);
+        }
+      }
+
+      if (monthTokensFound.length > 0) {
+        // Any month >= currentMonth indicates an upcoming or current active cycle
+        return monthTokensFound.some((m) => m >= currentMonth);
+      }
+
+      // Current year mentioned without an explicit past month token (e.g. "CBT in 2026")
+      if (!/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct)\b/i.test(lower)) {
+        return true;
+      }
+    }
+
+    if (hasPastOnly) return false;
+  }
+
+  // 2. Pending selection/interview stages without explicit year (Rule 5)
+  if (isInterviewOrScheduleText(lower) && !isUnannouncedDateText(lower)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks whether a schedule text describes an interview-only or selection process without written exam
+ * (e.g. "Interview based on GATE Score", "Walk-in Interview").
+ */
+export function isInterviewOnlySchedule(rawStr) {
+  const lower = String(rawStr || '').trim().toLowerCase();
+  if (!lower) return false;
+  const hasInterview = /(interview|walk[- ]?in|நேர்காணல்|நேரடி\s*நேர்காணல்)/i.test(lower);
+  const hasExam = /(cbt|computer\s*based|written|prelim|main|tier\s*[iI\d]|stage\s*[iI\d]|cee\s*exam|objective|எழுத்துத்\s*தேர்வு)/i.test(lower);
+  return hasInterview && !hasExam;
 }
 
 /**
@@ -504,7 +763,7 @@ export function parseAllDatesDetailed(dateInput) {
     };
   }
 
-  const monthKeys = Object.keys(MONTH_NAME_MAP).join('|');
+  const monthKeys = Object.keys(ALL_MONTH_MAP).join('|');
   const validDates = [];
   const matchedSpans = [];
   let hasInvalidCalendarDate = false;
@@ -525,7 +784,7 @@ export function parseAllDatesDetailed(dateInput) {
     matchedSpans.push([spanStart, spanEnd]);
 
     const daysPart = sharedMatch[1];
-    const monthNum = MONTH_NAME_MAP[sharedMatch[2].toLowerCase()];
+    const monthNum = ALL_MONTH_MAP[sharedMatch[2].toLowerCase()];
     const yearNum = parseInt(sharedMatch[3], 10);
     const dayTokens = daysPart.split(/\s*(?:,|&|\band\b|\/)\s*/i).filter(Boolean);
     const dayNumbers = dayTokens.map((t) => parseInt(t.replace(/(?:st|nd|rd|th)$/i, ''), 10));
@@ -549,7 +808,7 @@ export function parseAllDatesDetailed(dateInput) {
 
   // 1B. Shared Month-first Day List: e.g. "February 07, 08, 14 & 15, 2027"
   const sharedMonthDayPattern = new RegExp(
-    `(?<![A-Za-z])(${monthKeys})\\s+((?:\\d{1,2}(?:st|nd|rd|th)?\\s*(?:,|&|\\band\\b)\\s*)+\\d{1,2}(?:st|nd|rd|th)?),?\\s+(\\d{4})(?!\\d)`,
+    `(?<![A-Za-z\u0B80-\u0BFF])(${monthKeys})\\s+((?:\\d{1,2}(?:st|nd|rd|th)?\\s*(?:,|&|\\band\\b)\\s*)+\\d{1,2}(?:st|nd|rd|th)?),?\\s+(\\d{4})(?!\\d)`,
     'gi'
   );
   while ((sharedMatch = sharedMonthDayPattern.exec(rawStr)) !== null) {
@@ -559,7 +818,7 @@ export function parseAllDatesDetailed(dateInput) {
     matchedSpans.push([spanStart, spanEnd]);
     hasSharedMonthGroup = true;
 
-    const monthNum = MONTH_NAME_MAP[sharedMatch[1].toLowerCase()];
+    const monthNum = ALL_MONTH_MAP[sharedMatch[1].toLowerCase()];
     const daysPart = sharedMatch[2];
     const yearNum = parseInt(sharedMatch[3], 10);
     const dayTokens = daysPart.split(/\s*(?:,|&|\band\b)\s*/i).filter(Boolean);
@@ -697,6 +956,47 @@ function isSafeHttpUrl(urlStr) {
   try {
     const parsed = new URL(trimmed);
     return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch (e) {
+    return false;
+  }
+}
+
+export function isGenericRootHomepage(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return false;
+  const trimmed = urlStr.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+
+    // Normalize pathname: remove trailing slashes
+    const rawPath = parsed.pathname || '';
+    const pathname = rawPath.replace(/\/+$/, '').toLowerCase();
+
+    // Generic root or default homepage index paths across any web server
+    const isRoot = !pathname || pathname === '' || pathname === '/';
+    const isIndexOrHome = (
+      pathname === '/index.html' ||
+      pathname === '/index.htm' ||
+      pathname === '/index.php' ||
+      pathname === '/index.aspx' ||
+      pathname === '/index.jsp' ||
+      pathname === '/home' ||
+      pathname === '/home.html' ||
+      pathname === '/home.htm' ||
+      pathname === '/home.aspx' ||
+      pathname === '/home.php' ||
+      pathname === '/home.jsp' ||
+      pathname === '/default.aspx' ||
+      pathname === '/default.html' ||
+      pathname === '/default.htm' ||
+      pathname === '/default.php' ||
+      pathname === '/main.html' ||
+      pathname === '/main.aspx' ||
+      pathname === '/main.php'
+    );
+
+    return Boolean(isRoot || isIndexOrHome);
   } catch (e) {
     return false;
   }
@@ -1095,6 +1395,23 @@ export function calculateApplicationStatus(startDateInput, endDateInput, rawToda
  * @returns {Object}
  */
 export function calculateExamStatus(examDateInput, rawTodayObj = getKolkataToday(), options = {}) {
+  const result = _calculateExamStatusInner(examDateInput, rawTodayObj, options);
+  let dateStatus = DATE_STATUS.VERIFIED;
+  if (result.isInvalid || result.status === 'INVALID_DATE') {
+    dateStatus = DATE_STATUS.INVALID;
+  } else if (result.status === 'NOT_ANNOUNCED') {
+    const rawStr = examDateInput ? String(examDateInput).trim().toLowerCase() : '';
+    const isDescriptive = rawStr && !rawStr.includes('soon') && !rawStr.includes('அறிவிக்கப்படவில்லை') && !rawStr.includes('not_announced');
+    dateStatus = isDescriptive ? DATE_STATUS.NEEDS_REVIEW : DATE_STATUS.NOT_ANNOUNCED;
+  } else if (result.isFutureMonth || result.isDatePending) {
+    dateStatus = DATE_STATUS.NEEDS_REVIEW;
+  } else {
+    dateStatus = DATE_STATUS.VERIFIED;
+  }
+  return { ...result, dateStatus };
+}
+
+function _calculateExamStatusInner(examDateInput, rawTodayObj = getKolkataToday(), options = {}) {
   const todayObj = resolveTodayObject(rawTodayObj);
   const lang = normalizeLanguage(options.lang);
   const isEn = lang === 'en';
@@ -1125,9 +1442,60 @@ export function calculateExamStatus(examDateInput, rawTodayObj = getKolkataToday
     };
   }
 
-  // Missing or genuine text-only (e.g. "Announced Soon" / "January 2027")
+  // Missing or genuine text-only (e.g. "Announced Soon" / "January 2027" / "December 2026")
   if (!parsedRange.startDate) {
     const isDescriptive = rawStr && !lowerStr.includes('soon') && !lowerStr.includes('அறிவிக்கப்படவில்லை');
+    const isInterviewOnly = isInterviewOnlySchedule(rawStr);
+
+    if (isInterviewOnly) {
+      return {
+        code: 'NOT_APPLICABLE',
+        status: 'NOT_APPLICABLE',
+        label: isEn ? `📅 Exam: Not Applicable (${rawStr})` : `📅 தேர்வு: பொருந்தாது (${rawStr})`,
+        shortLabel: isEn ? 'Not Applicable' : 'தேர்வு இல்லை',
+        displayDate: rawStr,
+        countdown: isEn ? `Selection via ${rawStr}` : `மதிப்பீடு: ${rawStr}`,
+        badgeClass: 'status-badge-exam-unannounced',
+        tagColor: '#64748b',
+        tagBg: '#f8fafc',
+        tagBorder: '#cbd5e1',
+        isUpcoming: false,
+        isToday: false,
+        isCompleted: false,
+        isInvalid: false,
+        isInterviewOnly: true,
+        parsedDates: [],
+        scheduleDisplay: rawStr,
+        daysRemaining: null
+      };
+    }
+
+    const isFutureSchedule = hasFutureMonthOrPendingStage(rawStr, todayObj);
+
+    if (isFutureSchedule) {
+      return {
+        code: 'UPCOMING',
+        status: 'UPCOMING',
+        label: isEn ? `📅 Exam: ${rawStr} (Schedule Pending)` : `📅 தேர்வு: ${rawStr} (அட்டவணை விரைவில்)`,
+        shortLabel: rawStr,
+        displayDate: rawStr,
+        countdown: isEn ? `Exam: ${rawStr} (Schedule Pending)` : `தேர்வு விரைவில் (${rawStr})`,
+        badgeClass: 'status-badge-exam-upcoming',
+        tagColor: '#0284c7',
+        tagBg: '#f0f9ff',
+        tagBorder: '#bae6fd',
+        isUpcoming: true,
+        isToday: false,
+        isCompleted: false,
+        isInvalid: false,
+        isFutureMonth: true,
+        isDatePending: true,
+        parsedDates: [],
+        scheduleDisplay: rawStr,
+        daysRemaining: null
+      };
+    }
+
     return {
       code: 'NOT_ANNOUNCED',
       status: 'NOT_ANNOUNCED',
@@ -1335,6 +1703,774 @@ export function calculateExamStatus(examDateInput, rawTodayObj = getKolkataToday
 }
 
 /**
+ * Calculates dynamic Interview / Walk-in Status and countdown.
+ *
+ * Normalized status (`status`):
+ * - UPCOMING: today < interviewStartDate
+ * - TODAY: interviewStartDate <= today <= interviewEndDate
+ * - COMPLETED: today > interviewEndDate
+ * - NOT_ANNOUNCED: missing or genuine text placeholder
+ * - INVALID_DATE: invalid calendar date
+ */
+export function calculateInterviewStatus(interviewDateInput, rawTodayObj = getKolkataToday(), options = {}) {
+  const todayObj = resolveTodayObject(rawTodayObj);
+  const lang = normalizeLanguage(options.lang);
+  const isEn = lang === 'en';
+
+  const rawStr = interviewDateInput ? String(interviewDateInput).trim() : '';
+  if (!rawStr) {
+    return {
+      code: 'NOT_ANNOUNCED',
+      status: 'NOT_ANNOUNCED',
+      label: isEn ? '🎙️ Interview: Not Announced' : '🎙️ நேர்காணல்: அறிவிக்கப்படவில்லை',
+      shortLabel: isEn ? 'Not Announced' : 'அறிவிக்கப்படவில்லை',
+      displayDate: '',
+      countdown: '',
+      isUpcoming: false,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: false,
+      tagColor: '#64748b',
+      tagBg: '#f8fafc',
+      tagBorder: '#cbd5e1'
+    };
+  }
+
+  const parsedRange = parseAllDatesDetailed(rawStr);
+  if (parsedRange.hasInvalidCalendarDate || parsedRange.kind === 'invalid_calendar') {
+    return {
+      code: 'INVALID_DATE',
+      status: 'INVALID_DATE',
+      label: isEn ? '⚠️ Invalid Interview Date' : '⚠️ தவறான நேர்காணல் தேதி (Invalid Date)',
+      shortLabel: isEn ? 'Invalid Date' : 'தவறான தேதி',
+      displayDate: `⚠️ ${rawStr} (Invalid Date)`,
+      countdown: isEn ? 'Verify Interview Date (Admin Review Required)' : 'நேர்காணல் தேதியை சரிபார்க்கவும் (Admin Review Required)',
+      isUpcoming: false,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: true,
+      hasDate: false,
+      tagColor: '#b91c1c',
+      tagBg: '#fef2f2',
+      tagBorder: '#fca5a5'
+    };
+  }
+
+  if (!parsedRange.startDate) {
+    const isFutureInterview = hasFutureMonthOrPendingStage(rawStr, todayObj);
+    if (isFutureInterview) {
+      return {
+        code: 'UPCOMING',
+        status: 'UPCOMING',
+        label: isEn ? `🎙️ Interview: ${rawStr}` : `🎙️ நேர்காணல்: ${rawStr}`,
+        shortLabel: rawStr,
+        displayDate: rawStr,
+        countdown: isEn ? `Interview: ${rawStr} (Pending Schedule)` : `நேர்காணல் விரைவில் (${rawStr})`,
+        isUpcoming: true,
+        isToday: false,
+        isCompleted: false,
+        isInvalid: false,
+        hasDate: true,
+        isDatePending: true,
+        tagColor: '#7c3aed',
+        tagBg: '#f5f3ff',
+        tagBorder: '#ddd6fe'
+      };
+    }
+
+    return {
+      code: 'NOT_ANNOUNCED',
+      status: 'NOT_ANNOUNCED',
+      label: isEn ? `🎙️ Interview: ${rawStr}` : `🎙️ நேர்காணல்: ${rawStr}`,
+      shortLabel: rawStr,
+      displayDate: rawStr,
+      countdown: '',
+      isUpcoming: false,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: false,
+      tagColor: '#475569',
+      tagBg: '#f8fafc',
+      tagBorder: '#e2e8f0'
+    };
+  }
+
+  const startComp = parsedRange.startDate;
+  const endComp = parsedRange.endDate || startComp;
+  const displayFormatted = parsedRange.isRange
+    ? formatDisplayDate(rawStr, { lang })
+    : startComp.displayDate;
+
+  if (todayObj.epochDays < startComp.epochDays) {
+    const daysRemaining = startComp.epochDays - todayObj.epochDays;
+    return {
+      code: 'UPCOMING',
+      status: 'UPCOMING',
+      label: isEn ? '🎙️ Upcoming Interview' : '🎙️ நேர்காணல் நடைபெற உள்ளது',
+      shortLabel: isEn ? 'Upcoming Interview' : 'நேர்காணல் விரைவில்',
+      displayDate: displayFormatted,
+      countdown: isEn
+        ? `🎙️ ${daysRemaining} ${daysRemaining === 1 ? 'Day' : 'Days'} Remaining`
+        : `🎙️ நேர்காணலுக்கு இன்னும் ${daysRemaining} நாட்கள்`,
+      isUpcoming: true,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: true,
+      earliestEpochDays: startComp.epochDays,
+      latestEpochDays: endComp.epochDays,
+      daysRemaining,
+      tagColor: '#7c3aed',
+      tagBg: '#f5f3ff',
+      tagBorder: '#ddd6fe'
+    };
+  }
+
+  if (todayObj.epochDays >= startComp.epochDays && todayObj.epochDays <= endComp.epochDays) {
+    return {
+      code: 'TODAY',
+      status: 'TODAY',
+      label: isEn ? '🟠 Interview Today' : '🟠 இன்று நேர்காணல்',
+      shortLabel: isEn ? 'Interview Today' : 'இன்று நேர்காணல்',
+      displayDate: displayFormatted,
+      countdown: isEn ? '🟠 Interview Today' : '🟠 இன்று நேர்காணல் நடைபெறுகிறது',
+      isUpcoming: false,
+      isToday: true,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: true,
+      earliestEpochDays: startComp.epochDays,
+      latestEpochDays: endComp.epochDays,
+      daysRemaining: 0,
+      tagColor: '#ea580c',
+      tagBg: '#fff7ed',
+      tagBorder: '#ffedd5'
+    };
+  }
+
+  const daysPassed = todayObj.epochDays - endComp.epochDays;
+  return {
+    code: 'INTERVIEW_COMPLETED',
+    status: 'COMPLETED',
+    label: isEn ? '🔴 Interview Completed' : '🔴 நேர்காணல் முடிந்தது',
+    shortLabel: isEn ? 'Interview Completed' : 'நேர்காணல் முடிந்தது',
+    displayDate: displayFormatted,
+    countdown: isEn ? '🔴 Interview Completed' : '🔴 நேர்காணல் முடிந்தது',
+    isUpcoming: false,
+    isToday: false,
+    isCompleted: true,
+    isInvalid: false,
+    hasDate: true,
+    earliestEpochDays: startComp.epochDays,
+    latestEpochDays: endComp.epochDays,
+    daysRemaining: 0,
+    daysPassed,
+    tagColor: '#dc2626',
+    tagBg: '#fef2f2',
+    tagBorder: '#fecaca'
+  };
+}
+
+/**
+ * Calculates dynamic Document Verification / Selection / Counselling status.
+ */
+export function calculateSelectionStatus(dateInput, rawTodayObj = getKolkataToday(), options = {}) {
+  const todayObj = resolveTodayObject(rawTodayObj);
+  const lang = normalizeLanguage(options.lang);
+
+  const rawStr = dateInput ? String(dateInput).trim() : '';
+  if (!rawStr) {
+    return {
+      status: 'NOT_ANNOUNCED',
+      isUpcoming: false,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: false,
+      displayDate: ''
+    };
+  }
+
+  const parsedRange = parseAllDatesDetailed(rawStr);
+  if (parsedRange.hasInvalidCalendarDate || parsedRange.kind === 'invalid_calendar') {
+    return {
+      status: 'INVALID_DATE',
+      isUpcoming: false,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: true,
+      hasDate: false,
+      displayDate: `⚠️ ${rawStr} (Invalid Date)`
+    };
+  }
+
+  if (!parsedRange.startDate) {
+    return {
+      status: 'NOT_ANNOUNCED',
+      isUpcoming: false,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: false,
+      displayDate: rawStr
+    };
+  }
+
+  const startComp = parsedRange.startDate;
+  const endComp = parsedRange.endDate || startComp;
+  const displayFormatted = parsedRange.isRange
+    ? formatDisplayDate(rawStr, { lang })
+    : startComp.displayDate;
+
+  if (todayObj.epochDays < startComp.epochDays) {
+    return {
+      status: 'UPCOMING',
+      isUpcoming: true,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: true,
+      displayDate: displayFormatted,
+      daysRemaining: startComp.epochDays - todayObj.epochDays
+    };
+  }
+
+  if (todayObj.epochDays >= startComp.epochDays && todayObj.epochDays <= endComp.epochDays) {
+    return {
+      status: 'TODAY',
+      isUpcoming: false,
+      isToday: true,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: true,
+      displayDate: displayFormatted,
+      daysRemaining: 0
+    };
+  }
+
+  return {
+    status: 'COMPLETED',
+    isUpcoming: false,
+    isToday: false,
+    isCompleted: true,
+    isInvalid: false,
+    hasDate: true,
+    displayDate: displayFormatted,
+    daysRemaining: 0,
+    daysPassed: todayObj.epochDays - endComp.epochDays
+  };
+}
+
+/**
+ * Extracts distinct Prelims and Mains (or Single) exam stage dates from raw exam schedule strings
+ * or dedicated notification fields.
+ *
+ * @param {string} rawExamStr
+ * @param {Object} [notif={}]
+ * @returns {{ prelimsRaw: string, mainsRaw: string, isMultiStage: boolean, source: string }}
+ */
+export function extractExamStages(rawExamStr, notif = {}) {
+  const prelimsField = notif.prelimsExamDate || notif.prelimsDate || notif.tier1ExamDate || notif.tier1Date || notif.stage1ExamDate || notif.stage1Date || '';
+  const mainsField = notif.mainsExamDate || notif.mainsDate || notif.tier2ExamDate || notif.tier2Date || notif.stage2ExamDate || notif.stage2Date || '';
+
+  if (prelimsField || mainsField) {
+    return {
+      prelimsRaw: String(prelimsField).trim(),
+      mainsRaw: String(mainsField).trim(),
+      isMultiStage: Boolean(mainsField),
+      source: 'fields'
+    };
+  }
+
+  const str = String(rawExamStr || '').trim();
+  if (!str) {
+    return {
+      prelimsRaw: '',
+      mainsRaw: '',
+      isMultiStage: false,
+      source: 'none'
+    };
+  }
+
+  const hasStageIndicators = /(?:prelim|stage\s*[iI1]|tier\s*[iI1]).*(?:main|stage\s*[iI]{2}|tier\s*[iI]{2}|stage\s*2|tier\s*2)/i.test(str) ||
+    /(?:main|stage\s*[iI]{2}|tier\s*[iI]{2}|stage\s*2|tier\s*2).*(?:prelim|stage\s*[iI1]|tier\s*[iI1])/i.test(str);
+
+  if (hasStageIndicators) {
+    // Pattern A: <date text> (Prelims / Stage I) ... <date text> (Mains / Stage II)
+    const patternA = /(.*?)\s*\((?:prelims?|stage\s*[iI1]|tier\s*[iI1])\)[^&,\w]*(?:&|and|,)?\s*(.*?)\s*\((?:mains?|stage\s*[iI]{2}|stage\s*2|tier\s*[iI]{2}|tier\s*2)\)/i;
+    const matchA = str.match(patternA);
+    if (matchA) {
+      return {
+        prelimsRaw: matchA[1].trim(),
+        mainsRaw: matchA[2].trim(),
+        isMultiStage: true,
+        source: 'pattern_suffix'
+      };
+    }
+
+    // Pattern B: Prelims: <date text> [;&,] Mains: <date text>
+    const patternB = /(?:prelims?|stage\s*[iI1]|tier\s*[iI1])[:\s-]+(.*?)(?:[;&,]|and)\s*(?:mains?|stage\s*[iI]{2}|stage\s*2|tier\s*[iI]{2}|tier\s*2)[:\s-]+(.*)/i;
+    const matchB = str.match(patternB);
+    if (matchB) {
+      return {
+        prelimsRaw: matchB[1].trim(),
+        mainsRaw: matchB[2].trim(),
+        isMultiStage: true,
+        source: 'pattern_prefix'
+      };
+    }
+
+    // Pattern C: Stage I (Preliminary) on <date text> & Stage II on <date text>
+    const patternC = /(?:stage\s*[iI1]|tier\s*[iI1]).*?(?:on|dated|:)\s*(.*?)(?:&|and|,)\s*(?:stage\s*[iI]{2}|stage\s*2|tier\s*[iI]{2}|tier\s*2).*?(?:on|dated|:)\s*(.*)/i;
+    const matchC = str.match(patternC);
+    if (matchC) {
+      return {
+        prelimsRaw: matchC[1].trim(),
+        mainsRaw: matchC[2].trim(),
+        isMultiStage: true,
+        source: 'pattern_inline'
+      };
+    }
+  }
+
+  return {
+    prelimsRaw: str,
+    mainsRaw: '',
+    isMultiStage: false,
+    source: 'single'
+  };
+}
+
+/**
+ * Evaluates whether a recruitment notification is CURRENT/ACTIVE.
+ *
+ * A notification is active if it meets AT LEAST ONE of the following 4 rules:
+ * 1. Application is currently open (start <= today <= closing deadline).
+ * 2. Confirmed upcoming/today Exam date (examDate >= today or upcoming Prelims/Mains).
+ * 3. Confirmed upcoming/today Interview or Walk-in date (interviewDate >= today).
+ * 4. Confirmed upcoming/today Document Verification, Selection, or Counselling date.
+ *
+ * If none of the 4 conditions are met, the notification is EXPIRED/INACTIVE.
+ *
+ * @param {Object} notif
+ * @param {Object} [todayObj=getKolkataToday()]
+ * @param {Object} [options={}]
+ * @returns {boolean}
+ */
+export function isNotificationActive(notif, rawTodayObj = getKolkataToday(), options = {}) {
+  if (!notif) return false;
+  const todayObj = resolveTodayObject(rawTodayObj);
+
+  const openInput = notif.openingDate || notif.applicationStartDate || '';
+  const closeInput = notif.closingDate || notif.applicationEndDate || notif.applicationLastDate || '';
+  const appStatus = calculateApplicationStatus(openInput, closeInput, todayObj, {
+    extendedClosingDate: notif.extendedClosingDate || notif.extendedLastDate || notif.revisedClosingDate || '',
+    isExtensionVerified: notif.isExtensionVerified,
+    extensionVerified: notif.extensionVerified,
+    corrigendumVerified: notif.corrigendumVerified
+  });
+
+  // Rule 1: Application currently open
+  if (appStatus.isOpen && !appStatus.isExpired) {
+    return true;
+  }
+
+  // Rule 2: Future / today exam (supports multi-stage: prelims or mains)
+  const examStages = extractExamStages(notif.examDate, notif);
+  if (examStages.prelimsRaw) {
+    const prelimsStatus = calculateExamStatus(examStages.prelimsRaw, todayObj);
+    if (prelimsStatus.isUpcoming || prelimsStatus.isToday) return true;
+  }
+  if (examStages.mainsRaw) {
+    const mainsStatus = calculateExamStatus(examStages.mainsRaw, todayObj);
+    if (mainsStatus.isUpcoming || mainsStatus.isToday) return true;
+  }
+  const examDateInput = notif.examDate || '';
+  if (examDateInput) {
+    const examStatus = calculateExamStatus(examDateInput, todayObj);
+    if (examStatus.isUpcoming || examStatus.isToday) {
+      return true;
+    }
+  }
+
+  // Rule 3: Future / today interview or walk-in (only if applicable)
+  const isInterviewApplicable = notif.interviewApplicable !== false && notif.interviewNotApplicable !== true;
+  const interviewDateInput = notif.interviewDate || notif.walkInDate || '';
+  if (isInterviewApplicable && interviewDateInput) {
+    const interviewStatus = calculateInterviewStatus(interviewDateInput, todayObj);
+    if (interviewStatus.isUpcoming || interviewStatus.isToday) {
+      return true;
+    }
+  }
+
+  // Also check if examDate text itself has interview schedule
+  if (isInterviewApplicable && examDateInput && isInterviewOrScheduleText(examDateInput)) {
+    const interviewStatus = calculateInterviewStatus(examDateInput, todayObj);
+    if (interviewStatus.isUpcoming || interviewStatus.isToday) {
+      return true;
+    }
+  }
+
+  // Rule 4: Future / today selection / document verification / counselling
+  const selectionDateInput = notif.documentVerificationDate || notif.dvDate || notif.selectionDate || notif.counsellingDate || '';
+  if (selectionDateInput) {
+    const selStatus = calculateSelectionStatus(selectionDateInput, todayObj);
+    if (selStatus.isUpcoming || selStatus.isToday) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Classifies a notification into public and admin lifecycle queues.
+ *
+ * @param {Object} notif
+ * @param {Object} [todayObj=getKolkataToday()]
+ * @returns {Object}
+ */
+export function classifyNotificationQueues(notif, rawTodayObj = getKolkataToday()) {
+  const todayObj = resolveTodayObject(rawTodayObj);
+  const active = isNotificationActive(notif, todayObj);
+
+  const openInput = notif.openingDate || notif.applicationStartDate || '';
+  const closeInput = notif.closingDate || notif.applicationEndDate || notif.applicationLastDate || '';
+  const appStatus = calculateApplicationStatus(openInput, closeInput, todayObj, {
+    extendedClosingDate: notif.extendedClosingDate || notif.extendedLastDate || notif.revisedClosingDate || ''
+  });
+  const examStatus = calculateExamStatus(notif.examDate, todayObj);
+  const interviewStatus = calculateInterviewStatus(notif.interviewDate || notif.walkInDate, todayObj);
+
+  const hasInvalidDates = Boolean(appStatus.isInvalid || examStatus.isInvalid || interviewStatus.isInvalid);
+  const hasMissingDeadline = Boolean(appStatus.hasMissingDeadline && !examStatus.isUpcoming && !interviewStatus.isUpcoming);
+  const hasPendingDateVerification = Boolean(examStatus.isFutureMonth || examStatus.isDatePending || interviewStatus.isDatePending);
+  const needsDateVerification = hasInvalidDates || hasMissingDeadline || hasPendingDateVerification || !openInput || !closeInput;
+
+  const isQuarantined = Boolean(
+    notif.isQuarantined ||
+    notif.quarantined ||
+    notif.status === 'quarantined' ||
+    notif.ingestionStatus === 'quarantined'
+  );
+
+  const isPendingReview = notif.ingestionStatus === 'pending_review';
+  const isApproved = notif.ingestionStatus === 'published' || notif.isVerified === true || (!notif.ingestionStatus && notif.status !== 'quarantined' && notif.status !== 'rejected');
+
+  let adminQueue = 'current_pending';
+  if (isQuarantined) {
+    adminQueue = 'quarantined';
+  } else if (isPendingReview) {
+    if (!active) {
+      adminQueue = 'expired_pending_review';
+    } else if (needsDateVerification) {
+      adminQueue = 'missing_date_verification';
+    } else {
+      adminQueue = 'current_pending';
+    }
+  } else {
+    adminQueue = active ? 'published_active' : 'archived_expired';
+  }
+
+  const isClosingSoon = Boolean(
+    appStatus.isOpen &&
+    !appStatus.isExpired &&
+    appStatus.daysRemaining !== null &&
+    appStatus.daysRemaining <= 5 &&
+    appStatus.daysRemaining >= 0
+  );
+
+  return {
+    isNotificationActive: active,
+    isExpired: !active,
+    needsDateVerification,
+    adminQueue,
+    isClosingSoon,
+    isPublicActive: Boolean(active && isApproved && !isQuarantined && !isPendingReview),
+    appStatus,
+    examStatus,
+    interviewStatus
+  };
+}
+
+/**
+ * Calculates dynamic multi-stage recruitment timeline, next important event,
+ * and overall recruitment stage code based on Asia/Kolkata date calculations.
+ *
+ * @param {Object} notif
+ * @param {Object} [rawTodayObj=getKolkataToday()]
+ * @param {Object} [options={}]
+ * @returns {Object}
+ */
+export function calculateRecruitmentStageTimeline(notif, rawTodayObj = getKolkataToday(), options = {}) {
+  const todayObj = resolveTodayObject(rawTodayObj);
+  const lang = normalizeLanguage(options.lang ?? notif?.lang);
+  const isEn = lang === 'en';
+
+  if (!notif) {
+    return {
+      examStages: { prelimsRaw: '', mainsRaw: '', isMultiStage: false, source: 'none' },
+      prelimsStatus: { status: 'NOT_ANNOUNCED', isUpcoming: false, isToday: false, isCompleted: false, isInvalid: false, hasDate: false, displayDate: '' },
+      mainsStatus: { status: 'NOT_APPLICABLE', isUpcoming: false, isToday: false, isCompleted: false, isInvalid: false, hasDate: false, displayDate: '' },
+      interviewStatus: { status: 'NOT_APPLICABLE', isUpcoming: false, isToday: false, isCompleted: false, isInvalid: false, hasDate: false, displayDate: '' },
+      selectionStatus: { status: 'NOT_ANNOUNCED', isUpcoming: false, isToday: false, isCompleted: false, isInvalid: false, hasDate: false, displayDate: '' },
+      resultStatus: { status: 'NOT_PUBLISHED', isPublished: false, displayDate: '' },
+      timeline: [],
+      nextImportantEvent: null,
+      overallStageCode: RECRUITMENT_STAGES.APPLICATION_NOT_STARTED,
+      overallStageLabel: isEn ? 'Not Started' : 'தொடங்கவில்லை',
+      isInterviewApplicable: true
+    };
+  }
+
+  const openInput = notif.openingDate || notif.applicationStartDate || '';
+  const closeInput = notif.closingDate || notif.applicationEndDate || '';
+  const appStatus = calculateApplicationStatus(openInput, closeInput, todayObj, {
+    extendedClosingDate: notif.extendedClosingDate || notif.extendedLastDate || notif.revisedClosingDate || '',
+    isExtensionVerified: notif.isExtensionVerified,
+    extensionVerified: notif.extensionVerified,
+    corrigendumVerified: notif.corrigendumVerified,
+    lang
+  });
+
+  const examStages = extractExamStages(notif.examDate, notif);
+  const prelimsStatus = examStages.prelimsRaw
+    ? calculateExamStatus(examStages.prelimsRaw, todayObj, { lang })
+    : { status: 'NOT_ANNOUNCED', isUpcoming: false, isToday: false, isCompleted: false, isInvalid: false, hasDate: false, displayDate: '' };
+
+  let mainsStatus = null;
+  if (examStages.mainsRaw) {
+    mainsStatus = calculateExamStatus(examStages.mainsRaw, todayObj, { lang });
+  } else if (examStages.isMultiStage) {
+    mainsStatus = { status: 'NOT_ANNOUNCED', isUpcoming: false, isToday: false, isCompleted: false, isInvalid: false, hasDate: false, displayDate: '' };
+  } else {
+    mainsStatus = { status: 'NOT_APPLICABLE', isUpcoming: false, isToday: false, isCompleted: false, isInvalid: false, hasDate: false, displayDate: '' };
+  }
+
+  const isInterviewApplicable = notif.interviewApplicable !== false && notif.interviewNotApplicable !== true;
+  let interviewStatus = null;
+  if (!isInterviewApplicable) {
+    interviewStatus = {
+      code: 'NOT_APPLICABLE',
+      status: 'NOT_APPLICABLE',
+      isApplicable: false,
+      label: isEn ? '⚪ Interview: Not Applicable' : '⚪ நேர்காணல்: பொருந்தாது (Not Applicable)',
+      shortLabel: isEn ? 'Not Applicable' : 'பொருந்தாது',
+      displayDate: isEn ? 'Not Applicable' : 'பொருந்தாது',
+      countdown: '',
+      isUpcoming: false,
+      isToday: false,
+      isCompleted: false,
+      isInvalid: false,
+      hasDate: false,
+      tagColor: '#64748b',
+      tagBg: '#f8fafc',
+      tagBorder: '#e2e8f0'
+    };
+  } else {
+    const interviewCandidate = notif.interviewDate || notif.walkInDate || (isInterviewOrScheduleText(notif.examDate) ? notif.examDate : '');
+    interviewStatus = calculateInterviewStatus(interviewCandidate, todayObj, { lang });
+  }
+
+  const selectionDateInput = notif.documentVerificationDate || notif.dvDate || notif.selectionDate || notif.counsellingDate || '';
+  const selectionStatus = calculateSelectionStatus(selectionDateInput, todayObj, { lang });
+  const resultStatus = calculateResultStatus(notif, todayObj, { lang });
+
+  // Build Chronological Timeline Milestones
+  const timeline = [];
+
+  // 1. Application Open
+  const openComp = parseDateToComponents(openInput);
+  if (openComp) {
+    timeline.push({
+      stageKey: 'APPLICATION_START',
+      title: isEn ? 'Application Opens' : 'விண்ணப்பத் தொடக்கம்',
+      displayDate: openComp.displayDate,
+      epochDays: openComp.epochDays,
+      status: todayObj.epochDays < openComp.epochDays ? 'UPCOMING' : (todayObj.epochDays === openComp.epochDays ? 'TODAY' : 'COMPLETED'),
+      daysRemaining: Math.max(0, openComp.epochDays - todayObj.epochDays)
+    });
+  }
+
+  // 2. Application Close
+  const closeRaw = appStatus.hasExtendedDeadline && appStatus.effectiveClosingDate ? appStatus.effectiveClosingDate : closeInput;
+  const closeComp = parseDateToComponents(closeRaw);
+  if (closeComp) {
+    timeline.push({
+      stageKey: 'APPLICATION_DEADLINE',
+      title: isEn ? 'Application Deadline' : 'விண்ணப்பிக்க கடைசி தேதி',
+      displayDate: closeComp.displayDate,
+      epochDays: closeComp.epochDays,
+      status: appStatus.isOpen ? (appStatus.isToday ? 'TODAY' : 'UPCOMING') : 'COMPLETED',
+      daysRemaining: Math.max(0, closeComp.epochDays - todayObj.epochDays)
+    });
+  }
+
+  // 3. Prelims / Single Exam
+  if (prelimsStatus && prelimsStatus.earliestEpochDays && !prelimsStatus.isInvalid) {
+    timeline.push({
+      stageKey: examStages.isMultiStage ? 'PRELIMS_EXAM' : 'EXAM',
+      title: examStages.isMultiStage ? (isEn ? 'Preliminary Exam (Prelims)' : 'முதல்நிலைத் தேர்வு (Prelims)') : (isEn ? 'Written Examination' : 'எழுத்துத் தேர்வு'),
+      displayDate: prelimsStatus.displayDate,
+      epochDays: prelimsStatus.earliestEpochDays,
+      status: prelimsStatus.status,
+      daysRemaining: prelimsStatus.isUpcoming ? prelimsStatus.daysRemaining : 0
+    });
+  }
+
+  // 4. Mains Exam
+  if (mainsStatus && mainsStatus.earliestEpochDays && !mainsStatus.isInvalid) {
+    timeline.push({
+      stageKey: 'MAINS_EXAM',
+      title: isEn ? 'Main Examination (Mains)' : 'முதன்மைத் தேர்வு (Mains)',
+      displayDate: mainsStatus.displayDate,
+      epochDays: mainsStatus.earliestEpochDays,
+      status: mainsStatus.status,
+      daysRemaining: mainsStatus.isUpcoming ? mainsStatus.daysRemaining : 0
+    });
+  }
+
+  // 5. Interview
+  if (interviewStatus && interviewStatus.hasDate && interviewStatus.earliestEpochDays && isInterviewApplicable) {
+    timeline.push({
+      stageKey: 'INTERVIEW',
+      title: isEn ? 'Interview / Personality Test' : 'நேர்காணல் தேர்வு',
+      displayDate: interviewStatus.displayDate,
+      epochDays: interviewStatus.earliestEpochDays,
+      status: interviewStatus.status,
+      daysRemaining: interviewStatus.isUpcoming ? interviewStatus.daysRemaining : 0
+    });
+  }
+
+  // 6. DV / Selection
+  if (selectionStatus && selectionStatus.hasDate) {
+    const selComp = parseDateToComponents(selectionDateInput);
+    if (selComp) {
+      timeline.push({
+        stageKey: 'DOCUMENT_VERIFICATION',
+        title: isEn ? 'Document Verification' : 'சான்றிதழ் சரிபார்ப்பு',
+        displayDate: selectionStatus.displayDate,
+        epochDays: selComp.epochDays,
+        status: selectionStatus.status,
+        daysRemaining: selectionStatus.isUpcoming ? selectionStatus.daysRemaining : 0
+      });
+    }
+  }
+
+  // Sort timeline chronologically
+  timeline.sort((a, b) => a.epochDays - b.epochDays);
+
+  // Determine nextImportantEvent: earliest milestone where epochDays >= todayObj.epochDays
+  let nextImportantEvent = null;
+  const upcomingMilestones = timeline.filter(m => m.epochDays >= todayObj.epochDays && m.status !== 'COMPLETED');
+  if (upcomingMilestones.length > 0) {
+    const next = upcomingMilestones[0];
+    const daysRemaining = next.epochDays - todayObj.epochDays;
+    const isToday = daysRemaining === 0;
+    const badgeText = isToday
+      ? (isEn ? `🔔 Today's Event: ${next.title} (${next.displayDate})` : `🔔 இன்றைய நிகழ்வு: ${next.title} (${next.displayDate})`)
+      : (isEn
+        ? `⏳ Next Event: ${next.title} in ${daysRemaining} ${daysRemaining === 1 ? 'day' : 'days'} (${next.displayDate})`
+        : `⏳ அடுத்த முக்கிய நிகழ்வு: ${next.title} — ${next.displayDate} (இன்னும் ${daysRemaining} நாட்கள்)`);
+
+    nextImportantEvent = {
+      stageKey: next.stageKey,
+      title: next.title,
+      displayDate: next.displayDate,
+      epochDays: next.epochDays,
+      daysRemaining,
+      isToday,
+      badgeText
+    };
+  }
+
+  // Determine overallStageCode
+  let overallStageCode = RECRUITMENT_STAGES.APPLICATION_NOT_STARTED;
+  let overallStageLabel = isEn ? 'Application Not Started' : 'விண்ணப்பம் தொடங்கவில்லை';
+
+  if (notif.isCancelled || notif.status === 'cancelled') {
+    overallStageCode = RECRUITMENT_STAGES.RECRUITMENT_CANCELLED;
+    overallStageLabel = isEn ? 'Recruitment Cancelled' : 'அறிவிப்பு ரத்து செய்யப்பட்டது';
+  } else if (appStatus.isOpen && !appStatus.isExpired) {
+    overallStageCode = RECRUITMENT_STAGES.APPLICATION_OPEN;
+    overallStageLabel = isEn ? 'Application Open' : 'விண்ணப்பம் நடைபெறுகிறது';
+  } else if (appStatus.status === 'NOT_STARTED') {
+    overallStageCode = RECRUITMENT_STAGES.APPLICATION_NOT_STARTED;
+    overallStageLabel = isEn ? 'Application Not Started' : 'விண்ணப்பம் தொடங்கவில்லை';
+  } else if (appStatus.isExpired) {
+    // Application is closed. Where are we in the examination/interview cycle?
+    if (examStages.isMultiStage) {
+      if (prelimsStatus.isUpcoming || prelimsStatus.isToday) {
+        overallStageCode = RECRUITMENT_STAGES.PRELIMS_UPCOMING;
+        overallStageLabel = isEn ? 'Prelims Upcoming' : 'முதல்நிலைத் தேர்வு நடைபெற உள்ளது';
+      } else if (prelimsStatus.isCompleted && (mainsStatus.isUpcoming || mainsStatus.isToday)) {
+        overallStageCode = RECRUITMENT_STAGES.MAINS_UPCOMING;
+        overallStageLabel = isEn ? 'Mains Upcoming' : 'முதன்மைத் தேர்வு நடைபெற உள்ளது';
+      } else if (prelimsStatus.isCompleted && mainsStatus.isCompleted) {
+        if (isInterviewApplicable && (interviewStatus.isUpcoming || interviewStatus.isToday)) {
+          overallStageCode = RECRUITMENT_STAGES.INTERVIEW_UPCOMING;
+          overallStageLabel = isEn ? 'Interview Upcoming' : 'நேர்காணல் நடைபெற உள்ளது';
+        } else if (isInterviewApplicable && interviewStatus.isCompleted) {
+          overallStageCode = resultStatus.isPublished ? RECRUITMENT_STAGES.FINAL_SELECTION_COMPLETED : RECRUITMENT_STAGES.RESULT_AWAITED;
+          overallStageLabel = resultStatus.isPublished ? (isEn ? 'Final Selection Completed' : 'இறுதித் தேர்வு முடிந்தது') : (isEn ? 'Result Awaited' : 'முடிவுகள் எதிர்பார்க்கப்படுகிறது');
+        } else if (!isInterviewApplicable) {
+          overallStageCode = resultStatus.isPublished ? RECRUITMENT_STAGES.FINAL_SELECTION_COMPLETED : RECRUITMENT_STAGES.RESULT_AWAITED;
+          overallStageLabel = resultStatus.isPublished ? (isEn ? 'Final Selection Completed' : 'இறுதித் தேர்வு முடிந்தது') : (isEn ? 'Result Awaited' : 'முடிவுகள் எதிர்பார்க்கப்படுகிறது');
+        } else {
+          overallStageCode = RECRUITMENT_STAGES.MAINS_COMPLETED;
+          overallStageLabel = isEn ? 'Mains Completed' : 'முதன்மைத் தேர்வு முடிந்தது';
+        }
+      } else {
+        overallStageCode = RECRUITMENT_STAGES.APPLICATION_CLOSED;
+        overallStageLabel = isEn ? 'Application Closed' : 'விண்ணப்ப காலம் முடிந்தது';
+      }
+    } else {
+      // Single exam or no exam
+      if (prelimsStatus.isUpcoming || prelimsStatus.isToday) {
+        overallStageCode = RECRUITMENT_STAGES.PRELIMS_UPCOMING;
+        overallStageLabel = isEn ? 'Exam Upcoming' : 'தேர்வு நடைபெற உள்ளது';
+      } else if (isInterviewApplicable && (interviewStatus.isUpcoming || interviewStatus.isToday)) {
+        overallStageCode = RECRUITMENT_STAGES.INTERVIEW_UPCOMING;
+        overallStageLabel = isEn ? 'Interview Upcoming' : 'நேர்காணல் நடைபெற உள்ளது';
+      } else if (prelimsStatus.isCompleted) {
+        if (isInterviewApplicable && (interviewStatus.isUpcoming || interviewStatus.isToday)) {
+          overallStageCode = RECRUITMENT_STAGES.INTERVIEW_UPCOMING;
+          overallStageLabel = isEn ? 'Interview Upcoming' : 'நேர்காணல் நடைபெற உள்ளது';
+        } else if (selectionStatus.isUpcoming || selectionStatus.isToday) {
+          overallStageCode = RECRUITMENT_STAGES.DOCUMENT_VERIFICATION_UPCOMING;
+          overallStageLabel = isEn ? 'Doc Verification Upcoming' : 'சான்றிதழ் சரிபார்ப்பு நடைபெற உள்ளது';
+        } else if (resultStatus.isPublished) {
+          overallStageCode = RECRUITMENT_STAGES.FINAL_SELECTION_COMPLETED;
+          overallStageLabel = isEn ? 'Selection Completed' : 'தேர்வு முடிந்தது';
+        } else {
+          overallStageCode = RECRUITMENT_STAGES.RESULT_AWAITED;
+          overallStageLabel = isEn ? 'Result Awaited' : 'முடிவுகள் எதிர்பார்க்கப்படுகிறது';
+        }
+      } else {
+        overallStageCode = RECRUITMENT_STAGES.APPLICATION_CLOSED;
+        overallStageLabel = isEn ? 'Application Closed' : 'விண்ணப்ப காலம் முடிந்தது';
+      }
+    }
+  }
+
+  return {
+    examStages,
+    prelimsStatus,
+    mainsStatus,
+    interviewStatus,
+    selectionStatus,
+    resultStatus,
+    timeline,
+    nextImportantEvent,
+    overallStageCode,
+    overallStageLabel,
+    isInterviewApplicable
+  };
+}
+
+/**
  * Calculates independent verified Result Status.
  *
  * Status values:
@@ -1509,13 +2645,50 @@ export function evaluateNotificationDateConsistency(notif = {}, appStatus = {}, 
     requiresCtaBlock = true;
   }
 
+  // Multi-stage conflict: Mains exam date before Prelims exam date
+  const examStages = extractExamStages(notif.examDate, notif);
+  if (examStages.prelimsRaw && examStages.mainsRaw) {
+    const prelimsRange = parseAllDatesDetailed(examStages.prelimsRaw);
+    const mainsRange = parseAllDatesDetailed(examStages.mainsRaw);
+    if (prelimsRange.startDate && mainsRange.startDate && mainsRange.startDate.epochDays < prelimsRange.startDate.epochDays) {
+      issues.push('MAINS_BEFORE_PRELIMS');
+      warnings.push(
+        isEn
+          ? `⚠️ Admin Review Required: Main exam date (${mainsRange.startDate.displayDate}) is before Preliminary exam date (${prelimsRange.startDate.displayDate}).`
+          : `⚠️ Admin சரிபார்ப்பு தேவை: முதன்மைத் தேர்வு தேதி (${mainsRange.startDate.displayDate}) முதல்நிலைத் தேர்வுக்கு (${prelimsRange.startDate.displayDate}) முன் உள்ளது.`
+      );
+      requiresCtaBlock = true;
+    }
+  }
+
   // Core requirement: Application is OPEN while Exam is COMPLETED
-  if (appStatus.status === 'OPEN' && examStatus.status === 'COMPLETED') {
-    issues.push('APPLICATION_OPEN_EXAM_COMPLETED');
+  let isAnyExamCompleted = examStatus.status === 'COMPLETED';
+  if (examStages.prelimsRaw) {
+    const pRange = parseAllDatesDetailed(examStages.prelimsRaw);
+    if (pRange.endDate && pRange.endDate.epochDays < todayObj.epochDays) {
+      isAnyExamCompleted = true;
+    }
+  }
+
+  if (appStatus.status === 'OPEN' && isAnyExamCompleted) {
+    if (!issues.includes('APPLICATION_OPEN_EXAM_COMPLETED')) {
+      issues.push('APPLICATION_OPEN_EXAM_COMPLETED');
+      warnings.push(
+        isEn
+          ? '⚠️ Admin Review Required: Application appears open while exam is marked completed.'
+          : '⚠️ Admin சரிபார்ப்பு தேவை: விண்ணப்பம் திறந்த நிலையில் இருந்தாலும் தேர்வு முடிந்ததாகக் காட்டுகிறது. தேதி முரண்பாடு இருக்கலாம்.'
+      );
+      requiresCtaBlock = true;
+    }
+  }
+
+  // Third-party source date vs official source conflict
+  if ((notif.sourceType === 'third_party' || notif.isThirdParty === true) && (notif.isOfficialSourceVerified === false || notif.isVerified === false)) {
+    issues.push('THIRD_PARTY_DATE_UNVERIFIED');
     warnings.push(
       isEn
-        ? '⚠️ Admin Review Required: Application appears open while exam is marked completed.'
-        : '⚠️ Admin சரிபார்ப்பு தேவை: விண்ணப்பம் திறந்த நிலையில் இருந்தாலும் தேர்வு முடிந்ததாகக் காட்டுகிறது. தேதி முரண்பாடு இருக்கலாம்.'
+        ? '⚠️ Third-party date source unverified by official notification — Admin Review Required.'
+        : '⚠️ அதிகாரப்பூர்வ அறிவிப்பு இல்லாமல் மூன்றாம் தரப்பு தேதி உள்ளிடப்பட்டுள்ளது. Admin சரிபார்ப்பு தேவை.'
     );
     requiresCtaBlock = true;
   }
@@ -1659,8 +2832,14 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
     lang
   });
   const examStatus = calculateExamStatus(notif.examDate, todayObj, { lang });
+  const interviewCandidate = notif.interviewDate || notif.walkInDate || (isInterviewOrScheduleText(notif.examDate) ? notif.examDate : '');
+  const interviewStatus = calculateInterviewStatus(interviewCandidate, todayObj, { lang });
+  const selectionStatus = calculateSelectionStatus(notif.documentVerificationDate || notif.dvDate || notif.selectionDate || notif.counsellingDate, todayObj, { lang });
   const resultStatus = calculateResultStatus(notif, todayObj, { lang });
   const dateConsistency = evaluateNotificationDateConsistency(notif, appStatus, examStatus, resultStatus, todayObj, { lang });
+
+  const active = isNotificationActive(notif, todayObj);
+  const isExpired = !active;
 
   const formattedOpeningDate = formatDisplayDate(openInput, { lang });
   const effectiveClosingRaw = appStatus.hasExtendedDeadline && appStatus.effectiveClosingDate
@@ -1669,21 +2848,93 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
   const formattedClosingDate = formatDisplayDate(effectiveClosingRaw, { lang });
   const formattedOriginalClosingDate = formatDisplayDate(notif.originalClosingDate || closeInput, { lang });
   const formattedExamDate = formatDisplayDate(notif.examDate, { lang });
+  const formattedInterviewDate = formatDisplayDate(notif.interviewDate || notif.walkInDate, { lang });
+  const formattedDvDate = formatDisplayDate(notif.documentVerificationDate || notif.dvDate || notif.selectionDate || notif.counsellingDate, { lang });
   const formattedNotificationDate = formatDisplayDate(notif.notificationDate || openInput, { lang });
 
   const hasValidApplyUrl = isSafeHttpUrl(notif.applyLink);
-  const canShowApplyCta = Boolean(appStatus.isOpen && hasValidApplyUrl && !dateConsistency.requiresCtaBlock);
+  const isQuarantined = Boolean(
+    notif.isQuarantined ||
+    notif.quarantined ||
+    notif.status === 'quarantined' ||
+    notif.ingestionStatus === 'quarantined' ||
+    notif.trustStatus === 'quarantined'
+  );
+  const isPublished = Boolean(
+    notif.published !== false &&
+    notif.isPublished !== false &&
+    notif.status !== 'draft' &&
+    notif.ingestionStatus !== 'pending_review' &&
+    notif.status !== 'rejected'
+  );
+  const isGenericNoticeUrl = isGenericRootHomepage(notif.detailsLink);
+  const isGenericApplyUrl = isGenericRootHomepage(notif.applyLink);
+
+  const hasSourceIntegrityIssue = Boolean(
+    notif.hasSourceIntegrityIssue === true ||
+    notif.sourceIntegrityVerified !== true ||
+    notif.needsOfficialSource === true ||
+    notif.status === 'under_review' ||
+    notif.evidenceClassification === 'NEEDS_OFFICIAL_SOURCE' ||
+    notif.evidenceClassification === 'NEEDS_REVIEW_DISABLED' ||
+    notif.evidenceClassification === 'OFFICIAL_CALENDAR_ONLY' ||
+    isGenericNoticeUrl ||
+    isGenericApplyUrl
+  );
+
+  const hasValidApplicationDates = Boolean(
+    appStatus.status !== 'INVALID' &&
+    !appStatus.isInvalid &&
+    notif.closingDate &&
+    String(notif.closingDate).trim().length > 0 &&
+    !dateConsistency.issues.includes('MISSING_CLOSING_DATE') &&
+    !dateConsistency.issues.includes('INVALID_CLOSING_DATE')
+  );
+
+  const canShowApplyCta = Boolean(
+    appStatus.isOpen &&
+    !appStatus.isExpired &&
+    !isQuarantined &&
+    isPublished &&
+    !hasSourceIntegrityIssue &&
+    notif.sourceIntegrityVerified === true &&
+    notif.evidenceClassification !== 'OFFICIAL_CALENDAR_ONLY' &&
+    hasValidApplyUrl &&
+    !isGenericApplyUrl &&
+    hasValidApplicationDates &&
+    !dateConsistency.requiresCtaBlock
+  );
 
   let applyCtaState = 'UNAVAILABLE';
-  if (canShowApplyCta) {
+  if (isQuarantined) {
+    applyCtaState = 'QUARANTINED_DISABLED';
+  } else if (canShowApplyCta) {
     applyCtaState = 'ACTIVE';
-  } else if (appStatus.isOpen && dateConsistency.requiresCtaBlock) {
-    applyCtaState = 'NEEDS_REVIEW_DISABLED';
-  } else if (appStatus.status === 'CLOSED') {
+  } else if (appStatus.isExpired || appStatus.status === 'CLOSED') {
     applyCtaState = 'CLOSED';
+  } else if (dateConsistency.requiresCtaBlock || appStatus.isInvalid || hasSourceIntegrityIssue || !hasValidApplicationDates) {
+    applyCtaState = 'NEEDS_REVIEW_DISABLED';
   } else if (appStatus.status === 'NOT_STARTED') {
     applyCtaState = 'NOT_STARTED';
   }
+
+  const isClosingSoon = Boolean(
+    appStatus.isOpen &&
+    !appStatus.isExpired &&
+    appStatus.daysRemaining !== null &&
+    appStatus.daysRemaining <= 5 &&
+    appStatus.daysRemaining >= 0
+  );
+  const needsDateVerification = Boolean(
+    dateConsistency.needsAdminReview ||
+    appStatus.isInvalid ||
+    examStatus.isInvalid ||
+    interviewStatus.isInvalid ||
+    examStatus.isFutureMonth ||
+    examStatus.isDatePending ||
+    interviewStatus.isDatePending ||
+    (appStatus.hasMissingDeadline && !active)
+  );
 
   // Preserve original source dates & audit history without mutating source inputs
   const firstPrevClosing = Array.isArray(notif.revisionHistory) && notif.revisionHistory.length > 0
@@ -1692,20 +2943,30 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
   const originalDates = {
     openingDate: notif.originalOpeningDate || openInput || '',
     closingDate: notif.originalClosingDate || firstPrevClosing || closeInput || '',
-    examDate: notif.originalExamDate || notif.examDate || ''
+    examDate: notif.originalExamDate || notif.examDate || '',
+    interviewDate: notif.originalInterviewDate || notif.interviewDate || notif.walkInDate || ''
   };
+
+  const stageTimeline = calculateRecruitmentStageTimeline(notif, todayObj, { lang });
 
   return {
     ...notif,
     lang,
     applicationStatus: appStatus.status,
     examStatusCode: examStatus.status,
+    interviewStatusCode: interviewStatus.status,
     resultStatusCode: resultStatus.status,
     appStatus,
     examStatus,
+    interviewStatus: stageTimeline.interviewStatus,
+    selectionStatus,
     resultStatus,
     dateConsistency,
     needsAdminReview: dateConsistency.needsAdminReview,
+    needsDateVerification,
+    hasSourceIntegrityIssue,
+    isGenericNoticeUrl,
+    isGenericApplyUrl,
     canShowApplyCta,
     applyCtaState,
     hasVerifiedReferenceApplyUrl: hasValidApplyUrl && appStatus.status === 'CLOSED',
@@ -1715,12 +2976,48 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
     formattedClosingDate,
     formattedOriginalClosingDate,
     formattedExamDate,
+    formattedInterviewDate,
+    formattedDvDate,
     formattedNotificationDate,
-    // Classification flags
-    isActiveApplication: appStatus.isOpen,
-    isUpcomingExam: examStatus.isUpcoming || examStatus.isToday,
+    // Stage-based Timeline and Milestones
+    stageTimeline,
+    stages: stageTimeline.examStages,
+    timeline: stageTimeline.timeline,
+    nextImportantEvent: stageTimeline.nextImportantEvent,
+    overallStageCode: stageTimeline.overallStageCode,
+    overallStageLabel: stageTimeline.overallStageLabel,
+    prelimsStatus: stageTimeline.prelimsStatus,
+    mainsStatus: stageTimeline.mainsStatus,
+    isMultiStage: stageTimeline.examStages.isMultiStage,
+    isInterviewApplicable: stageTimeline.isInterviewApplicable,
+    // Unified Lifecycle and Classification flags
+    isNotificationActive: active,
+    isExpired,
+    isClosingSoon: Boolean(
+      isClosingSoon &&
+      notif.sourceIntegrityVerified === true &&
+      notif.applicationDatesVerified === true &&
+      !hasSourceIntegrityIssue
+    ),
+    isActiveApplication: Boolean(
+      appStatus.isOpen === true &&
+      appStatus.isExpired !== true &&
+      notif.sourceIntegrityVerified === true &&
+      notif.applicationDatesVerified === true &&
+      notif.hasSourceIntegrityIssue !== true &&
+      !hasSourceIntegrityIssue &&
+      notif.evidenceClassification !== 'NEEDS_OFFICIAL_SOURCE' &&
+      notif.evidenceClassification !== 'NEEDS_REVIEW_DISABLED' &&
+      notif.evidenceClassification !== 'OFFICIAL_CALENDAR_ONLY' &&
+      hasValidApplicationDates &&
+      Boolean(notif.openingDate && String(notif.openingDate).trim().length > 0) &&
+      Boolean(notif.closingDate && String(notif.closingDate).trim().length > 0)
+    ),
+    isUpcomingExam: examStatus.isUpcoming || examStatus.isToday || Boolean(stageTimeline.mainsStatus && (stageTimeline.mainsStatus.isUpcoming || stageTimeline.mainsStatus.isToday)),
+    isUpcomingInterview: Boolean((stageTimeline.interviewStatus?.isUpcoming || stageTimeline.interviewStatus?.isToday) && stageTimeline.isInterviewApplicable),
     isApplicationClosed: appStatus.isExpired,
     isExamCompleted: examStatus.isCompleted,
+    isInterviewCompleted: Boolean(stageTimeline.interviewStatus?.isCompleted),
     isResultPublished: resultStatus.isPublished
   };
 }

@@ -13,7 +13,7 @@ import {
   computeContentHash
 } from './deduplicationHelper.js';
 import { extractSnapshotValues } from './corrigendumHelper.js';
-import { generateJobId } from './ingestionLockHelper.js';
+import { generateJobId, recoverStaleIngestionJobs } from './ingestionLockHelper.js';
 import {
   runAllIngestionJobs,
   getIngestionStatus,
@@ -144,13 +144,20 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
     }
 
     if (status === 'active' || status === 'active_app' || status === 'open') {
-      processedList = processedList.filter((n) => n.appStatus.isOpen);
+      processedList = processedList.filter((n) => n.appStatus.isOpen && !n.appStatus.isExpired);
     } else if (status === 'upcoming_exams' || status === 'upcoming') {
       processedList = processedList.filter((n) => n.examStatus.isUpcoming || n.examStatus.isToday);
-    } else if (status === 'expired' || status === 'app_closed') {
-      processedList = processedList.filter((n) => n.appStatus.isExpired);
+    } else if (status === 'upcoming_interviews' || status === 'interviews') {
+      processedList = processedList.filter((n) => n.interviewStatus?.isUpcoming || n.interviewStatus?.isToday);
+    } else if (status === 'closing_soon') {
+      processedList = processedList.filter((n) => n.isClosingSoon);
+    } else if (status === 'expired' || status === 'app_closed' || status === 'archived') {
+      processedList = processedList.filter((n) => !n.isNotificationActive || n.appStatus.isExpired);
     } else if (status === 'exam_completed') {
       processedList = processedList.filter((n) => n.examStatus.isCompleted);
+    } else if (req.query.includeExpired !== 'true') {
+      // By default for public feed, show ONLY current active notifications (no past 2015-2018 leaks)
+      processedList = processedList.filter((n) => n.isNotificationActive);
     }
 
     processedList.sort((a, b) => {
@@ -270,6 +277,10 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
   });
 
   // 6. Trigger Automated Ingestion Job (Admin OR valid X-Ingestion-Secret)
+  // Supports decoupled lifecycle:
+  // - Enqueue Only: ?enqueueOnly=true or ?action=enqueue (creates/coalesces job)
+  // - Worker Execution: POST /api/notifications/worker-tick or ?action=work (processes bounded batch)
+  // - Synchronous Run: default (processes with optional ?maxSources limit)
   app.post('/api/notifications/ingest-job', async (req, res) => {
     try {
       const auth = resolveAuthContext(req);
@@ -283,11 +294,77 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         });
       }
 
-      const { sourceKey, dryRun, enqueueOnly, maxSources } = req.query || {};
+      const { sourceKey, dryRun, enqueueOnly, action, maxSources, batchSize } = req.query || {};
 
-      // Pure durable enqueue mode (creates/coalesces DB job without running detached background promises)
-      if (enqueueOnly === 'true' && IngestionJob) {
-        const existingPending = await IngestionJob.findOne({ status: { $in: ['pending', 'running'] } }).lean();
+      // Route 6A: Worker processing action (?action=work or ?action=worker_tick)
+      if (action === 'work' || action === 'worker_tick') {
+        const parsedBatch = parseInt(String(batchSize || maxSources || '3'), 10);
+        const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
+
+        // Auto-recover crashed/stale jobs whose lease expired
+        let recoveredInfo = { recoveredCount: 0 };
+        if (IngestionJob) {
+          recoveredInfo = await recoverStaleIngestionJobs(IngestionJob, { maxAttempts: 3 });
+        }
+
+        // Check if there are pending jobs to process
+        let pendingJob = null;
+        if (IngestionJob) {
+          pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
+            .sort({ createdAt: 1 })
+            .lean();
+        }
+
+        if (!pendingJob && IngestionJob) {
+          return res.json({
+            success: true,
+            status: 'idle',
+            message: 'No pending ingestion jobs in queue.',
+            recoveredCount: recoveredInfo.recoveredCount
+          });
+        }
+
+        const summary = await ingestionRunner(Notification, {
+          sourceKey,
+          dryRun: dryRun === 'true',
+          maxSources: batchLimit,
+          triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
+          env,
+          models: {
+            IngestionJob,
+            IngestionLock,
+            IngestionSourceHealth,
+            IngestionRunLog,
+            mongooseConnection
+          }
+        });
+
+        const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
+        const remainingSources = Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+
+        return res.json({
+          success: true,
+          status: isCompleted ? summary.status : 'in_progress',
+          jobId: summary.jobId,
+          runId: summary.runId,
+          sourcesProcessedThisTick: summary.sourcesAttempted,
+          remainingSources,
+          isCompleted,
+          recoveredCount: recoveredInfo.recoveredCount,
+          summary
+        });
+      }
+
+      // Route 6B: Pure durable enqueue mode (creates/coalesces DB job without running detached background promises)
+      if (enqueueOnly === 'true' || action === 'enqueue') {
+        if (!IngestionJob) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_UNAVAILABLE',
+            message: 'Durable queue model is not initialized.'
+          });
+        }
+        const existingPending = await IngestionJob.findOne({ status: { $in: ['pending', 'running', 'retry_pending'] } }).lean();
         if (existingPending) {
           return res.status(202).json({
             success: true,
@@ -361,7 +438,13 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           success: false,
           error: 'CONFLICT',
           code: 'INGESTION_IN_PROGRESS',
-          message: 'An automated ingestion job already holds the distributed lock. Please wait for it to finish.'
+          message: 'An automated ingestion job already holds the distributed lock. Please wait for it to finish.',
+          activeJobDetails: {
+            reason: err.reason || 'LOCK_HELD',
+            startedAt: err.startedAt || null,
+            leaseExpiresAt: err.existingExpiresAt || null,
+            ownerRunId: err.existingOwnerRunId || null
+          }
         });
       }
       if (err.code === 'FENCING_OWNERSHIP_LOST') {
@@ -372,12 +455,128 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           message: 'Worker lease expired or was fenced out by a newer job.'
         });
       }
+      if (err.code === 'DATA_CONFLICT') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'DATA_CONFLICT',
+          message: err.message || 'A data state conflict occurred during ingestion.'
+        });
+      }
       console.error('Ingestion job error:', err.message);
-      res.status(500).json({ success: false, error: 'INGESTION_ERROR' });
+      res.status(500).json({ success: false, error: 'INGESTION_ERROR', message: err.message });
     }
   });
 
-  // 7. Fetch Pending Review Notifications (Admin Only)
+  // 6B. Dedicated Background Worker Consumer Endpoint
+  // Decoupled from Enqueue: Picks up oldest pending job, processes a bounded batch (default: 3 sources),
+  // persists progress checkpoints, and returns status: idle | in_progress | completed
+  app.post(['/api/notifications/worker-tick', '/api/notifications/ingest-worker'], async (req, res) => {
+    try {
+      const auth = resolveAuthContext(req);
+      const isSecretValid = verifyIngestionSecretHeader(req, env);
+
+      if (!auth.isAdmin && !isSecretValid) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'Admin authorization or valid X-Ingestion-Secret header is required to run the worker.'
+        });
+      }
+
+      const { maxSources, batchSize, dryRun } = req.query || {};
+      const parsedBatch = parseInt(String(batchSize || maxSources || '3'), 10);
+      const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
+
+      // 1. Crash recovery: auto-recover stale/crashed jobs if lease expired
+      let recoveredInfo = { recoveredCount: 0 };
+      if (IngestionJob) {
+        recoveredInfo = await recoverStaleIngestionJobs(IngestionJob, { maxAttempts: 3 });
+      }
+
+      // 2. Check if there are pending jobs to process
+      let pendingJob = null;
+      if (IngestionJob) {
+        pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
+          .sort({ createdAt: 1 })
+          .lean();
+      }
+
+      if (!pendingJob && IngestionJob) {
+        return res.json({
+          success: true,
+          status: 'idle',
+          message: 'No pending ingestion jobs in queue.',
+          recoveredCount: recoveredInfo.recoveredCount
+        });
+      }
+
+      // 3. Execute bounded worker tick using ingestionRunner
+      const summary = await ingestionRunner(Notification, {
+        dryRun: dryRun === 'true',
+        maxSources: batchLimit,
+        triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
+        env,
+        models: {
+          IngestionJob,
+          IngestionLock,
+          IngestionSourceHealth,
+          IngestionRunLog,
+          mongooseConnection
+        }
+      });
+
+      const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
+      const remainingSources = Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+
+      return res.json({
+        success: true,
+        status: isCompleted ? summary.status : 'in_progress',
+        jobId: summary.jobId,
+        runId: summary.runId,
+        sourcesProcessedThisTick: summary.sourcesAttempted,
+        remainingSources,
+        isCompleted,
+        recoveredCount: recoveredInfo.recoveredCount,
+        summary
+      });
+    } catch (err) {
+      if (err.code === 'CONCURRENT_INGESTION_LOCKED' || err.message === 'INGESTION_IN_PROGRESS') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'INGESTION_IN_PROGRESS',
+          message: 'An automated ingestion worker already holds the distributed lock. Please wait for it to finish.',
+          activeJobDetails: {
+            reason: err.reason || 'LOCK_HELD',
+            startedAt: err.startedAt || null,
+            leaseExpiresAt: err.existingExpiresAt || null,
+            ownerRunId: err.existingOwnerRunId || null
+          }
+        });
+      }
+      if (err.code === 'FENCING_OWNERSHIP_LOST') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'FENCING_OWNERSHIP_LOST',
+          message: 'Worker lease expired or was fenced out by a newer worker.'
+        });
+      }
+      if (err.code === 'DATA_CONFLICT') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'DATA_CONFLICT',
+          message: err.message || 'A data state conflict occurred during worker execution.'
+        });
+      }
+      console.error('Worker tick error:', err.message);
+      res.status(500).json({ success: false, error: 'WORKER_ERROR', message: err.message });
+    }
+  });
+
+  // 7. Fetch Pending Review Notifications (Admin Only — partitioned by current, expired, missing date)
   app.get('/api/notifications/pending', async (req, res) => {
     try {
       const auth = resolveAuthContext(req);
@@ -391,7 +590,30 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         .lean();
 
       const enriched = (pendingList || []).map((item) => enrichNotificationWithDateStatus(item, today));
-      res.json({ success: true, count: enriched.length, notifications: enriched });
+
+      const type = String(req.query?.type || 'all').toLowerCase();
+      let filtered = enriched;
+      if (type === 'current') {
+        filtered = enriched.filter((n) => n.isNotificationActive && !n.needsDateVerification);
+      } else if (type === 'expired' || type === 'expired_pending') {
+        filtered = enriched.filter((n) => !n.isNotificationActive);
+      } else if (type === 'missing_date') {
+        filtered = enriched.filter((n) => n.needsDateVerification);
+      }
+
+      const currentCount = enriched.filter((n) => n.isNotificationActive && !n.needsDateVerification).length;
+      const expiredCount = enriched.filter((n) => !n.isNotificationActive).length;
+      const missingDateCount = enriched.filter((n) => n.needsDateVerification).length;
+
+      res.json({
+        success: true,
+        count: filtered.length,
+        totalPending: enriched.length,
+        currentCount,
+        expiredCount,
+        missingDateCount,
+        notifications: filtered
+      });
     } catch (err) {
       res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
     }
@@ -739,4 +961,3 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
     }
   });
 }
-

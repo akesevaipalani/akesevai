@@ -366,6 +366,8 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
 
   if (noticeUrlCheck.valid && applyUrlCheck.valid) {
     sourceAuthPoints += 20;
+  } else if (noticeUrlCheck.valid && applyUrlCheck.reviewOnlyVendor) {
+    sourceAuthPoints += 15; // Legitimate official source using sanctioned third-party application vendor
   }
 
   // 2. Title & Content Hygiene (Max 25)
@@ -523,4 +525,3 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
     }
   };
 }
-

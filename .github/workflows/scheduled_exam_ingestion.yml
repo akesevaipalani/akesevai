@@ -6,6 +6,11 @@ on:
     - cron: '0 */4 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
+# Concurrency Guard: Strictly prevents duplicate concurrent workflow executions
+concurrency:
+  group: scheduled-exam-ingestion
+  cancel-in-progress: false
+
 jobs:
   ingest-exam-notifications:
     name: Crawl & Ingest Official Govt Exam Notifications
@@ -13,36 +18,134 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Trigger Ingestion API Endpoint
+      - name: Trigger Decoupled Ingestion & Run Worker Batches
         env:
           INGESTION_SECRET: ${{ secrets.INGESTION_SECRET_KEY || secrets.INGESTION_SECRET }}
+          BASE_URL: "https://akesevai.onrender.com"
         run: |
-          echo "Starting AK E-SEVAI All-India Exam Ingestion Job..."
+          echo "================================================================"
+          echo "🚀 Starting AK E-SEVAI Decoupled Queue + Worker Ingestion Job..."
+          echo "================================================================"
 
-          # Fail-closed guard: Refuse execution if INGESTION_SECRET_KEY is not configured
+          # 1. Fail-closed guard: Refuse execution if INGESTION_SECRET_KEY is not configured
           if [ -z "$INGESTION_SECRET" ]; then
             echo "::error::INGESTION_SECRET_KEY is missing or empty in GitHub Secrets. Please ensure INGESTION_SECRET_KEY is defined in Repository Settings -> Secrets and variables -> Actions. Request aborted."
             exit 1
           fi
 
-          # Curl with connection timeout (15s), maximum execution time (180s), and controlled retries for cold-boot/network blips
-          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST \
-            "https://akesevai.onrender.com/api/notifications/ingest-job" \
-            --connect-timeout 15 \
-            --max-time 180 \
+          # 2. STEP 1: Enqueue Job Idempotently (Decoupled Job Creation)
+          echo "📥 [Stage 1/2]: Enqueueing durable ingestion job on backend..."
+          ENQUEUE_HTTP_STATUS=$(curl -s -o enqueue_response.json -w "%{http_code}" -X POST \
+            "$BASE_URL/api/notifications/ingest-job?enqueueOnly=true" \
+            --connect-timeout 20 \
+            --max-time 60 \
             --retry 3 \
             --retry-delay 10 \
             --retry-connrefused \
             -H "Content-Type: application/json" \
             -H "x-ingestion-secret: $INGESTION_SECRET")
 
-          echo "Server responded with HTTP status: $HTTP_STATUS"
-          # Display response body safely (sanitized JSON without printing request headers)
-          cat response.json || true
+          echo "Enqueue HTTP Status: $ENQUEUE_HTTP_STATUS"
+          cat enqueue_response.json || true
           echo ""
 
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "::error::Ingestion failed with HTTP status $HTTP_STATUS"
+          # Handle Stage 1 response codes
+          if [ "$ENQUEUE_HTTP_STATUS" -eq 200 ] || [ "$ENQUEUE_HTTP_STATUS" -eq 202 ]; then
+            echo "✅ Ingestion job enqueued or coalesced into existing active job."
+          elif [ "$ENQUEUE_HTTP_STATUS" -eq 409 ]; then
+            ENQUEUE_CODE=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('enqueue_response.json', 'utf8')); console.log(d.code || d.error || ''); } catch(e) { console.log(''); }")
+            if [ "$ENQUEUE_CODE" = "INGESTION_IN_PROGRESS" ]; then
+              echo "ℹ️ Ingestion job already actively running with lock held. Proceeding to consumer loop..."
+            else
+              echo "::error::Job enqueue encountered non-resumable conflict: $ENQUEUE_CODE"
+              exit 1
+            fi
+          elif [ "$ENQUEUE_HTTP_STATUS" -eq 401 ] || [ "$ENQUEUE_HTTP_STATUS" -eq 403 ]; then
+            echo "::error::Authentication failed during enqueue (HTTP $ENQUEUE_HTTP_STATUS). Please verify INGESTION_SECRET_KEY secret."
+            exit 1
+          elif [ "$ENQUEUE_HTTP_STATUS" -eq 404 ]; then
+            echo "::error::Ingestion endpoint not found (HTTP 404). Check BASE_URL and routing."
+            exit 1
+          else
+            echo "::error::Job enqueue failed with HTTP status $ENQUEUE_HTTP_STATUS"
             exit 1
           fi
-          echo "✅ All-India Exam Notifications Ingestion Succeeded!"
+
+          # 3. STEP 2: Worker Batch Consumer Loop (Bounded batches of 3 sources each)
+          # Compliant with Render Free-tier 100s proxy timeout & Cloudflare limits
+          echo "⚙️ [Stage 2/2]: Starting consumer worker batch execution loop..."
+          MAX_BATCH_ITERATIONS=10
+          JOB_FINISHED=false
+          CONSECUTIVE_LOCK_WAIT_COUNT=0
+
+          for i in $(seq 1 $MAX_BATCH_ITERATIONS); do
+            echo "--- Worker Batch $i of $MAX_BATCH_ITERATIONS (max 3 sources per tick) ---"
+
+            WORKER_HTTP_STATUS=$(curl -s -o worker_response.json -w "%{http_code}" -X POST \
+              "$BASE_URL/api/notifications/worker-tick?maxSources=3" \
+              --connect-timeout 20 \
+              --max-time 90 \
+              -H "Content-Type: application/json" \
+              -H "x-ingestion-secret: $INGESTION_SECRET")
+
+            echo "Worker HTTP Status: $WORKER_HTTP_STATUS"
+            cat worker_response.json || true
+            echo ""
+
+            # Check if HTTP 409 Conflict
+            if [ "$WORKER_HTTP_STATUS" -eq 409 ]; then
+              WORKER_CODE=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('worker_response.json', 'utf8')); console.log(d.code || d.error || ''); } catch(e) { console.log(''); }")
+              if [ "$WORKER_CODE" = "INGESTION_IN_PROGRESS" ]; then
+                CONSECUTIVE_LOCK_WAIT_COUNT=$((CONSECUTIVE_LOCK_WAIT_COUNT + 1))
+                echo "⚠️ Distributed lock is currently held by active worker (code: INGESTION_IN_PROGRESS). Sleeping 10s before retry..."
+                sleep 10
+                continue
+              else
+                echo "::error::Worker batch $i encountered non-resumable conflict: $WORKER_CODE"
+                exit 1
+              fi
+            fi
+
+            # Check authentication / client / server errors
+            if [ "$WORKER_HTTP_STATUS" -eq 401 ] || [ "$WORKER_HTTP_STATUS" -eq 403 ]; then
+              echo "::error::Worker authentication failed with HTTP $WORKER_HTTP_STATUS. Please verify INGESTION_SECRET_KEY secret."
+              exit 1
+            elif [ "$WORKER_HTTP_STATUS" -eq 404 ]; then
+              echo "::error::Worker endpoint not found (HTTP 404). Check BASE_URL and routing."
+              exit 1
+            elif [ "$WORKER_HTTP_STATUS" -ne 200 ]; then
+              echo "::error::Worker batch $i failed with HTTP status $WORKER_HTTP_STATUS"
+              exit 1
+            fi
+
+            # Reset consecutive lock wait count on successful 200 response
+            CONSECUTIVE_LOCK_WAIT_COUNT=0
+
+            # Check status from JSON response
+            STATUS=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('worker_response.json', 'utf8')); console.log(d.status || ''); } catch(e) { console.log(''); }")
+            echo "Current Job Status: $STATUS"
+
+            if [ "$STATUS" = "completed" ] || [ "$STATUS" = "completed_with_errors" ]; then
+              echo "🎉 Ingestion Job successfully completed all queued sources!"
+              JOB_FINISHED=true
+              break
+            elif [ "$STATUS" = "idle" ]; then
+              echo "✅ No pending jobs left in queue. Worker is idle."
+              JOB_FINISHED=true
+              break
+            elif [ "$STATUS" = "failed" ]; then
+              echo "::error::Ingestion job terminated in FAILED status."
+              exit 1
+            else
+              echo "⏳ Ingestion job in-progress. Sleeping 4 seconds before next bounded batch..."
+              sleep 4
+            fi
+          done
+
+          if [ "$JOB_FINISHED" = "true" ]; then
+            echo "✅ Automated All-India Exam Notifications Ingestion Succeeded!"
+          elif [ "$CONSECUTIVE_LOCK_WAIT_COUNT" -eq "$MAX_BATCH_ITERATIONS" ]; then
+            echo "ℹ️ Ingestion is actively running on another worker/container across all ticks. Distributed lock respected (idempotent skip)."
+          else
+            echo "⚠️ Completed $MAX_BATCH_ITERATIONS batches. Any remaining sources will resume safely in next scheduled tick."
+          fi
