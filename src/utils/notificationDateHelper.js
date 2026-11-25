@@ -2865,6 +2865,7 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
     notif.isPublished !== false &&
     notif.status !== 'draft' &&
     notif.ingestionStatus !== 'pending_review' &&
+    notif.ingestionStatus !== 'rejected' &&
     notif.status !== 'rejected'
   );
   const isGenericNoticeUrl = isGenericRootHomepage(notif.detailsLink);
@@ -2874,36 +2875,57 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
     notif.hasSourceIntegrityIssue === true ||
     notif.sourceIntegrityVerified !== true ||
     notif.needsOfficialSource === true ||
+    notif.isThirdParty === true ||
+    notif.sourceType === 'third_party' ||
+    notif.isHistoricalCycle === true ||
     notif.status === 'under_review' ||
     notif.evidenceClassification === 'NEEDS_OFFICIAL_SOURCE' ||
     notif.evidenceClassification === 'NEEDS_REVIEW_DISABLED' ||
     notif.evidenceClassification === 'OFFICIAL_CALENDAR_ONLY' ||
+    notif.evidenceClassification === 'OLD_RECRUITMENT_CYCLE' ||
+    notif.evidenceClassification === 'HISTORICAL_CYCLE' ||
     isGenericNoticeUrl ||
     isGenericApplyUrl
   );
 
+  const hasOpeningDate = Boolean(openInput && String(openInput).trim().length > 0);
+  const hasClosingDate = Boolean(closeInput && String(closeInput).trim().length > 0);
   const hasValidApplicationDates = Boolean(
     appStatus.status !== 'INVALID' &&
     !appStatus.isInvalid &&
-    notif.closingDate &&
-    String(notif.closingDate).trim().length > 0 &&
+    hasOpeningDate &&
+    hasClosingDate &&
+    !dateConsistency.issues.includes('MISSING_OPENING_DATE') &&
+    !dateConsistency.issues.includes('INVALID_OPENING_DATE') &&
     !dateConsistency.issues.includes('MISSING_CLOSING_DATE') &&
-    !dateConsistency.issues.includes('INVALID_CLOSING_DATE')
+    !dateConsistency.issues.includes('INVALID_CLOSING_DATE') &&
+    !dateConsistency.issues.includes('CLOSING_BEFORE_OPENING')
   );
 
-  const canShowApplyCta = Boolean(
-    appStatus.isOpen &&
-    !appStatus.isExpired &&
+  // Unified Active Application & Apply CTA eligibility predicate (single source of truth)
+  const isActiveApplication = Boolean(
+    appStatus.isOpen === true &&
+    appStatus.isExpired !== true &&
     !isQuarantined &&
     isPublished &&
-    !hasSourceIntegrityIssue &&
+    notif.isVerified !== false &&
+    notif.isThirdParty !== true &&
+    notif.sourceType !== 'third_party' &&
     notif.sourceIntegrityVerified === true &&
-    notif.evidenceClassification !== 'OFFICIAL_CALENDAR_ONLY' &&
+    notif.applicationDatesVerified === true &&
+    notif.hasSourceIntegrityIssue !== true &&
+    !hasSourceIntegrityIssue &&
     hasValidApplyUrl &&
     !isGenericApplyUrl &&
-    hasValidApplicationDates &&
-    !dateConsistency.requiresCtaBlock
+    !dateConsistency.requiresCtaBlock &&
+    notif.evidenceClassification !== 'NEEDS_OFFICIAL_SOURCE' &&
+    notif.evidenceClassification !== 'NEEDS_REVIEW_DISABLED' &&
+    notif.evidenceClassification !== 'OFFICIAL_CALENDAR_ONLY' &&
+    notif.evidenceClassification !== 'OLD_RECRUITMENT_CYCLE' &&
+    notif.evidenceClassification !== 'HISTORICAL_CYCLE' &&
+    hasValidApplicationDates
   );
+  const canShowApplyCta = isActiveApplication;
 
   let applyCtaState = 'UNAVAILABLE';
   if (isQuarantined) {
@@ -2912,7 +2934,14 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
     applyCtaState = 'ACTIVE';
   } else if (appStatus.isExpired || appStatus.status === 'CLOSED') {
     applyCtaState = 'CLOSED';
-  } else if (dateConsistency.requiresCtaBlock || appStatus.isInvalid || hasSourceIntegrityIssue || !hasValidApplicationDates) {
+  } else if (
+    dateConsistency.requiresCtaBlock ||
+    appStatus.isInvalid ||
+    hasSourceIntegrityIssue ||
+    !hasValidApplicationDates ||
+    notif.applicationDatesVerified !== true ||
+    notif.isVerified === false
+  ) {
     applyCtaState = 'NEEDS_REVIEW_DISABLED';
   } else if (appStatus.status === 'NOT_STARTED') {
     applyCtaState = 'NOT_STARTED';
@@ -2995,24 +3024,9 @@ export function enrichNotificationWithDateStatus(notif, todayObj = getKolkataTod
     isExpired,
     isClosingSoon: Boolean(
       isClosingSoon &&
-      notif.sourceIntegrityVerified === true &&
-      notif.applicationDatesVerified === true &&
-      !hasSourceIntegrityIssue
+      isActiveApplication
     ),
-    isActiveApplication: Boolean(
-      appStatus.isOpen === true &&
-      appStatus.isExpired !== true &&
-      notif.sourceIntegrityVerified === true &&
-      notif.applicationDatesVerified === true &&
-      notif.hasSourceIntegrityIssue !== true &&
-      !hasSourceIntegrityIssue &&
-      notif.evidenceClassification !== 'NEEDS_OFFICIAL_SOURCE' &&
-      notif.evidenceClassification !== 'NEEDS_REVIEW_DISABLED' &&
-      notif.evidenceClassification !== 'OFFICIAL_CALENDAR_ONLY' &&
-      hasValidApplicationDates &&
-      Boolean(notif.openingDate && String(notif.openingDate).trim().length > 0) &&
-      Boolean(notif.closingDate && String(notif.closingDate).trim().length > 0)
-    ),
+    isActiveApplication,
     isUpcomingExam: examStatus.isUpcoming || examStatus.isToday || Boolean(stageTimeline.mainsStatus && (stageTimeline.mainsStatus.isUpcoming || stageTimeline.mainsStatus.isToday)),
     isUpcomingInterview: Boolean((stageTimeline.interviewStatus?.isUpcoming || stageTimeline.interviewStatus?.isToday) && stageTimeline.isInterviewApplicable),
     isApplicationClosed: appStatus.isExpired,

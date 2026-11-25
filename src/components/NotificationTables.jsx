@@ -390,7 +390,7 @@ export default function NotificationTables({ forceAdmin, lang = 'ta' }) {
       }
 
       // Status filter
-      if (statusFilter === 'active_app' && !item.appStatus.isOpen) return false;
+      if ((statusFilter === 'active_app' || statusFilter === 'active_jobs') && !item.isActiveApplication) return false;
       if (statusFilter === 'upcoming_exams' && !item.examStatus.isUpcoming && !item.examStatus.isToday) return false;
       if (statusFilter === 'app_closed' && !item.appStatus.isExpired) return false;
       if (statusFilter === 'exam_completed' && !item.examStatus.isCompleted) return false;

@@ -17,6 +17,9 @@ import {
   runAllIngestionJobs
 } from './server/ingestion/ingestionManager.js';
 import {
+  evaluateNotificationVerificationFlags
+} from './server/ingestion/trustScoringEngine.js';
+import {
   shouldDeleteExpiredExamNotification,
   runExpiredExamCleanupSchedulerTick,
   CleanupScheduleState
@@ -299,7 +302,24 @@ const notificationSchema = new mongoose.Schema({
   importantDetails: { type: String, default: '' },
   detailsLink: { type: String, default: 'https://www.india.gov.in/' },
   applyLink: { type: String, default: 'https://www.india.gov.in/' },
-  isVerified: { type: Boolean, default: true },
+  isVerified: { type: Boolean, default: false },
+  sourceIntegrityVerified: { type: Boolean, default: false, index: true },
+  applicationDatesVerified: { type: Boolean, default: false, index: true },
+  vacanciesVerified: { type: Boolean, default: false },
+  hasSourceIntegrityIssue: { type: Boolean, default: false },
+  needsOfficialSource: { type: Boolean, default: false },
+  evidenceClassification: { type: String, default: '' },
+  officialNotificationNumber: { type: String, default: '' },
+  officialNotificationUrl: { type: String, default: '' },
+  officialPdfUrl: { type: String, default: '' },
+  sourcePublishedDate: { type: String, default: '' },
+  evidenceVerifiedAt: { type: Date, default: null },
+  isThirdParty: { type: Boolean, default: false },
+  sourceType: { type: String, default: '' },
+  isOfficialSourceVerified: { type: Boolean, default: false },
+  isExpired: { type: Boolean, default: false },
+  isLegacy: { type: Boolean, default: false },
+  auditNote: { type: String, default: '' },
   source: { type: String, default: 'Official Govt Portal' },
   isNew: { type: Boolean, default: true },
   status: { type: String, default: 'active' }, // 'active' | 'expired' | 'upcoming'
@@ -524,7 +544,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Premier All India Civil Services • Prelims, Mains & Personality Test • Central Cadre',
     detailsLink: 'https://upsc.gov.in/examinations/active-exams',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official UPSC Examination Portal (upsc.gov.in)',
     isNew: true,
     status: 'active'
@@ -546,7 +570,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Commissioned Officer Recruitment in Indian Armed Forces • Written Exam + SSB',
     detailsLink: 'https://upsc.gov.in/',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'UPSC Official CDS Portal',
     isNew: true,
     status: 'active'
@@ -568,7 +596,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Prestigious Tri-Services Officer Academy • Khadakwasla Pune Training',
     detailsLink: 'https://upsc.gov.in/',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official UPSC NDA Portal',
     isNew: true,
     status: 'active'
@@ -590,7 +622,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Group-A Gazetted Officer in Central Paramilitary Forces • Level 10 Pay Matrix',
     detailsLink: 'https://upsc.gov.in/',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official UPSC Examination Portal',
     isNew: true,
     status: 'active'
@@ -614,7 +650,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Group B & C Central Ministries Postings • Computer Based Exam Tier I & II',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/login',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Staff Selection Commission (ssc.gov.in)',
     isNew: true,
     status: 'active'
@@ -636,7 +676,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'All India Central Govt Offices & Ministries Posting • Tier 1 & 2 Computer Test',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SSC Portal',
     isNew: true,
     status: 'active'
@@ -658,7 +702,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Central Govt Group C Non-Gazetted Posts • Simple 10th Standard Syllabus in Tamil/English',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SSC MTS Portal',
     isNew: true,
     status: 'active'
@@ -680,7 +728,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Sub-Inspector Entry in Central Police Forces • Level 6 Pay Matrix (₹35,400 - ₹1,12,400)',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SSC CPO Recruitment',
     isNew: true,
     status: 'active'
@@ -704,7 +756,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Official Central Recruitment • Preliminary & Mains Online Exam • Direct Scale-I Posting',
     detailsLink: 'https://sbi.co.in/web/careers/current-openings',
     applyLink: 'https://bank.sbi/careers',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SBI Careers Portal (sbi.co.in)',
     isNew: true,
     status: 'active'
@@ -726,7 +782,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Participating: Indian Bank, Canara Bank, PNB, BOB, Union Bank, Central Bank • State Wise Merit',
     detailsLink: 'https://www.ibps.in/',
     applyLink: 'https://ibpsonline.ibps.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official IBPS Portal (ibps.in)',
     isNew: true,
     status: 'active'
@@ -748,7 +808,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Apex Central Bank of India • Prestigious Grade B Career • Monthly Emoluments ~₹1,16,000/-',
     detailsLink: 'https://opportunities.rbi.org.in/',
     applyLink: 'https://opportunities.rbi.org.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Reserve Bank of India (rbi.org.in)',
     isNew: true,
     status: 'active'
@@ -770,7 +834,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Grama Bank & 42 Rural Banks • Direct Local Branch Appointment in TN',
     detailsLink: 'https://www.ibps.in/',
     applyLink: 'https://ibpsonline.ibps.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official IBPS RRB Portal',
     isNew: true,
     status: 'active'
@@ -792,7 +860,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'State Bank of India Largest Public Sector Bank • Posting in Tamil Nadu & Puducherry Circles',
     detailsLink: 'https://bank.sbi/careers',
     applyLink: 'https://bank.sbi/careers',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'SBI Central Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -814,7 +886,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Premier Insurance Corporation • Basic Pay ₹53,600 + DA/HRA (~₹92,870/month)',
     detailsLink: 'https://licindia.in/careers',
     applyLink: 'https://licindia.in/careers',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official LIC India Portal',
     isNew: true,
     status: 'active'
@@ -836,7 +912,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: '11 Public Sector Banks (Canara Bank, Indian Bank, PNB, BOB, UBI, etc.)',
     detailsLink: 'https://www.ibps.in/',
     applyLink: 'https://ibpsonline.ibps.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official IBPS PO Portal',
     isNew: true,
     status: 'active'
@@ -860,7 +940,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Train Driver Pilot Recruitment • Level 2 Pay Matrix (Initial Pay ₹19,900/- + Running Allowance)',
     detailsLink: 'https://www.rrbchennai.gov.in/',
     applyLink: 'https://www.rrbapply.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Railway Recruitment Board (rrbapply.gov.in)',
     isNew: true,
     status: 'active'
@@ -882,7 +966,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Southern Railway & ICF Perambur Openings • Computer Based Test + Trade Test',
     detailsLink: 'https://www.rrbchennai.gov.in/',
     applyLink: 'https://www.rrbapply.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official RRB Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -904,7 +992,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Prestigious Railway Station Operations & Commercial Jobs • CBT 1 & 2 Exam',
     detailsLink: 'https://www.rrbchennai.gov.in/',
     applyLink: 'https://www.rrbapply.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'RRB Chennai & Central Railways',
     isNew: true,
     status: 'active'
@@ -926,7 +1018,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Permanent Central Railway Jobs in Tamil Nadu • Written CBT + Physical Efficiency Test (PET)',
     detailsLink: 'https://www.rrcmas.in/',
     applyLink: 'https://www.rrcmas.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official RRC Southern Railway Chennai',
     isNew: true,
     status: 'active'
@@ -950,7 +1046,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Most Popular Competitive Exam • Tamil Eligibility + General Studies • Direct State Posting',
     detailsLink: 'https://www.tnpsc.gov.in/English/Notification.aspx',
     applyLink: 'https://www.tnpscexams.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNPSC Portal (tnpsc.gov.in)',
     isNew: true,
     status: 'active'
@@ -972,7 +1072,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Executive & Non-Executive State Services • Preliminary, Mains & Oral Test/Interview',
     detailsLink: 'https://www.tnpsc.gov.in/',
     applyLink: 'https://www.tnpscexams.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNPSC Exam Portal',
     isNew: true,
     status: 'active'
@@ -994,7 +1098,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Top State Executive Cadre in Tamil Nadu • Sub-Collector / DSP Direct Entry',
     detailsLink: 'https://www.tnpsc.gov.in/',
     applyLink: 'https://www.tnpscexams.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'TNPSC Official Group 1 Portal',
     isNew: true,
     status: 'active'
@@ -1018,7 +1126,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'State Uniformed Police Service • 20% PSTM Quota for Tamil Medium Candidates',
     detailsLink: 'https://www.tnusrb.tn.gov.in/',
     applyLink: 'https://www.tnusrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNUSRB Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -1040,7 +1152,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Tamil Nadu Uniformed Police Service • Written Test + Physical PET (Running, Rope Climbing)',
     detailsLink: 'https://www.tnusrb.tn.gov.in/',
     applyLink: 'https://www.tnusrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNUSRB Portal',
     isNew: true,
     status: 'active'
@@ -1062,7 +1178,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Join Indian Army • 4-Year Service with Seva Nidhi Package of ₹11.71 Lakhs + Regular Absorption',
     detailsLink: 'https://joinindianarmy.nic.in/',
     applyLink: 'https://joinindianarmy.nic.in/Authentication.aspx',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Indian Army Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -1084,7 +1204,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Central Armed Police Forces (CAPFs) & Assam Rifles • Computer Based Test + Physical PET/PST',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'SSC Central CAPF Portal',
     isNew: true,
     status: 'active'
@@ -1108,7 +1232,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Government Higher Secondary School Teacher Posting • Level 18 Pay Scale',
     detailsLink: 'https://trb.tn.gov.in/',
     applyLink: 'https://trb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Teachers Recruitment Board TN',
     isNew: true,
     status: 'active'
@@ -1130,7 +1258,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Mandatory Lifetime Certificate for Govt & Aided School Teacher Appointments in Tamil Nadu',
     detailsLink: 'https://trb.tn.gov.in/',
     applyLink: 'https://trb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNTET Examination Portal',
     isNew: true,
     status: 'active'
@@ -1152,7 +1284,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Nationally recognized qualification for teaching appointments across Kendriya Vidyalaya (KVS) & CBSE',
     detailsLink: 'https://ctet.nic.in/',
     applyLink: 'https://ctet.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official CTET CBSE Portal (ctet.nic.in)',
     isNew: true,
     status: 'active'
@@ -1176,7 +1312,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Government Doctors Recruitment • Level 22 Pay Matrix (₹56,100 - ₹1,77,500)',
     detailsLink: 'https://www.mrb.tn.gov.in/notifications.html',
     applyLink: 'https://www.mrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Tamil Nadu MRB Portal (mrb.tn.gov.in)',
     isNew: true,
     status: 'active'
@@ -1198,7 +1338,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Tamil Nadu Health Services Appointment • Permanent Govt Hospital Nursing Officer Career',
     detailsLink: 'https://www.mrb.tn.gov.in/',
     applyLink: 'https://www.mrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'TN MRB Official Portal',
     isNew: true,
     status: 'active'
@@ -1220,7 +1364,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Legacy 2024 Examination (Advt No. 115/2024) • Applications Closed 21/08/2024 • Stage I & Stage II Completed • Archived for Reference',
     detailsLink: 'https://www.aiimsexams.ac.in/',
     applyLink: 'https://www.aiimsexams.ac.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'OLD_RECRUITMENT_CYCLE',
     source: 'Official AIIMS Examination Section',
     isNew: false,
     status: 'closed',
@@ -1253,7 +1401,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Gateway for National Institutes of Technology (NIT Trichy) and IIT Admissions',
     detailsLink: 'https://jeemain.nta.nic.in/',
     applyLink: 'https://jeemain.nta.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official NTA JEE Main Portal',
     isNew: true,
     status: 'active'
@@ -1275,7 +1427,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Single window admission test for Central University of Tamil Nadu (Tiruvarur), Delhi University, JNU, BHU',
     detailsLink: 'https://exams.nta.ac.in/CUET-UG/',
     applyLink: 'https://cuetug.ntaonline.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official NTA CUET Portal',
     isNew: true,
     status: 'active'
@@ -1297,7 +1453,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: '30 Subject Papers • Gateway for IIT Master’s and direct recruitment in Maharatna/Navratna PSUs',
     detailsLink: 'https://gate2026.iitr.ac.in/',
     applyLink: 'https://goaps.iitr.ac.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official GATE 2026 Organising Institute',
     status: 'active'
   },
@@ -1318,7 +1478,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'State Common Entrance Test conducted by Anna University for University Departments, Govt & Aided Colleges',
     detailsLink: 'https://tancet.annauniv.edu/',
     applyLink: 'https://tancet.annauniv.edu/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Anna University TANCET Portal',
     isNew: true,
     status: 'active'
@@ -1342,7 +1506,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: '1-Year Apprenticeship with Monthly Stipend under Apprentices Act 1961 at IOCL Chennai/Madurai/Coimbatore',
     detailsLink: 'https://iocl.com/apprenticeships',
     applyLink: 'https://www.iocl.com/apprenticeships',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Indian Oil Corporation Limited Careers',
     isNew: true,
     status: 'active'
@@ -1362,7 +1530,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Maharatna PSU • Basic Pay ₹60,000 - ₹1,80,000/- with high offshore allowances and benefits',
     detailsLink: 'https://www.ongcindia.com/wps/wcm/connect/en/career/recruitment-notice/',
     applyLink: 'https://ongcrecruit.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official ONGC Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -1384,7 +1556,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Navratna Defence PSU • Starting CTC ₹11.5 - ₹12 Lakhs per annum with medical and housing allowances',
     detailsLink: 'https://bel-india.in/careers/',
     applyLink: 'https://bel-india.in/careers/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Bharat Electronics Limited Portal',
     isNew: true,
     status: 'active'
@@ -1406,7 +1582,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu State Electricity Board Direct Officer Recruitment • Level 1 Pay in Class II Service',
     detailsLink: 'https://www.tnebltd.gov.in/',
     applyLink: 'https://www.tnebltd.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNEB / TANGEDCO Portal',
     isNew: true,
     status: 'active'
@@ -1414,6 +1594,79 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
 ];
 
 // Master Sync Function for All Exam Categories (Protects manualOverrideLock, corrigenda, rejected, quarantined & past expired exams)
+export const isArchivedMasterFeedRecord = (notif) => {
+  if (!notif || typeof notif !== 'object') return true;
+  const statusVal = String(notif.status || '').trim().toLowerCase();
+  const evidenceClass = String(notif.evidenceClassification || '').trim();
+  return Boolean(
+    notif.isLegacy === true ||
+    notif.isExpired === true ||
+    notif.isHistoricalCycle === true ||
+    statusVal === 'closed' ||
+    statusVal === 'archived' ||
+    statusVal === 'expired' ||
+    evidenceClass === 'OLD_RECRUITMENT_CYCLE' ||
+    evidenceClass === 'HISTORICAL_CYCLE'
+  );
+};
+
+export const buildMasterFeedSyncOps = (
+  feedRecords = VERIFIED_ALL_EXAM_NOTIFICATIONS,
+  protectedIds = new Set(),
+  kolkataToday = getKolkataToday()
+) => {
+  return (feedRecords || [])
+    .filter((notif) => notif && notif.id && !protectedIds.has(notif.id))
+    .filter((notif) => !isArchivedMasterFeedRecord(notif))
+    .filter((notif) => !shouldDeleteExpiredExamNotification(notif, kolkataToday))
+    .map((notif) => {
+      const targetIngestionStatus = notif.ingestionStatus || 'published';
+      const verification = evaluateNotificationVerificationFlags({
+        ...notif,
+        ingestionStatus: targetIngestionStatus
+      });
+      const sourceIntegrityVerified = Boolean(
+        verification.sourceIntegrityVerified &&
+        notif.sourceIntegrityVerified === true
+      );
+      const applicationDatesVerified = Boolean(
+        sourceIntegrityVerified &&
+        verification.applicationDatesVerified &&
+        notif.applicationDatesVerified === true
+      );
+      const canVerify = verification.isResultNotice
+        ? Boolean(sourceIntegrityVerified)
+        : Boolean(sourceIntegrityVerified && applicationDatesVerified);
+      const resolvedStatus = canVerify
+        ? (notif.status === 'under_review' ? 'active' : (notif.status || 'active'))
+        : (notif.status === 'closed' || notif.status === 'expired' ? notif.status : 'under_review');
+
+      return {
+        updateOne: {
+          filter: { id: notif.id },
+          update: {
+            $set: {
+              ...notif,
+              status: resolvedStatus,
+              ingestionStatus: targetIngestionStatus,
+              ingestionSource: notif.ingestionSource || 'verified_master_feed',
+              isVerified: canVerify,
+              sourceIntegrityVerified,
+              applicationDatesVerified,
+              hasSourceIntegrityIssue: !sourceIntegrityVerified,
+              needsOfficialSource: !verification.hasOfficialEvidence,
+              evidenceClassification: !sourceIntegrityVerified
+                ? (notif.evidenceClassification || 'NEEDS_OFFICIAL_SOURCE')
+                : (notif.evidenceClassification || (verification.isResultNotice ? 'VERIFIED_OFFICIAL_RESULT' : 'VERIFIED_OFFICIAL_NOTICE')),
+              updatedAt: new Date()
+            }
+          },
+          upsert: true
+        }
+      };
+    });
+};
+
 const syncAllVerifiedNotificationsFeed = async () => {
   try {
     const protectedDocs = await Notification.find(
@@ -1430,23 +1683,7 @@ const syncAllVerifiedNotificationsFeed = async () => {
     const protectedIds = new Set((protectedDocs || []).map((d) => d.id));
     const kolkataToday = getKolkataToday();
 
-    const ops = VERIFIED_ALL_EXAM_NOTIFICATIONS
-      .filter((notif) => !protectedIds.has(notif.id))
-      .filter((notif) => !shouldDeleteExpiredExamNotification(notif, kolkataToday))
-      .map((notif) => ({
-        updateOne: {
-          filter: { id: notif.id },
-          update: {
-            $set: {
-              ...notif,
-              ingestionStatus: notif.ingestionStatus || 'published',
-              ingestionSource: notif.ingestionSource || 'verified_master_feed',
-              updatedAt: new Date()
-            }
-          },
-          upsert: true
-        }
-      }));
+    const ops = buildMasterFeedSyncOps(VERIFIED_ALL_EXAM_NOTIFICATIONS, protectedIds, kolkataToday);
     if (ops.length > 0) {
       await Notification.bulkWrite(ops);
     }

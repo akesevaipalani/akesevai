@@ -2,12 +2,19 @@
 // Official-Source Trust Scoring, Notice-Type Date Validation & Fail-Closed Publication Gate
 // Mandatory Safe Defaults: AUTO_PUBLISH_ENABLED=false, AUTO_PUBLISH_RESULTS=false
 
+import net from 'net';
 import {
   getKolkataToday,
-  parseDateDetailed
+  parseDateDetailed,
+  isGenericRootHomepage,
+  calculateApplicationStatus,
+  calculateExamStatus,
+  evaluateNotificationDateConsistency
 } from '../../src/utils/notificationDateHelper.js';
 import {
+  EXPLICIT_SOURCE_DOMAIN_MAP,
   getRegisteredSourceConfig,
+  isShortenerHost,
   validateExplicitSourceUrl
 } from './officialDomainPolicy.js';
 
@@ -503,6 +510,23 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
     ingestionStatus = 'pending_review';
   }
 
+  const verificationEval = evaluateNotificationVerificationFlags(
+    {
+      ...candidate,
+      sourceKey: context.sourceKey || candidate.sourceKey || '',
+      ingestionStatus,
+      quarantineReason,
+      docVerificationStatus: docState,
+      isVerified,
+      sourceIntegrityVerified: autoPublished ? true : undefined,
+      applicationDatesVerified: autoPublished ? true : undefined
+    },
+    {
+      ...context,
+      allowPromotionEvaluation: autoPublished === true
+    }
+  );
+
   return {
     trustScore,
     trustTier,
@@ -510,6 +534,8 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
     ingestionStatus,
     isVerified,
     autoPublished,
+    sourceIntegrityVerified: Boolean(autoPublished && verificationEval.sourceIntegrityVerified),
+    applicationDatesVerified: Boolean(autoPublished && verificationEval.applicationDatesVerified),
     wouldAutoPublishIfEnabled: eligibleForGate,
     quarantineReason,
     docVerificationStatus: docState,
@@ -523,5 +549,526 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
       metadataCompleteness: metadataPoints,
       freshnessActionability: freshnessPoints
     }
+  };
+}
+
+const REGISTERED_OFFICIAL_HOSTS = new Set(
+  Object.values(EXPLICIT_SOURCE_DOMAIN_MAP || {})
+    .flatMap((policy) => [
+      ...(policy?.allowedNoticeHosts || []),
+      ...(policy?.allowedApplyHosts || [])
+    ])
+    .map((h) => String(h || '').trim().toLowerCase())
+    .filter(Boolean)
+);
+
+// Explicit institutional allowlist for verified exam agencies & universities outside .gov.in/.nic.in
+const EXPLICIT_INSTITUTIONAL_ALLOWLIST = new Set([
+  // AIIMS
+  'aiimsexams.ac.in',
+  'www.aiimsexams.ac.in',
+  'aiims.edu',
+  'www.aiims.edu',
+  // NTA
+  'nta.ac.in',
+  'www.nta.ac.in',
+  'exams.nta.ac.in',
+  'cuetug.ntaonline.in',
+  // IIT / IISc / GATE / JAM
+  'iitr.ac.in',
+  'www.iitr.ac.in',
+  'gate2026.iitr.ac.in',
+  'goaps.iitr.ac.in',
+  'iitm.ac.in',
+  'www.iitm.ac.in',
+  'gate.iitm.ac.in',
+  'iitb.ac.in',
+  'www.iitb.ac.in',
+  'iitd.ac.in',
+  'www.iitd.ac.in',
+  'iitk.ac.in',
+  'www.iitk.ac.in',
+  'gate.iitk.ac.in',
+  'iitkgp.ac.in',
+  'www.iitkgp.ac.in',
+  'iitg.ac.in',
+  'www.iitg.ac.in',
+  'gate.iitg.ac.in',
+  'iisc.ac.in',
+  'www.iisc.ac.in',
+  // Tamil Nadu & State Universities
+  'annauniv.edu',
+  'www.annauniv.edu',
+  'tancet.annauniv.edu',
+  'unom.ac.in',
+  'www.unom.ac.in',
+  'bdu.ac.in',
+  'www.bdu.ac.in',
+  'b-u.ac.in',
+  'www.b-u.ac.in',
+  'mkuniversity.ac.in',
+  'www.mkuniversity.ac.in',
+  // Major Central PSUs & Municipal Corporations
+  'iocl.com',
+  'www.iocl.com',
+  'ongcindia.com',
+  'www.ongcindia.com',
+  'ongcrecruit.in',
+  'www.ongcrecruit.in',
+  'maduraicorporation.co.in',
+  'www.maduraicorporation.co.in'
+]);
+
+// Explicitly authorized cross-host agency notice -> apply portal pairs outside EXPLICIT_SOURCE_DOMAIN_MAP
+const EXPLICIT_INSTITUTIONAL_CROSS_HOST_GROUPS = [
+  {
+    noticeHosts: new Set(['nta.ac.in', 'www.nta.ac.in', 'exams.nta.ac.in', 'jeemain.nta.nic.in', 'neet.nta.nic.in']),
+    applyHosts: new Set(['nta.ac.in', 'www.nta.ac.in', 'exams.nta.ac.in', 'cuetug.ntaonline.in', 'jeemain.nta.nic.in', 'neet.nta.nic.in', 'examinationservices.nic.in'])
+  },
+  {
+    noticeHosts: new Set(['ongcindia.com', 'www.ongcindia.com']),
+    applyHosts: new Set(['ongcindia.com', 'www.ongcindia.com', 'ongcrecruit.in', 'www.ongcrecruit.in'])
+  }
+];
+
+const TWO_LETTER_STATE_GOV_CODES = new Set([
+  'tn', 'ka', 'kl', 'ap', 'ts', 'mh', 'up', 'mp', 'rj', 'gj', 'wb', 'br', 'or', 'od', 'dl', 'pb', 'hr', 'jh', 'cg', 'uk', 'hp', 'jk', 'as', 'ga', 'tr', 'mn', 'ml', 'mz', 'nl', 'ar', 'sk', 'py', 'ch', 'an', 'ld', 'dn', 'dd'
+]);
+
+const MULTI_PART_PUBLIC_SUFFIXES = new Set([
+  'gov.in', 'nic.in', 'ac.in', 'edu.in', 'res.in', 'org.in', 'co.in', 'bank.in'
+]);
+
+function extractAgencyDomainRoot(rawHost) {
+  const host = String(rawHost || '').toLowerCase().replace(/^www\./, '').replace(/\.+$/, '');
+  const parts = host.split('.').filter(Boolean);
+  if (parts.length <= 2) return host;
+  const lastTwo = parts.slice(-2).join('.');
+  if (MULTI_PART_PUBLIC_SUFFIXES.has(lastTwo)) {
+    if ((lastTwo === 'gov.in' || lastTwo === 'nic.in') && parts.length >= 4 && TWO_LETTER_STATE_GOV_CODES.has(parts[parts.length - 3])) {
+      return parts.slice(-4).join('.');
+    }
+    return parts.slice(-3).join('.');
+  }
+  return lastTwo;
+}
+
+export function isAuthorizedAgencyHostPair(noticeHostRaw, applyHostRaw, sourceKey = '') {
+  const noticeHost = String(noticeHostRaw || '').trim().toLowerCase().replace(/\.+$/, '');
+  const applyHost = String(applyHostRaw || '').trim().toLowerCase().replace(/\.+$/, '');
+  if (!noticeHost) return false;
+  if (!applyHost) return true;
+
+  // When sourceKey is provided, explicit source policy already enforces both hosts against the same sourceKey
+  if (sourceKey) {
+    const policy = EXPLICIT_SOURCE_DOMAIN_MAP?.[sourceKey];
+    if (policy) {
+      const noticeSet = new Set((policy.allowedNoticeHosts || []).map((h) => h.toLowerCase()));
+      const applySet = new Set((policy.allowedApplyHosts || policy.allowedNoticeHosts || []).map((h) => h.toLowerCase()));
+      return noticeSet.has(noticeHost) && applySet.has(applyHost);
+    }
+    return true;
+  }
+
+  // Same normalized host or same agency domain root (never collapses across distinct .gov.in / .tn.gov.in agencies)
+  if (noticeHost.replace(/^www\./, '') === applyHost.replace(/^www\./, '')) {
+    return true;
+  }
+  const noticeRoot = extractAgencyDomainRoot(noticeHost);
+  const applyRoot = extractAgencyDomainRoot(applyHost);
+  if (noticeRoot && applyRoot && noticeRoot === applyRoot) {
+    return true;
+  }
+
+  // Explicitly authorized cross-host relationships in EXPLICIT_SOURCE_DOMAIN_MAP (e.g. tnpsc.gov.in -> apply.tnpscexams.in, sbi.co.in -> ibpsonline.ibps.in)
+  for (const policy of Object.values(EXPLICIT_SOURCE_DOMAIN_MAP || {})) {
+    const noticeSet = new Set((policy?.allowedNoticeHosts || []).map((h) => h.toLowerCase()));
+    const applySet = new Set((policy?.allowedApplyHosts || policy?.allowedNoticeHosts || []).map((h) => h.toLowerCase()));
+    if (noticeSet.has(noticeHost) && applySet.has(applyHost)) {
+      return true;
+    }
+  }
+
+  // Explicitly authorized institutional cross-host groups (NTA, ONGC)
+  for (const group of EXPLICIT_INSTITUTIONAL_CROSS_HOST_GROUPS) {
+    if (group.noticeHosts.has(noticeHost) && group.applyHosts.has(applyHost)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Strict PDF pathname validator: parses URL and inspects ONLY parsed.pathname.
+ * Query strings (?x=fake.pdf) and fragments (#fake.pdf) never count as PDF evidence.
+ */
+export function isPdfPathname(rawUrl, options = {}) {
+  if (!rawUrl || typeof rawUrl !== 'string') return false;
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /[\\\u0000-\u001F\u007F]/.test(trimmed)) return false;
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return false;
+  }
+  const protocol = parsed.protocol.toLowerCase();
+  const allowHttpForLocalMock = Boolean(options.allowHttpForLocalMock);
+  if (protocol !== 'https:' && !(allowHttpForLocalMock && protocol === 'http:')) {
+    return false;
+  }
+  const pathname = String(parsed.pathname || '').trim();
+  return pathname.startsWith('/') && /\.pdf$/i.test(pathname);
+}
+
+const KNOWN_THIRD_PARTY_AGGREGATOR_RE =
+  /(^|\.)(sarkariresult|freejobalert|freshersnow|fresherslive|testbook|adda247|oliveboard|byjus|gradeup|jagranjosh|careerpower|govtjobsportal|indgovtjobs|jobsarkari|blogspot|wordpress|github\.io)\./i;
+
+const STRICT_INDIAN_GOV_HOST_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.(gov|nic)\.in$/i;
+
+const REDIRECT_PATH_SEGMENT_RE = /(^|\/)(redirect|redir|out|away|exit|goto|jump|forward)(\/|$)/i;
+const REDIRECT_QUERY_KEYS = new Set(['redirect', 'redir', 'url', 'next', 'target', 'dest', 'destination', 'return', 'returnurl', 'continue', 'goto', 'out']);
+
+const GENERIC_LISTING_PATH_RE =
+  /^\/((english|en|tamil|ta)\/)?((examinations?|web|site|portal)\/)?(notifications?|notices?|recruitments?|recruitment[-_]?notices?|careers?(\/current[-_]?openings?)?|current[-_]?openings?|active[-_]?exams?|latest[-_]?news?|announcements?|vacancies?|jobs?|apprenticeships?|home[-_]?notices?|portal|login|dashboard|results?|whats[-_]?new|archive[s]?)(\.(aspx?|html?|php|jsp))?\/?$/i;
+
+// Non-overridable historical/calendar classifications (remain blocked even on re-approve)
+const HARD_BLOCKED_EVIDENCE_CLASSIFICATIONS = new Set([
+  'OFFICIAL_CALENDAR_ONLY',
+  'OLD_RECRUITMENT_CYCLE',
+  'HISTORICAL_CYCLE'
+]);
+
+// Soft review-pending classifications (cleared only when fresh verified evidence passes on promotion/re-approve)
+const SOFT_REVIEW_EVIDENCE_CLASSIFICATIONS = new Set([
+  'NEEDS_OFFICIAL_SOURCE',
+  'NEEDS_REVIEW_DISABLED'
+]);
+
+function isSuspiciousRedirectUrl(parsed, host) {
+  if (REDIRECT_PATH_SEGMENT_RE.test(parsed.pathname || '')) {
+    return true;
+  }
+  for (const [k, v] of parsed.searchParams.entries()) {
+    const keyLower = String(k || '').trim().toLowerCase();
+    const valTrim = String(v || '').trim();
+    if (!valTrim) continue;
+    if (/^(https?:)?\/\//i.test(valTrim) || REDIRECT_QUERY_KEYS.has(keyLower)) {
+      if (/^(https?:)?\/\//i.test(valTrim)) {
+        try {
+          const targetUrl = new URL(valTrim.startsWith('//') ? `https:${valTrim}` : valTrim);
+          const targetHost = targetUrl.hostname.toLowerCase().replace(/\.+$/, '');
+          if (targetHost && targetHost !== host) return true;
+        } catch {
+          return true;
+        }
+      } else if (REDIRECT_QUERY_KEYS.has(keyLower) && /%2f%2f|https?%3a/i.test(valTrim)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function isGenericListingOrDirectoryUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return true;
+  const trimmed = rawUrl.trim();
+  if (!trimmed || isGenericRootHomepage(trimmed)) return true;
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return true;
+  }
+  const pathname = parsed.pathname || '/';
+  if (isPdfPathname(trimmed)) return false;
+
+  // Specific document/notice query identifiers distinguish a notice page from a bare directory listing
+  const hasSpecificDocParam = ['id', 'notice', 'noticeid', 'advt', 'file', 'doc', 'pdf', 'notification', 'notifid', 'postid'].some((k) => {
+    const v = parsed.searchParams.get(k);
+    return Boolean(v && String(v).trim().length >= 2);
+  });
+  if (hasSpecificDocParam) return false;
+
+  if (GENERIC_LISTING_PATH_RE.test(pathname)) return true;
+  if (/\/wps\/wcm\/connect\/[^/]+\/career\/recruitment-notice\/?$/i.test(pathname)) return true;
+  return false;
+}
+
+export function evaluateOfficialDomainUrl(rawUrl, sourceKey = '', linkKind = 'notice', options = {}) {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    return { valid: false, reason: 'MISSING_URL' };
+  }
+  const trimmed = rawUrl.trim();
+  if (!trimmed || /[\\\u0000-\u001F\u007F]/.test(trimmed)) {
+    return { valid: false, reason: 'MALFORMED_URL' };
+  }
+  if (isGenericRootHomepage(trimmed)) {
+    return { valid: false, reason: 'GENERIC_ROOT_HOMEPAGE' };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return { valid: false, reason: 'MALFORMED_URL' };
+  }
+
+  const protocol = parsed.protocol.toLowerCase();
+  const allowHttpForLocalMock = Boolean(options.allowHttpForLocalMock);
+  if (protocol !== 'https:' && !(allowHttpForLocalMock && protocol === 'http:')) {
+    return { valid: false, reason: 'NON_HTTPS_URL' };
+  }
+  if (parsed.username || parsed.password) {
+    return { valid: false, reason: 'URL_CREDENTIALS_FORBIDDEN' };
+  }
+  if (parsed.port && parsed.port !== '443' && !allowHttpForLocalMock) {
+    return { valid: false, reason: 'NON_STANDARD_PORT' };
+  }
+
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
+  if (
+    !host ||
+    host === 'localhost' ||
+    host.includes('xn--') ||
+    net.isIP(host) !== 0 ||
+    isShortenerHost(host) ||
+    KNOWN_THIRD_PARTY_AGGREGATOR_RE.test(host)
+  ) {
+    return { valid: false, reason: 'UNTRUSTED_OR_THIRD_PARTY_HOST' };
+  }
+
+  if (isSuspiciousRedirectUrl(parsed, host)) {
+    return { valid: false, reason: 'SUSPICIOUS_REDIRECT_URL' };
+  }
+
+  if (sourceKey) {
+    const policyRes = validateExplicitSourceUrl(trimmed, sourceKey, linkKind, options);
+    return policyRes.valid
+      ? { valid: true, host }
+      : { valid: false, reason: policyRes.reason || 'SOURCE_DOMAIN_MISMATCH' };
+  }
+
+  // Exact match against registered official hosts or explicit institutional allowlist (no wildcard subdomain confusion)
+  if (REGISTERED_OFFICIAL_HOSTS.has(host) || EXPLICIT_INSTITUTIONAL_ALLOWLIST.has(host)) {
+    return { valid: true, host };
+  }
+
+  // Strictly government-restricted Indian TLDs ONLY (.gov.in / .nic.in) — NO .org.in, .edu.in, .ac.in, .res.in wildcards
+  if (STRICT_INDIAN_GOV_HOST_RE.test(host)) {
+    return { valid: true, host };
+  }
+
+  return { valid: false, reason: 'UNVERIFIED_EXTERNAL_DOMAIN' };
+}
+
+/**
+ * Shared fail-closed verification evaluator for master feed, Admin create/approve,
+ * and scraped auto-publish flows. Never marks arbitrary, unverified, third-party,
+ * generic homepage/listing, missing-date, invalid-date, or quarantined records as verified.
+ */
+export function evaluateNotificationVerificationFlags(candidate = {}, options = {}) {
+  const allowPromotionEvaluation = Boolean(options.allowPromotionEvaluation);
+  const allowVerifiedDocState = options.allowVerifiedDocState !== false;
+  const reasons = [];
+
+  const ingestionStatus = String(candidate.ingestionStatus || 'published').trim().toLowerCase();
+  const statusVal = String(candidate.status || 'active').trim().toLowerCase();
+  const noticeType = String(candidate.noticeType || '').trim().toLowerCase();
+  const isResultNotice = noticeType === 'result_key';
+  const evidenceClass = String(candidate.evidenceClassification || '').trim();
+  const quarantineReason = String(candidate.quarantineReason || '').trim();
+
+  if (candidate.isThirdParty === true || candidate.sourceType === 'third_party') {
+    reasons.push('THIRD_PARTY_SOURCE');
+  }
+  if (ingestionStatus === 'quarantined' || quarantineReason) {
+    reasons.push('QUARANTINED_RECORD');
+  }
+  if (ingestionStatus === 'rejected') {
+    reasons.push('REJECTED_RECORD');
+  }
+  if (!allowPromotionEvaluation && ingestionStatus !== 'published') {
+    reasons.push('NOT_PUBLISHED');
+  }
+  // Soft review markers block direct evaluation, but are re-evaluated fresh on legitimate re-approval/promotion
+  if (!allowPromotionEvaluation && (candidate.hasSourceIntegrityIssue === true || candidate.needsOfficialSource === true)) {
+    reasons.push('SOURCE_INTEGRITY_ISSUE_FLAGGED');
+  }
+  if (!allowPromotionEvaluation && statusVal === 'under_review') {
+    reasons.push('STATUS_UNDER_REVIEW');
+  }
+  if (candidate.isHistoricalCycle === true || HARD_BLOCKED_EVIDENCE_CLASSIFICATIONS.has(evidenceClass)) {
+    reasons.push(`EVIDENCE_CLASSIFICATION_BLOCKED:${evidenceClass || 'HISTORICAL'}`);
+  } else if (!allowPromotionEvaluation && SOFT_REVIEW_EVIDENCE_CLASSIFICATIONS.has(evidenceClass)) {
+    reasons.push(`EVIDENCE_CLASSIFICATION_BLOCKED:${evidenceClass}`);
+  }
+  if (!allowPromotionEvaluation && (candidate.sourceIntegrityVerified === false || candidate.isVerified === false)) {
+    reasons.push('EXPLICIT_UNVERIFIED_FLAG');
+  }
+
+  const sourceKey = String(candidate.sourceKey || '').trim();
+  const detailsLinkRaw = String(candidate.detailsLink || '').trim();
+  const applyLinkRaw = String(candidate.applyLink || '').trim();
+
+  const detailsUrlCheck = evaluateOfficialDomainUrl(detailsLinkRaw, sourceKey, 'notice', options);
+  if (!detailsUrlCheck.valid) {
+    reasons.push(`DETAILS_LINK:${detailsUrlCheck.reason}`);
+  } else if (isGenericListingOrDirectoryUrl(detailsLinkRaw)) {
+    reasons.push('DETAILS_LINK:GENERIC_LISTING_PAGE');
+  }
+
+  const applyUrlCheck = applyLinkRaw
+    ? evaluateOfficialDomainUrl(applyLinkRaw, sourceKey, 'apply', options)
+    : (isResultNotice ? { valid: true, host: '' } : { valid: false, reason: 'MISSING_URL' });
+  if (!applyUrlCheck.valid) {
+    reasons.push(`APPLY_LINK:${applyUrlCheck.reason}`);
+  } else if (
+    detailsUrlCheck.valid &&
+    applyUrlCheck.host &&
+    !isAuthorizedAgencyHostPair(detailsUrlCheck.host, applyUrlCheck.host, sourceKey)
+  ) {
+    reasons.push('CROSS_AGENCY_URL_MISMATCH');
+  }
+
+  const docStatus = String(candidate.docVerificationStatus || '').trim();
+  if (docStatus === 'malformed') {
+    reasons.push('MALFORMED_DOCUMENT');
+  }
+  const hasVerifiedDocState = Boolean(
+    allowVerifiedDocState &&
+    (docStatus === 'structurally_verified' || docStatus === 'html_notice_verified') &&
+    detailsUrlCheck.valid &&
+    !isGenericListingOrDirectoryUrl(detailsLinkRaw)
+  );
+
+  const docEvidenceUrl = String(candidate.officialPdfUrl || candidate.officialNotificationUrl || '').trim();
+  const officialDocCheck = docEvidenceUrl
+    ? evaluateOfficialDomainUrl(docEvidenceUrl, sourceKey, 'notice', options)
+    : { valid: false, reason: 'MISSING_OFFICIAL_DOC_URL' };
+  const docEvidenceHostConsistent = Boolean(
+    officialDocCheck.valid &&
+    (!detailsUrlCheck.valid ||
+      isAuthorizedAgencyHostPair(detailsUrlCheck.host, officialDocCheck.host, sourceKey) ||
+      isAuthorizedAgencyHostPair(officialDocCheck.host, detailsUrlCheck.host, sourceKey))
+  );
+  if (officialDocCheck.valid && detailsUrlCheck.valid && !docEvidenceHostConsistent) {
+    reasons.push('CROSS_AGENCY_DOC_URL_MISMATCH');
+  }
+  const docEvidenceIsPdf = isPdfPathname(docEvidenceUrl, options);
+  const docEvidenceIsSpecific = Boolean(
+    officialDocCheck.valid &&
+    docEvidenceHostConsistent &&
+    !isGenericListingOrDirectoryUrl(docEvidenceUrl) &&
+    docEvidenceIsPdf
+  );
+
+  const noticeNo = String(candidate.officialNotificationNumber || candidate.notificationNo || '').trim();
+  const hasValidNoticeNo = Boolean(
+    noticeNo.length >= 3 &&
+    /\d/.test(noticeNo) &&
+    !/^(n\/a|na|tba|none|pending|unknown|test|0+|123|-+)$/i.test(noticeNo)
+  );
+  const detailsLooksLikePdf = isPdfPathname(detailsLinkRaw, options);
+  const detailsIsSpecificPdf = Boolean(
+    detailsUrlCheck.valid &&
+    !isGenericListingOrDirectoryUrl(detailsLinkRaw) &&
+    detailsLooksLikePdf
+  );
+
+  // Strict official evidence: server-verified document state OR verified official PDF + valid notification number
+  const hasOfficialEvidence = Boolean(
+    hasVerifiedDocState ||
+    (docEvidenceIsSpecific && hasValidNoticeNo) ||
+    (detailsIsSpecificPdf && hasValidNoticeNo)
+  );
+  if (!hasOfficialEvidence) {
+    reasons.push('MISSING_OFFICIAL_SOURCE_EVIDENCE');
+  }
+
+  const openRaw = String(candidate.openingDate || candidate.applicationStartDate || '').trim();
+  const closeRaw = String(candidate.closingDate || candidate.applicationEndDate || '').trim();
+  const openDetailed = openRaw ? parseDateDetailed(openRaw) : { valid: false, kind: 'empty' };
+  const closeDetailed = closeRaw ? parseDateDetailed(closeRaw) : { valid: false, kind: 'empty' };
+  const examRaw = String(candidate.examDate || '').trim();
+  const examDetailed = examRaw ? parseDateDetailed(examRaw) : null;
+
+  const hasValidOpenAndClose = Boolean(
+    openRaw &&
+    closeRaw &&
+    openDetailed.valid &&
+    closeDetailed.valid &&
+    openDetailed.components &&
+    closeDetailed.components &&
+    closeDetailed.components.epochDays >= openDetailed.components.epochDays &&
+    (!examDetailed || examDetailed.kind !== 'invalid_calendar')
+  );
+  if (!hasValidOpenAndClose && !isResultNotice) {
+    reasons.push('MISSING_OR_INVALID_APPLICATION_DATES');
+  }
+
+  const todayObj = options.today || getKolkataToday(options.now instanceof Date ? options.now : new Date());
+  const appStatus = calculateApplicationStatus(openRaw, closeRaw, todayObj);
+  const examStatus = calculateExamStatus(examRaw, todayObj);
+  const dateConsistency = evaluateNotificationDateConsistency(
+    candidate,
+    appStatus,
+    examStatus,
+    {},
+    todayObj,
+    { lang: 'en' }
+  );
+
+  const hasDateConflict = Boolean(
+    !hasValidOpenAndClose ||
+    appStatus.isInvalid ||
+    dateConsistency.requiresCtaBlock ||
+    dateConsistency.issues.includes('MISSING_CLOSING_DATE') ||
+    dateConsistency.issues.includes('INVALID_CLOSING_DATE') ||
+    dateConsistency.issues.includes('MISSING_OPENING_DATE') ||
+    dateConsistency.issues.includes('INVALID_OPENING_DATE') ||
+    dateConsistency.issues.includes('CLOSING_BEFORE_OPENING')
+  );
+  if (hasDateConflict && hasValidOpenAndClose && !isResultNotice) {
+    reasons.push('DATE_CONSISTENCY_CONFLICT');
+  }
+
+  const integrityBlockerReasons = reasons.filter(
+    (r) => r !== 'MISSING_OR_INVALID_APPLICATION_DATES' && r !== 'DATE_CONSISTENCY_CONFLICT'
+  );
+
+  const sourceIntegrityVerified = Boolean(
+    integrityBlockerReasons.length === 0 &&
+    detailsUrlCheck.valid &&
+    !isGenericListingOrDirectoryUrl(detailsLinkRaw) &&
+    applyUrlCheck.valid &&
+    hasOfficialEvidence
+  );
+
+  const explicitDatesBlocked = !allowPromotionEvaluation && candidate.applicationDatesVerified === false;
+  if (explicitDatesBlocked && !isResultNotice) {
+    reasons.push('EXPLICIT_APPLICATION_DATES_UNVERIFIED');
+  }
+
+  const applicationDatesVerified = Boolean(
+    !isResultNotice &&
+    sourceIntegrityVerified &&
+    !hasDateConflict &&
+    !explicitDatesBlocked
+  );
+
+  const isVerified = isResultNotice
+    ? Boolean(sourceIntegrityVerified)
+    : Boolean(sourceIntegrityVerified && applicationDatesVerified);
+
+  return {
+    sourceIntegrityVerified,
+    applicationDatesVerified,
+    isVerified,
+    isResultNotice,
+    hasOfficialEvidence,
+    hasValidApplicationDates: !hasDateConflict,
+    reasons: [...new Set(reasons)]
   };
 }
