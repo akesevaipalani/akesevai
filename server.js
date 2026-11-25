@@ -1692,6 +1692,12 @@ const syncAllVerifiedNotificationsFeed = async () => {
   }
 };
 
+const isMasterFeedAutoSyncDisabled = (env = process.env) =>
+  String((env || process.env).DISABLE_MASTER_FEED_AUTO_SYNC || '').trim().toLowerCase() === 'true';
+
+const isStartupJobRecoveryDisabled = (env = process.env) =>
+  String((env || process.env).DISABLE_STARTUP_JOB_RECOVERY || '').trim().toLowerCase() === 'true';
+
 // --- REST API ENDPOINTS ---
 
 // Health Check (Safe production diagnostics without leaking secrets)
@@ -1740,6 +1746,8 @@ app.get('/api/health', (req, res) => {
       purgeEnabled: process.env.ENABLE_EXPIRED_EXAM_PURGE === 'true',
       schedulerEnabled: process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false'
     },
+    masterFeedAutoSyncDisabled: isMasterFeedAutoSyncDisabled(process.env),
+    startupJobRecoveryDisabled: isStartupJobRecoveryDisabled(process.env),
     smsGateway: {
       provider,
       route,
@@ -4951,6 +4959,78 @@ app.use((err, req, res, next) => {
   });
 });
 
+const runStartupPostConnectHooks = async ({
+  initializeAdmin = initializeAdminAuth,
+  syncMasterFeed = syncAllVerifiedNotificationsFeed,
+  recoverJobs = recoverStaleIngestionJobs,
+  ingestionJobModel = IngestionJob,
+  env = process.env
+} = {}) => {
+  // Initialize & bootstrap Admin Authentication record in MongoDB
+  await initializeAdmin();
+
+  const masterFeedAutoSyncDisabled = isMasterFeedAutoSyncDisabled(env);
+  let masterFeedSyncRan = false;
+  if (masterFeedAutoSyncDisabled) {
+    console.log('ℹ️ [Startup Sync]: Skipped automatic Master Exam Notifications Feed Sync (DISABLE_MASTER_FEED_AUTO_SYNC=true).');
+  } else {
+    // Auto-sync official exam notifications on startup (preserving locked/edited records)
+    await syncMasterFeed();
+    masterFeedSyncRan = true;
+    console.log(`📢 ✅ Master Exam Notifications Feed Synced to MongoDB Atlas!`);
+  }
+
+  const startupJobRecoveryDisabled = isStartupJobRecoveryDisabled(env);
+  let startupJobRecoveryRan = false;
+  let recoveryResult = { recoveredCount: 0, failedCount: 0, recoveredJobIds: [], skipped: false };
+  if (startupJobRecoveryDisabled) {
+    recoveryResult.skipped = true;
+    console.log('ℹ️ [Recovery]: Skipped automatic startup stale ingestion job recovery (DISABLE_STARTUP_JOB_RECOVERY=true).');
+  } else {
+    // Recover any stale durable ingestion jobs interrupted by process crash/restart
+    recoveryResult = await recoverJobs(ingestionJobModel);
+    startupJobRecoveryRan = true;
+    if (recoveryResult.recoveredCount > 0 || recoveryResult.failedCount > 0) {
+      console.log(`🔄 [Recovery]: Recovered ${recoveryResult.recoveredCount} stale ingestion job(s) to pending, marked ${recoveryResult.failedCount} exhausted.`);
+    }
+  }
+
+  return {
+    masterFeedSyncRan,
+    masterFeedAutoSyncDisabled,
+    startupJobRecoveryRan,
+    startupJobRecoveryDisabled,
+    recoveryResult
+  };
+};
+
+const registerMasterFeedAutoSyncInterval = ({
+  syncMasterFeed = syncAllVerifiedNotificationsFeed,
+  getConnectionReadyState = () => mongoose.connection.readyState,
+  setIntervalFn = setInterval,
+  intervalMs = 30 * 60 * 1000,
+  env = process.env
+} = {}) => {
+  if (isMasterFeedAutoSyncDisabled(env)) {
+    console.log('ℹ️ [Auto-Sync]: Skipped registering 30-minute Master Exam Notifications Feed Sync interval (DISABLE_MASTER_FEED_AUTO_SYNC=true).');
+    return null;
+  }
+
+  return setIntervalFn(async () => {
+    try {
+      if (isMasterFeedAutoSyncDisabled(env)) {
+        return;
+      }
+      if (getConnectionReadyState() === 1) {
+        await syncMasterFeed();
+        console.log(`⏰ [Auto-Sync] Exam notifications auto-refreshed from official registry at ${new Date().toLocaleTimeString()}`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ [Auto-Sync Warning]:`, e.message);
+    }
+  }, intervalMs);
+};
+
 const connectWithRetry = async () => {
   try {
     // 1. Mandatory Pre-Connection Database & Environment Isolation Validation
@@ -4980,18 +5060,7 @@ const connectWithRetry = async () => {
     console.log(`📡 Database Target: ${maskMongoUri(MONGODB_URI)}`);
     console.log(`🔒 [Database Isolation Verified]: Target Database = ${actualConnectedDb}`);
 
-    // Initialize & bootstrap Admin Authentication record in MongoDB
-    await initializeAdminAuth();
-
-    // Auto-sync official exam notifications on startup (preserving locked/edited records)
-    await syncAllVerifiedNotificationsFeed();
-    console.log(`📢 ✅ Master Exam Notifications Feed Synced to MongoDB Atlas!`);
-
-    // Recover any stale durable ingestion jobs interrupted by process crash/restart
-    const rec = await recoverStaleIngestionJobs(IngestionJob);
-    if (rec.recoveredCount > 0 || rec.failedCount > 0) {
-      console.log(`🔄 [Recovery]: Recovered ${rec.recoveredCount} stale ingestion job(s) to pending, marked ${rec.failedCount} exhausted.`);
-    }
+    await runStartupPostConnectHooks();
   } catch (err) {
     console.warn(`⚠️ MongoDB Atlas Cloud Connection Warning: ${err.message}`);
     console.warn(`🔄 Retrying MongoDB Atlas connection in 3 seconds...`);
@@ -5119,17 +5188,8 @@ const runDurableSchedulerTick = createDurableSchedulerTick();
 const startServer = async () => {
   connectWithRetry();
 
-  // Automated background periodic sync (Every 30 minutes, protecting manual/corrigendum docs)
-  setInterval(async () => {
-    try {
-      if (mongoose.connection.readyState === 1) {
-        await syncAllVerifiedNotificationsFeed();
-        console.log(`⏰ [Auto-Sync] Exam notifications auto-refreshed from official registry at ${new Date().toLocaleTimeString()}`);
-      }
-    } catch (e) {
-      console.warn(`⚠️ [Auto-Sync Warning]:`, e.message);
-    }
-  }, 30 * 60 * 1000);
+  // Automated background periodic sync (Every 30 minutes, protecting manual/corrigendum docs; disabled when DISABLE_MASTER_FEED_AUTO_SYNC=true)
+  registerMasterFeedAutoSyncInterval();
 
   // Staleness-aware Scheduler + Crash Recovery Resume (Primary external cron hits POST /api/notifications/ingest-job)
   if (process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false' && process.env.INGESTION_SCHEDULER_DISABLED !== 'true') {
@@ -5197,6 +5257,10 @@ export {
   createVaultRouteHandlers,
   createDurableSchedulerTick,
   runDurableSchedulerTick,
+  isMasterFeedAutoSyncDisabled,
+  isStartupJobRecoveryDisabled,
+  runStartupPostConnectHooks,
+  registerMasterFeedAutoSyncInterval,
   inspectCustomerToken,
   verifyCustomerToken,
   signCustomerToken,
