@@ -4762,41 +4762,117 @@ const connectWithRetry = async () => {
   }
 };
 
-const runDurableSchedulerTick = async (triggerType = 'in_process_interval') => {
-  if (process.env.INGESTION_SCHEDULER_DISABLED === 'true') {
-    return;
-  }
-  if (mongoose.connection.readyState !== 1) {
-    return;
-  }
-  try {
-    const pendingRecoveries = await IngestionJob.countDocuments({ status: 'pending' });
-    const latestRun = await IngestionRunLog.findOne({}, { completedAt: 1 }).sort({ completedAt: -1 }).lean();
-    const fourHoursMs = 4 * 60 * 60 * 1000;
-    const isStale = !latestRun?.completedAt || (Date.now() - new Date(latestRun.completedAt).getTime()) >= fourHoursMs;
+const createDurableSchedulerTick = (deps = {}) => {
+  const {
+    NotificationModel = Notification,
+    IngestionJobModel = IngestionJob,
+    IngestionLockModel = IngestionLock,
+    IngestionSourceHealthModel = IngestionSourceHealth,
+    IngestionRunLogModel = IngestionRunLog,
+    getMongooseConnection = () => mongoose.connection,
+    ingestionRunner = runAllIngestionJobs,
+    recoverJobs = recoverStaleIngestionJobs,
+    env = process.env,
+    defaultMaxSources = 3
+  } = deps;
 
-    if (pendingRecoveries === 0 && !isStale) {
-      return; // Skip unnecessary catch-up if recent run completed cleanly within 4 hours
+  return async (triggerType = 'in_process_interval', tickOptions = {}) => {
+    if (env.INGESTION_SCHEDULER_DISABLED === 'true') {
+      return { ran: false, reason: 'SCHEDULER_DISABLED' };
     }
+    const conn = typeof getMongooseConnection === 'function' ? getMongooseConnection() : getMongooseConnection;
+    if (!conn || conn.readyState !== 1) {
+      return { ran: false, reason: 'DB_NOT_CONNECTED' };
+    }
+    try {
+      // Recover any stale running jobs whose leases expired before evaluating queue state
+      await recoverJobs(IngestionJobModel, { maxAttempts: 3 }).catch(() => ({ recoveredCount: 0 }));
 
-    console.log(`🤖 [Scheduler]: Running durable ingestion tick (pending=${pendingRecoveries}, stale=${isStale})...`);
-    const summary = await runAllIngestionJobs(Notification, {
-      triggerType: pendingRecoveries > 0 ? 'startup_recovery' : triggerType,
-      models: {
-        IngestionJob,
-        IngestionLock,
-        IngestionSourceHealth,
-        IngestionRunLog,
-        mongooseConnection: mongoose.connection
+      // Prevent duplicate execution if an active running job or live distributed lock lease exists
+      const activeRunningJob = await IngestionJobModel.findOne({ status: 'running' }).lean();
+      if (activeRunningJob) {
+        return {
+          ran: false,
+          reason: 'JOB_ALREADY_RUNNING',
+          activeJobId: activeRunningJob.jobId || null
+        };
       }
-    });
-    console.log(`🤖 [Scheduler]: Ingestion completed: ${summary.newRecordsInserted} new inserted, ${summary.duplicatesSkipped} duplicates skipped.`);
-  } catch (err) {
-    if (err.code !== 'CONCURRENT_INGESTION_LOCKED') {
-      console.warn(`⚠️ [Scheduler Warning]: Ingestion run failed:`, err.message);
+      if (IngestionLockModel) {
+        const activeLock = await IngestionLockModel.findOne({
+          ownerRunId: { $nin: [null, ''] },
+          leaseExpiresAt: { $gt: new Date() }
+        }).lean();
+        if (activeLock) {
+          return {
+            ran: false,
+            reason: 'LOCK_HELD',
+            ownerRunId: activeLock.ownerRunId
+          };
+        }
+      }
+
+      const [pendingCount, retryPendingCount] = await Promise.all([
+        IngestionJobModel.countDocuments({ status: 'pending' }),
+        IngestionJobModel.countDocuments({ status: 'retry_pending' })
+      ]);
+      const pendingRecoveries = pendingCount + retryPendingCount;
+      const latestRun = IngestionRunLogModel
+        ? await IngestionRunLogModel.findOne({}, { completedAt: 1 }).sort({ completedAt: -1 }).lean()
+        : null;
+      const fourHoursMs = 4 * 60 * 60 * 1000;
+      const isStale = !latestRun?.completedAt || (Date.now() - new Date(latestRun.completedAt).getTime()) >= fourHoursMs;
+
+      if (pendingRecoveries === 0 && !isStale) {
+        return {
+          ran: false,
+          reason: 'EMPTY_QUEUE_NOT_STALE',
+          pendingCount: 0,
+          retryPendingCount: 0,
+          pendingRecoveries: 0,
+          isStale: false
+        }; // Skip unnecessary catch-up if queue is empty and recent run completed cleanly within 4 hours
+      }
+
+      const parsedBatch = parseInt(String(tickOptions.maxSources || env.INGESTION_SCHEDULER_MAX_SOURCES || defaultMaxSources), 10);
+      const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
+
+      console.log(`🤖 [Scheduler]: Running durable ingestion tick (pending=${pendingCount}, retry_pending=${retryPendingCount}, stale=${isStale}, maxSources=${batchLimit})...`);
+      const summary = await ingestionRunner(NotificationModel, {
+        triggerType: pendingRecoveries > 0 ? 'startup_recovery' : triggerType,
+        maxSources: batchLimit,
+        env,
+        models: {
+          IngestionJob: IngestionJobModel,
+          IngestionLock: IngestionLockModel,
+          IngestionSourceHealth: IngestionSourceHealthModel,
+          IngestionRunLog: IngestionRunLogModel,
+          mongooseConnection: conn
+        }
+      });
+      console.log(`🤖 [Scheduler]: Ingestion completed: ${summary.newRecordsInserted} new inserted, ${summary.duplicatesSkipped} duplicates skipped.`);
+      return {
+        ran: true,
+        pendingCount,
+        retryPendingCount,
+        pendingRecoveries,
+        isStale,
+        maxSources: batchLimit,
+        summary
+      };
+    } catch (err) {
+      if (err.code !== 'CONCURRENT_INGESTION_LOCKED') {
+        console.warn(`⚠️ [Scheduler Warning]: Ingestion run failed:`, err.message);
+      }
+      return {
+        ran: false,
+        reason: err.code === 'CONCURRENT_INGESTION_LOCKED' ? 'CONCURRENT_INGESTION_LOCKED' : 'SCHEDULER_ERROR',
+        error: err.message
+      };
     }
-  }
+  };
 };
+
+const runDurableSchedulerTick = createDurableSchedulerTick();
 
 const startServer = async () => {
   connectWithRetry();
@@ -4877,6 +4953,8 @@ if (isMainModule && process.env.DISABLE_AUTO_START !== 'true') {
 export {
   app,
   createVaultRouteHandlers,
+  createDurableSchedulerTick,
+  runDurableSchedulerTick,
   inspectCustomerToken,
   verifyCustomerToken,
   signCustomerToken,

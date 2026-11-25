@@ -378,6 +378,24 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
 
       // Route 6B: Pure durable enqueue mode (creates/coalesces DB job without running detached background promises)
       if (enqueueOnly === 'true' || action === 'enqueue') {
+        const normalizedSourceKey = sourceKey !== undefined ? String(sourceKey).trim() : '';
+        if (sourceKey !== undefined) {
+          const matchedSource = normalizedSourceKey
+            ? OFFICIAL_EXAM_SOURCES.find((s) => s.key === normalizedSourceKey && s.enabled !== false)
+            : null;
+          if (!matchedSource) {
+            return res.status(400).json({
+              success: false,
+              error: 'INVALID_SOURCE_KEY',
+              code: 'INVALID_SOURCE_KEY',
+              message: normalizedSourceKey
+                ? `Unknown or disabled sourceKey '${normalizedSourceKey}'. Provide a valid enabled sourceKey or omit sourceKey.`
+                : 'sourceKey query parameter cannot be empty when explicitly supplied.',
+              validSourceKeys: OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled !== false).map((s) => s.key)
+            });
+          }
+        }
+
         if (!IngestionJob) {
           return res.status(503).json({
             success: false,
@@ -396,8 +414,8 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           });
         }
 
-        const sources = sourceKey
-          ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === sourceKey)
+        const sources = normalizedSourceKey
+          ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === normalizedSourceKey && s.enabled !== false)
           : OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled);
 
         const jobId = generateJobId();
@@ -414,7 +432,7 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           triggerType: isSecretValid ? 'external_cron' : 'manual_admin',
           status: 'pending',
           dryRun: dryRun === 'true',
-          sourceKeyFilter: sourceKey || '',
+          sourceKeyFilter: normalizedSourceKey,
           sourceQueue: queue,
           summary: recomputeJobSummary(queue),
           errors: [],

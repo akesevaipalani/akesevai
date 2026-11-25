@@ -21,11 +21,22 @@ jobs:
       - name: Trigger Decoupled Ingestion & Run Worker Batches
         env:
           INGESTION_SECRET: ${{ secrets.INGESTION_SECRET_KEY || secrets.INGESTION_SECRET }}
-          BASE_URL: "https://akesevai.onrender.com"
+          PRODUCTION_BASE_URL: "https://akesevai.onrender.com"
+          BASE_URL: ${{ github.ref == 'refs/heads/main' && 'https://akesevai.onrender.com' || vars.STAGING_BASE_URL || '' }}
+          WORKFLOW_REF: ${{ github.ref }}
         run: |
           echo "================================================================"
           echo "🚀 Starting AK E-SEVAI Decoupled Queue + Worker Ingestion Job..."
           echo "================================================================"
+
+          # 0. Strict Staging-vs-Production Separation Guard:
+          # Never allow non-main / staging runs to trigger production ingestion accidentally.
+          if [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
+            if [ -z "$BASE_URL" ] || [ "$BASE_URL" = "$PRODUCTION_BASE_URL" ]; then
+              echo "::error::STAGING_WORKFLOW_BLOCKED: Ref '$WORKFLOW_REF' is not 'refs/heads/main' and no non-production vars.STAGING_BASE_URL is configured. Refusing to target production."
+              exit 1
+            fi
+          fi
 
           # 1. Fail-closed guard: Refuse execution if INGESTION_SECRET_KEY is not configured
           if [ -z "$INGESTION_SECRET" ]; then
