@@ -145,7 +145,8 @@ jobs:
           if [ "$JOB_FINISHED" = "true" ]; then
             echo "✅ Automated All-India Exam Notifications Ingestion Succeeded!"
           elif [ "$CONSECUTIVE_LOCK_WAIT_COUNT" -eq "$MAX_BATCH_ITERATIONS" ]; then
-            echo "ℹ️ Ingestion is actively running on another worker/container across all ticks. Distributed lock respected (idempotent skip)."
+            echo "::error::Distributed lock remained held across all $MAX_BATCH_ITERATIONS worker ticks without job completion (CONSECUTIVE_LOCK_WAIT_COUNT=$CONSECUTIVE_LOCK_WAIT_COUNT)."
+            exit 1
           else
             echo "::error::Ingestion incomplete after $MAX_BATCH_ITERATIONS batches. Pending sources remain unfinished."
             exit 1

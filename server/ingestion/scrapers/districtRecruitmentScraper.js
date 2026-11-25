@@ -1,16 +1,17 @@
 // server/ingestion/scrapers/districtRecruitmentScraper.js
-// AK E-SEVAI 2 — PHASE B2-C: Reusable Controlled Pilot District Recruitment Scraper Engine
-// Restricted strictly to 5 pilot districts: Dindigul, Chennai, Coimbatore, Tiruchirappalli, Madurai
+// AK E-SEVAI 2 — PHASE B2-C: Reusable Controlled Pilot & Expansion District Recruitment Scraper Engine
+// Supports 15 approved Tamil Nadu districts (all 38 districts & 21 corps cataloged in districtSourcesInventory.js; not yet enabled in sourcesConfig.js).
 // Strict Official Government Domain Policy, SSRF Protection, Dual HTML/PDF Support, and Zero-Guessing Rule.
 
 import * as cheerio from 'cheerio';
 import { safeFetchHtml, classifyPdfBuffer } from '../fetchHelper.js';
 import { validateExplicitSourceUrl } from '../officialDomainPolicy.js';
-import { parseDateDetailed, isKnownDescriptiveDateText } from '../../../src/utils/notificationDateHelper.js';
+import { parseDateDetailed, isKnownDescriptiveDateText, getKolkataToday } from '../../../src/utils/notificationDateHelper.js';
 
 /**
- * STRICT PILOT & CONTROLLED EXPANSION BOUNDARY: 10 Approved Districts
- * Original 5 Pilot Districts + 5 Phase B3 Expansion Districts
+ * STRICT PILOT & CONTROLLED EXPANSION BOUNDARY: 15 Approved Districts
+ * Original 5 Pilot Districts + 10 Controlled Expansion Districts
+ * (Note: Full 38-district inventory is cataloged in districtSourcesInventory.js and not yet enabled in sourcesConfig.js)
  */
 export const PILOT_DISTRICT_IDS = new Set([
   'dindigul',
@@ -96,7 +97,7 @@ function resolveUrl(href, baseUrl) {
 /**
  * Classifies date and detects expiration against reference today
  */
-function analyzeClosingDate(rawDateStr, todayIso = '2026-11-18') {
+function analyzeClosingDate(rawDateStr, todayIso = getKolkataToday().isoDate) {
   if (!rawDateStr) {
     return { valid: false, parsedIso: '', isExpired: false, reason: 'MISSING_DATE' };
   }
@@ -153,7 +154,7 @@ export function extractS3waasTableNotifications(html, sourceConfig, options = {}
       }
     });
 
-    const closingAnalysis = analyzeClosingDate(endCell, options.todayIso || '2026-11-18');
+    const closingAnalysis = analyzeClosingDate(endCell, options.todayIso || getKolkataToday().isoDate);
     const vacancies = extractExplicitVacancies(rawTitle);
     const qualification = extractExplicitQualification(rawTitle);
     const identityFingerprint = computeIdentityFingerprint(sourceConfig.organization, rawTitle, closingAnalysis.parsedIso || endCell);
@@ -241,7 +242,7 @@ export function extractEcourtTableNotifications(html, sourceConfig, options = {}
       }
     });
 
-    const closingAnalysis = analyzeClosingDate(endCell, options.todayIso || '2026-11-18');
+    const closingAnalysis = analyzeClosingDate(endCell, options.todayIso || getKolkataToday().isoDate);
     const vacancies = extractExplicitVacancies(rawTitle);
     const qualification = extractExplicitQualification(rawTitle);
     const identityFingerprint = computeIdentityFingerprint(sourceConfig.organization, rawTitle, closingAnalysis.parsedIso || endCell);
@@ -331,7 +332,7 @@ export function extractMunicipalCorpNotifications(html, sourceConfig, options = 
     const startCell = dateMatch && dateMatch[0] ? dateMatch[0] : '';
     const endCell = dateMatch && dateMatch[1] ? dateMatch[1] : (dateMatch && dateMatch[0] ? dateMatch[0] : '');
 
-    const closingAnalysis = analyzeClosingDate(endCell, options.todayIso || '2026-11-18');
+    const closingAnalysis = analyzeClosingDate(endCell, options.todayIso || getKolkataToday().isoDate);
     const vacancies = extractExplicitVacancies(rawTitle + ' ' + $el.text());
     const qualification = extractExplicitQualification(rawTitle + ' ' + $el.text());
     const identityFingerprint = computeIdentityFingerprint(sourceConfig.organization, rawTitle, closingAnalysis.parsedIso || endCell);
@@ -409,7 +410,7 @@ export async function scrapePilotDistrictSource(sourceConfig, options = {}) {
   const recruitmentUrl = sourceConfig.recruitmentUrl || sourceConfig.url;
   const districtId = sourceConfig.districtId;
 
-  // 1. Boundary enforcement: Only 5 Pilot Districts
+  // 1. Boundary enforcement: Only 15 Approved Pilot & Expansion Districts
   if (!PILOT_DISTRICT_IDS.has(districtId)) {
     return {
       success: false,

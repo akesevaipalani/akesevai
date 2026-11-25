@@ -2,12 +2,22 @@
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
 
+function resolveUrlSafe(href, baseUrl) {
+  if (!href || href === '#' || href.startsWith('javascript:')) return '';
+  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Scrapes Indian Army / Defence Notifications (with CAPTCHA detection)
  */
-export async function scrapeIndianArmyNotifications(sourceConfig) {
+export async function scrapeIndianArmyNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return {
       success: false,
@@ -49,7 +59,7 @@ export async function scrapeIndianArmyNotifications(sourceConfig) {
       lower.includes('soldier') ||
       lower.includes('recruitment')
     ) {
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'indian_army',
         category: 'police_defence',
@@ -78,9 +88,9 @@ export async function scrapeIndianArmyNotifications(sourceConfig) {
 /**
  * Scrapes Indian Navy Notifications (from Current Events)
  */
-export async function scrapeIndianNavyNotifications(sourceConfig) {
+export async function scrapeIndianNavyNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -106,7 +116,7 @@ export async function scrapeIndianNavyNotifications(sourceConfig) {
 
     if (isNavyRecruit && !seenHeadings.has(text)) {
       seenHeadings.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'indian_navy',
         category: 'police_defence',
@@ -135,9 +145,9 @@ export async function scrapeIndianNavyNotifications(sourceConfig) {
 /**
  * Scrapes Indian Air Force (Agnipath Vayu)
  */
-export async function scrapeIndianAirforceNotifications(sourceConfig) {
+export async function scrapeIndianAirforceNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return {
       success: false,
@@ -161,7 +171,7 @@ export async function scrapeIndianAirforceNotifications(sourceConfig) {
         text.toLowerCase().includes('recruitment') ||
         text.toLowerCase().includes('notification'))
     ) {
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'indian_airforce',
         category: 'police_defence',
@@ -190,9 +200,9 @@ export async function scrapeIndianAirforceNotifications(sourceConfig) {
 /**
  * Scrapes CTET (Central Teacher Eligibility Test)
  */
-export async function scrapeCtetNotifications(sourceConfig) {
+export async function scrapeCtetNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -217,7 +227,7 @@ export async function scrapeCtetNotifications(sourceConfig) {
       if (seenTitles.has(text)) return;
       seenTitles.add(text);
 
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'ctet_cbse',
         category: 'teaching',
@@ -246,9 +256,9 @@ export async function scrapeCtetNotifications(sourceConfig) {
 /**
  * Scrapes KVS (Kendriya Vidyalaya Sangathan Interview & Recruitment Notices)
  */
-export async function scrapeKvsNotifications(sourceConfig) {
+export async function scrapeKvsNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -263,10 +273,7 @@ export async function scrapeKvsNotifications(sourceConfig) {
       const title = $(cols[0]).text().trim().replace(/\s+/g, ' ');
       const publishDate = $(cols[1]).text().trim().replace(/\s+/g, ' ');
       const a = $(row).find('a');
-      let link = a.attr('href') || '';
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
+      const link = resolveUrlSafe(a.attr('href') || '', url);
 
       if (title && title.length > 5) {
         items.push({

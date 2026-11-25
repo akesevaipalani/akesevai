@@ -2,12 +2,22 @@
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
 
+function resolveUrlSafe(href, baseUrl) {
+  if (!href || href === '#' || href.startsWith('javascript:')) return '';
+  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Scrapes LIC India Careers (Life Insurance Corporation)
  */
-export async function scrapeLicNotifications(sourceConfig) {
+export async function scrapeLicNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -36,7 +46,7 @@ export async function scrapeLicNotifications(sourceConfig) {
 
     if (isLicRecruit && !seenTitles.has(text)) {
       seenTitles.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'lic_careers',
         category: 'banking',
@@ -65,9 +75,9 @@ export async function scrapeLicNotifications(sourceConfig) {
 /**
  * Scrapes NIACL Recruitment (New India Assurance Company Ltd)
  */
-export async function scrapeNiaclNotifications(sourceConfig) {
+export async function scrapeNiaclNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -93,7 +103,7 @@ export async function scrapeNiaclNotifications(sourceConfig) {
 
     if (isNiaclJob && !isPast && !seenTitles.has(text)) {
       seenTitles.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'niacl_careers',
         category: 'banking',
@@ -122,9 +132,9 @@ export async function scrapeNiaclNotifications(sourceConfig) {
 /**
  * Scrapes Bharat Electronics Limited (BEL Job Notifications)
  */
-export async function scrapeBelNotifications(sourceConfig) {
+export async function scrapeBelNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -149,10 +159,10 @@ export async function scrapeBelNotifications(sourceConfig) {
       const h = $(a).attr('href') || '';
       const t = $(a).text().trim().toLowerCase();
       if (h.endsWith('.pdf') && !pdfLink && !h.toLowerCase().includes('format') && !h.toLowerCase().includes('certificate')) {
-        pdfLink = h.startsWith('http') ? h : new URL(h, url).toString();
+        pdfLink = resolveUrlSafe(h, url);
       }
       if (t.includes('apply') || h.includes('jobapply.in')) {
-        applyLink = h.startsWith('http') ? h : new URL(h, url).toString();
+        applyLink = resolveUrlSafe(h, url);
       }
     });
 
@@ -185,9 +195,9 @@ export async function scrapeBelNotifications(sourceConfig) {
 /**
  * Scrapes Bharat Heavy Electricals Limited (BHEL Careers)
  */
-export async function scrapeBhelNotifications(sourceConfig) {
+export async function scrapeBhelNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -225,7 +235,7 @@ export async function scrapeBhelNotifications(sourceConfig) {
       if (seenHeadings.has(title) || text.length < 3) return;
       seenHeadings.add(title);
 
-      let absLink = href.startsWith('http') ? href : new URL(href, 'https://careers.bhel.in/').toString();
+      const absLink = resolveUrlSafe(href, 'https://careers.bhel.in/') || url;
       items.push({
         sourceKey: 'bhel_psu',
         category: 'psu',

@@ -268,8 +268,39 @@ export function calculateInitialUpcomingRunDate(nowInstant = new Date()) {
   );
 }
 
+const UNRESOLVED_INGESTION_STATUSES = [
+  'pending_review',
+  'needs_review',
+  'quarantined',
+  'rejected',
+  'rejected_pending_correction',
+  'pending_corrigendum_review',
+  'quarantined_corrigendum',
+  'under_review',
+  'draft'
+];
+
+const UNRESOLVED_RECORD_STATUSES = [
+  'under_review',
+  'draft',
+  'quarantined',
+  'needs_review',
+  'rejected',
+  'pending',
+  'pending_review',
+  'needs_official_source',
+  'held'
+];
+
 /**
  * Evaluates whether a notification is in an unresolved review or quarantine state.
+ *
+ * Domain & Schema Policy:
+ * - `notificationSchema` defines `isVerified: { type: Boolean, default: true }` and
+ *   `ingestionStatus: { type: String, default: 'published' }`, and omits `sourceIntegrityVerified`.
+ * - Missing (`undefined`) `isVerified` / `sourceIntegrityVerified` / `ingestionStatus` follow
+ *   schema defaults/absent optional metadata, whereas `false`, `null`, or any non-expected/ambiguous
+ *   value fails closed and protects the record from deletion.
  *
  * @param {Object} notif
  * @returns {boolean}
@@ -277,30 +308,20 @@ export function calculateInitialUpcomingRunDate(nowInstant = new Date()) {
 export function isUnresolvedReviewState(notif) {
   if (!notif) return true;
 
-  const UNRESOLVED_INGESTION_STATUSES = new Set([
-    'pending_review',
-    'needs_review',
-    'quarantined',
-    'rejected_pending_correction',
-    'pending_corrigendum_review',
-    'quarantined_corrigendum',
-    'under_review',
-    'draft'
-  ]);
-
-  if (notif.ingestionStatus && UNRESOLVED_INGESTION_STATUSES.has(String(notif.ingestionStatus).toLowerCase().trim())) {
-    return true;
+  if (notif.ingestionStatus !== undefined) {
+    if (typeof notif.ingestionStatus !== 'string') return true;
+    const ingNorm = notif.ingestionStatus.toLowerCase().trim();
+    if (!ingNorm || UNRESOLVED_INGESTION_STATUSES.includes(ingNorm) || ingNorm !== 'published') {
+      return true;
+    }
   }
 
-  const UNRESOLVED_RECORD_STATUSES = new Set([
-    'under_review',
-    'draft',
-    'quarantined',
-    'needs_review'
-  ]);
-
-  if (notif.status && UNRESOLVED_RECORD_STATUSES.has(String(notif.status).toLowerCase().trim())) {
-    return true;
+  if (notif.status !== undefined) {
+    if (typeof notif.status !== 'string') return true;
+    const statusNorm = notif.status.toLowerCase().trim();
+    if (!statusNorm || UNRESOLVED_RECORD_STATUSES.includes(statusNorm)) {
+      return true;
+    }
   }
 
   if (
@@ -310,21 +331,31 @@ export function isUnresolvedReviewState(notif) {
     return true;
   }
 
-  if (notif.needsOfficialSource === true || notif.hasSourceIntegrityIssue === true) {
+  if (
+    notif.needsOfficialSource === true ||
+    notif.needsOfficialSource === 'true' ||
+    notif.hasSourceIntegrityIssue === true ||
+    notif.hasSourceIntegrityIssue === 'true'
+  ) {
     return true;
   }
 
-  if (notif.isVerified === false || notif.sourceIntegrityVerified === false) {
+  // Fail closed when verification flags are explicitly false, null, or ambiguous non-boolean values
+  if (notif.isVerified !== undefined && notif.isVerified !== true) {
+    return true;
+  }
+  if (notif.sourceIntegrityVerified !== undefined && notif.sourceIntegrityVerified !== true) {
     return true;
   }
 
-  if (notif.manualOverrideLock === true) {
+  if (notif.manualOverrideLock === true || notif.manualOverrideLock === 'true') {
     return true;
   }
 
-  if (notif.docVerificationStatus) {
-    const dvs = String(notif.docVerificationStatus).toLowerCase().trim();
-    if (dvs.includes('pending') || dvs === 'quarantined' || dvs === 'failed') {
+  if (notif.docVerificationStatus !== undefined && notif.docVerificationStatus !== '') {
+    if (typeof notif.docVerificationStatus !== 'string') return true;
+    const dvs = notif.docVerificationStatus.toLowerCase().trim();
+    if (dvs.includes('pending') || dvs === 'quarantined' || dvs === 'failed' || dvs === 'unverified') {
       return true;
     }
   }
@@ -341,14 +372,22 @@ export function isUnresolvedReviewState(notif) {
 export function hasUnresolvedCorrigendumOrUpdate(notif) {
   if (!notif) return false;
 
-  if (notif.hasCorrigendum === true) {
+  if (notif.hasCorrigendum === true || notif.hasCorrigendum === 'true') {
     if (notif.corrigendumResolved !== true && notif.corrigendumVerified !== true) {
       return true;
     }
+  } else if (
+    notif.hasCorrigendum !== undefined &&
+    notif.hasCorrigendum !== false &&
+    notif.hasCorrigendum !== 'false'
+  ) {
+    // Explicit null or non-boolean ambiguous value fails closed
+    return true;
   }
 
-  if (notif.corrigendumStatus) {
-    const cs = String(notif.corrigendumStatus).toLowerCase().trim();
+  if (notif.corrigendumStatus !== undefined && notif.corrigendumStatus !== '') {
+    if (typeof notif.corrigendumStatus !== 'string') return true;
+    const cs = notif.corrigendumStatus.toLowerCase().trim();
     if (cs === 'pending' || cs === 'pending_review' || cs === 'unresolved') {
       return true;
     }
@@ -361,7 +400,17 @@ export function hasUnresolvedCorrigendumOrUpdate(notif) {
     return true;
   }
 
-  if (notif.pendingCorrigendum) {
+  if (notif.pendingCorrigendum === null) {
+    return true;
+  }
+  if (notif.pendingCorrigendum === true) {
+    return true;
+  }
+  if (
+    typeof notif.pendingCorrigendum === 'string' &&
+    notif.pendingCorrigendum.trim() !== '' &&
+    notif.pendingCorrigendum.toLowerCase().trim() !== 'false'
+  ) {
     return true;
   }
 
@@ -369,7 +418,7 @@ export function hasUnresolvedCorrigendumOrUpdate(notif) {
 }
 
 /**
- * Evaluates whether the application window is still active, open, or invalid/ambiguous.
+ * Evaluates whether the registration window is still active, open, or invalid/ambiguous.
  *
  * @param {Object} notif
  * @param {Object} todayObj
@@ -378,21 +427,40 @@ export function hasUnresolvedCorrigendumOrUpdate(notif) {
 export function isApplicationStillOpenOrActive(notif, todayObj) {
   if (!notif) return false;
 
+  // Fail closed if closing/extension/opening date fields hold unexpected non-string values (e.g. Date/Object)
+  const rawDateCheckFields = [
+    notif.openingDate,
+    notif.applicationStartDate,
+    notif.closingDate,
+    notif.applicationEndDate,
+    notif.applicationLastDate,
+    notif.extendedClosingDate,
+    notif.extendedLastDate,
+    notif.revisedClosingDate
+  ];
+  for (const rawVal of rawDateCheckFields) {
+    if (rawVal !== undefined && rawVal !== null && rawVal !== '' && typeof rawVal !== 'string') {
+      return true;
+    }
+  }
+
   const openInput = notif.openingDate || notif.applicationStartDate || '';
-  const closeInput = notif.closingDate || notif.applicationEndDate || '';
-  if (!closeInput) {
+  const closeInput = notif.closingDate || notif.applicationEndDate || notif.applicationLastDate || '';
+  const extInput = notif.extendedClosingDate || notif.extendedLastDate || notif.revisedClosingDate || '';
+
+  if (!closeInput && !extInput) {
     return false;
   }
 
-  const appStatus = calculateApplicationStatus(openInput, closeInput, todayObj, {
-    extendedClosingDate: notif.extendedClosingDate || notif.extendedLastDate || notif.revisedClosingDate || '',
+  const appStatus = calculateApplicationStatus(openInput, closeInput || extInput, todayObj, {
+    extendedClosingDate: extInput,
     isExtensionVerified: notif.isExtensionVerified,
     extensionVerified: notif.extensionVerified,
     corrigendumVerified: notif.corrigendumVerified,
     lang: 'en'
   });
 
-  // Invalid application dates -> ambiguous/invalid information -> protect!
+  // Invalid date values -> ambiguous/invalid information -> protect
   if (appStatus.isInvalid) {
     return true;
   }
@@ -418,7 +486,7 @@ export function isApplicationStillOpenOrActive(notif, todayObj) {
 
 /**
  * Evaluates whether any subsequent selection stage or recruitment event
- * (interview, document verification, mains exam, or pending results) is still active.
+ * (interview, verification, mains exam, or pending results) is still active.
  *
  * @param {Object} notif
  * @param {Object} todayObj
@@ -427,7 +495,29 @@ export function isApplicationStillOpenOrActive(notif, todayObj) {
 export function hasPendingSubsequentStageOrEvent(notif, todayObj) {
   if (!notif) return false;
 
-  const rawExamDate = notif.examDate || '';
+  // Fail closed if any subsequent-stage date field holds non-string unexpected values
+  const stageNonEmptyCheckFields = [
+    notif.interviewDate,
+    notif.walkInDate,
+    notif.documentVerificationDate,
+    notif.dvDate,
+    notif.selectionDate,
+    notif.counsellingDate,
+    notif.resultDate,
+    notif.mainsExamDate,
+    notif.mainsDate,
+    notif.tier2ExamDate,
+    notif.tier2Date,
+    notif.stage2ExamDate,
+    notif.stage2Date
+  ];
+  for (const val of stageNonEmptyCheckFields) {
+    if (val !== undefined && val !== null && val !== '' && typeof val !== 'string') {
+      return true;
+    }
+  }
+
+  const rawExamDate = typeof notif.examDate === 'string' ? notif.examDate : '';
 
   // 1. Multi-Stage Exam Guard (Mains)
   const examStages = extractExamStages(rawExamDate, notif);
@@ -444,33 +534,52 @@ export function hasPendingSubsequentStageOrEvent(notif, todayObj) {
     return true;
   }
 
-  // 2. Interview / Personality Test / Walk-in Guard
+  // 2. Interview / Personality Test / Walk-in Guard (check each field independently to avoid || shadowing)
   const isInterviewApplicable = notif.interviewApplicable !== false && notif.interviewNotApplicable !== true;
-  const interviewCandidate = notif.interviewDate || notif.walkInDate || (isInterviewOrScheduleText(rawExamDate) ? rawExamDate : '');
+  const interviewInputs = [
+    notif.interviewDate,
+    notif.walkInDate,
+    isInterviewOrScheduleText(rawExamDate) ? rawExamDate : ''
+  ].filter((v) => typeof v === 'string' && v.trim());
 
-  if (isInterviewApplicable && interviewCandidate && typeof interviewCandidate === 'string' && interviewCandidate.trim()) {
-    const interviewStatus = calculateInterviewStatus(interviewCandidate, todayObj, { lang: 'en' });
-    // Invalid interview date -> protect (ambiguous/invalid info)
-    if (interviewStatus.isInvalid) return true;
-    // Interview is upcoming or today -> protect
-    if (interviewStatus.isUpcoming || interviewStatus.isToday) return true;
-    // Interview has specific calendar date today or in future -> protect
-    if (interviewStatus.hasDate && typeof interviewStatus.earliestEpochDays === 'number' && todayObj.epochDays <= interviewStatus.earliestEpochDays) {
-      return true;
-    }
-    // Date pending / announced without calendar day -> protect
-    if (interviewStatus.isDatePending || interviewStatus.status === 'DATE_PENDING') {
-      return true;
+  if (isInterviewApplicable) {
+    for (const interviewCandidate of interviewInputs) {
+      const interviewStatus = calculateInterviewStatus(interviewCandidate, todayObj, { lang: 'en' });
+      if (interviewStatus.isInvalid) return true;
+      if (interviewStatus.isUpcoming || interviewStatus.isToday) return true;
+      if (
+        interviewStatus.hasDate &&
+        typeof interviewStatus.earliestEpochDays === 'number' &&
+        todayObj.epochDays <= interviewStatus.earliestEpochDays
+      ) {
+        return true;
+      }
+      if (interviewStatus.isDatePending || interviewStatus.status === 'DATE_PENDING') {
+        return true;
+      }
     }
   }
 
-  // 3. DV Verification / Counselling / Selection Date Guard
-  const selCandidate = notif.documentVerificationDate || notif.dvDate || notif.selectionDate || notif.counsellingDate || '';
-  if (selCandidate && typeof selCandidate === 'string' && selCandidate.trim()) {
+  // 3. DV / Counselling / Selection Date Guard (check each field independently)
+  const selectionInputs = [
+    notif.documentVerificationDate,
+    notif.dvDate,
+    notif.selectionDate,
+    notif.counsellingDate
+  ].filter((v) => typeof v === 'string' && v.trim());
+
+  for (const selCandidate of selectionInputs) {
     const selStatus = calculateSelectionStatus(selCandidate, todayObj, { lang: 'en' });
     if (selStatus.isInvalid) return true;
     if (selStatus.isUpcoming || selStatus.isToday) return true;
-    if (selStatus.hasDate && typeof selStatus.earliestEpochDays === 'number' && todayObj.epochDays <= selStatus.earliestEpochDays) {
+    if (
+      selStatus.hasDate &&
+      typeof selStatus.earliestEpochDays === 'number' &&
+      todayObj.epochDays <= selStatus.earliestEpochDays
+    ) {
+      return true;
+    }
+    if (selStatus.isDatePending || selStatus.status === 'DATE_PENDING') {
       return true;
     }
   }
@@ -498,10 +607,17 @@ export function hasPendingSubsequentStageOrEvent(notif, todayObj) {
     }
   }
 
-  // 5. Result date in future
+  // 5. Result date in future, today, invalid, or unannounced/pending
   if (notif.resultDate && typeof notif.resultDate === 'string' && notif.resultDate.trim()) {
+    const resParsed = parseAllDatesDetailed(notif.resultDate);
+    if (resParsed.hasInvalidCalendarDate || !resParsed.hasValidDate) {
+      return true;
+    }
+    if (typeof resParsed.latestEpochDays === 'number' && todayObj.epochDays <= resParsed.latestEpochDays) {
+      return true;
+    }
     const resultStatus = calculateResultStatus(notif, todayObj, { lang: 'en' });
-    if (resultStatus.isUpcoming || resultStatus.isToday) {
+    if (resultStatus.isInvalidDate) {
       return true;
     }
   }
@@ -956,49 +1072,55 @@ export async function findExpiredExamCandidates(NotificationModel, todayObj = ge
  * @param {Object} doc - Freshly revalidated candidate record
  * @returns {Object} MongoDB atomic deletion filter
  */
+function dateSnapshotCondition(val) {
+  return typeof val === 'string' && val.trim() ? val : { $in: [null, ''] };
+}
+
 export function buildConditionalDeletionFilter(doc) {
   if (!doc || !doc.id) {
     throw new Error('INVALID_CANDIDATE: Candidate record with id is required to build deletion filter');
   }
+
+  const andConditions = [];
 
   const filter = {
     id: doc.id,
 
     // 1. Exact Exam & Registration Dates (prevents deletion if dates were changed or rescheduled)
     examDate: doc.examDate,
-    closingDate: doc.closingDate !== undefined ? doc.closingDate : { $in: [null, '', undefined] },
-    openingDate: doc.openingDate ? doc.openingDate : { $in: [null, '', undefined] },
-    applicationStartDate: doc.applicationStartDate ? doc.applicationStartDate : { $in: [null, '', undefined] },
-    applicationEndDate: doc.applicationEndDate ? doc.applicationEndDate : { $in: [null, '', undefined] },
-    applicationLastDate: doc.applicationLastDate ? doc.applicationLastDate : { $in: [null, '', undefined] },
+    closingDate: dateSnapshotCondition(doc.closingDate),
+    openingDate: dateSnapshotCondition(doc.openingDate),
+    applicationStartDate: dateSnapshotCondition(doc.applicationStartDate),
+    applicationEndDate: dateSnapshotCondition(doc.applicationEndDate),
+    applicationLastDate: dateSnapshotCondition(doc.applicationLastDate),
 
     // 2. Multi-Stage Exam Dates (Prelims & Mains)
-    mainsExamDate: doc.mainsExamDate ? doc.mainsExamDate : { $in: [null, '', undefined] },
-    mainsDate: doc.mainsDate ? doc.mainsDate : { $in: [null, '', undefined] },
-    tier2ExamDate: doc.tier2ExamDate ? doc.tier2ExamDate : { $in: [null, '', undefined] },
-    tier2Date: doc.tier2Date ? doc.tier2Date : { $in: [null, '', undefined] },
-    stage2ExamDate: doc.stage2ExamDate ? doc.stage2ExamDate : { $in: [null, '', undefined] },
-    stage2Date: doc.stage2Date ? doc.stage2Date : { $in: [null, '', undefined] },
-    prelimsExamDate: doc.prelimsExamDate ? doc.prelimsExamDate : { $in: [null, '', undefined] },
-    prelimsDate: doc.prelimsDate ? doc.prelimsDate : { $in: [null, '', undefined] },
-    tier1ExamDate: doc.tier1ExamDate ? doc.tier1ExamDate : { $in: [null, '', undefined] },
-    tier1Date: doc.tier1Date ? doc.tier1Date : { $in: [null, '', undefined] },
-    stage1ExamDate: doc.stage1ExamDate ? doc.stage1ExamDate : { $in: [null, '', undefined] },
-    stage1Date: doc.stage1Date ? doc.stage1Date : { $in: [null, '', undefined] },
+    mainsExamDate: dateSnapshotCondition(doc.mainsExamDate),
+    mainsDate: dateSnapshotCondition(doc.mainsDate),
+    tier2ExamDate: dateSnapshotCondition(doc.tier2ExamDate),
+    tier2Date: dateSnapshotCondition(doc.tier2Date),
+    stage2ExamDate: dateSnapshotCondition(doc.stage2ExamDate),
+    stage2Date: dateSnapshotCondition(doc.stage2Date),
+    prelimsExamDate: dateSnapshotCondition(doc.prelimsExamDate),
+    prelimsDate: dateSnapshotCondition(doc.prelimsDate),
+    tier1ExamDate: dateSnapshotCondition(doc.tier1ExamDate),
+    tier1Date: dateSnapshotCondition(doc.tier1Date),
+    stage1ExamDate: dateSnapshotCondition(doc.stage1ExamDate),
+    stage1Date: dateSnapshotCondition(doc.stage1Date),
 
     // 3. Subsequent Selection Stage Dates: Must match verified snapshot (null/empty/unchanged)
-    interviewDate: doc.interviewDate ? doc.interviewDate : { $in: [null, '', undefined] },
-    walkInDate: doc.walkInDate ? doc.walkInDate : { $in: [null, '', undefined] },
-    documentVerificationDate: doc.documentVerificationDate ? doc.documentVerificationDate : { $in: [null, '', undefined] },
-    dvDate: doc.dvDate ? doc.dvDate : { $in: [null, '', undefined] },
-    selectionDate: doc.selectionDate ? doc.selectionDate : { $in: [null, '', undefined] },
-    counsellingDate: doc.counsellingDate ? doc.counsellingDate : { $in: [null, '', undefined] },
-    resultDate: doc.resultDate ? doc.resultDate : { $in: [null, '', undefined] },
+    interviewDate: dateSnapshotCondition(doc.interviewDate),
+    walkInDate: dateSnapshotCondition(doc.walkInDate),
+    documentVerificationDate: dateSnapshotCondition(doc.documentVerificationDate),
+    dvDate: dateSnapshotCondition(doc.dvDate),
+    selectionDate: dateSnapshotCondition(doc.selectionDate),
+    counsellingDate: dateSnapshotCondition(doc.counsellingDate),
+    resultDate: dateSnapshotCondition(doc.resultDate),
 
     // 4. Deadline Extension Dates: Must match verified snapshot (null/empty/unchanged)
-    extendedClosingDate: doc.extendedClosingDate ? doc.extendedClosingDate : { $in: [null, '', undefined] },
-    extendedLastDate: doc.extendedLastDate ? doc.extendedLastDate : { $in: [null, '', undefined] },
-    revisedClosingDate: doc.revisedClosingDate ? doc.revisedClosingDate : { $in: [null, '', undefined] },
+    extendedClosingDate: dateSnapshotCondition(doc.extendedClosingDate),
+    extendedLastDate: dateSnapshotCondition(doc.extendedLastDate),
+    revisedClosingDate: dateSnapshotCondition(doc.revisedClosingDate),
 
     // 5. Lifecycle & Selection Stages: Must NOT indicate any pending recruitment events
     lifecycleStage: {
@@ -1016,40 +1138,96 @@ export function buildConditionalDeletionFilter(doc) {
       $nin: ['PENDING', 'IN_PROGRESS', 'UPCOMING', 'pending', 'in_progress', 'upcoming']
     },
 
-    // 6. Corrigenda & Pending Updates: Absolute guard against any unresolved corrigendum
-    hasCorrigendum: { $ne: true },
-    pendingCorrigendum: { $nin: [true, 'true'] },
+    // 6. Pending Corrigendum Signals
+    pendingCorrigendum: { $in: [false, 'false', null, ''] },
     corrigendumStatus: { $nin: ['pending', 'pending_review', 'unresolved'] },
     corrigendumDecision: { $nin: ['pending_corrigendum_review', 'quarantined_corrigendum'] },
 
     // 7. Source Trust & Classification Integrity
-    needsOfficialSource: { $ne: true },
-    hasSourceIntegrityIssue: { $ne: true },
-    manualOverrideLock: { $ne: true },
-    docVerificationStatus: { $nin: ['pending', 'pending_doc_verification', 'quarantined', 'failed'] },
-    evidenceClassification: { $nin: ['NEEDS_OFFICIAL_SOURCE', 'NEEDS_REVIEW_DISABLED'] },
-    isVerified: { $ne: false },
-    sourceIntegrityVerified: { $ne: false },
-
-    // 8. Ingestion & Record Status: Must NOT be in any review, quarantined, or draft state
-    ingestionStatus: {
-      $nin: [
-        'pending_review',
-        'quarantined',
-        'needs_review',
-        'rejected_pending_correction',
-        'pending_corrigendum_review',
-        'quarantined_corrigendum',
-        'under_review',
-        'draft'
-      ]
-    },
-    status: {
-      $nin: ['under_review', 'draft', 'quarantined', 'needs_review']
-    }
+    needsOfficialSource: { $nin: [true, 'true'] },
+    hasSourceIntegrityIssue: { $nin: [true, 'true'] },
+    manualOverrideLock: { $nin: [true, 'true'] },
+    docVerificationStatus: { $nin: ['pending', 'pending_doc_verification', 'quarantined', 'failed', 'unverified'] },
+    evidenceClassification: { $nin: ['NEEDS_OFFICIAL_SOURCE', 'NEEDS_REVIEW_DISABLED'] }
   };
 
-  // 9. Exact stage/interview applicability assertions if explicitly set
+  // Match pendingCorrigendum strictly (absent, false, 'false', or ''); fail closed if explicitly null
+  delete filter.pendingCorrigendum;
+  if (doc.pendingCorrigendum !== undefined) {
+    filter.pendingCorrigendum = doc.pendingCorrigendum;
+  } else {
+    andConditions.push({
+      $or: [
+        { pendingCorrigendum: { $exists: false } },
+        { pendingCorrigendum: { $in: [false, 'false', ''] } }
+      ]
+    });
+  }
+
+  // 8. Verification policy parity with runtime predicate (true or omitted schema default; never false/null/ambiguous)
+  if (doc.isVerified === true) {
+    filter.isVerified = true;
+  } else {
+    andConditions.push({
+      $or: [
+        { isVerified: true },
+        { isVerified: { $exists: false } }
+      ]
+    });
+  }
+
+  if (doc.sourceIntegrityVerified === true) {
+    filter.sourceIntegrityVerified = true;
+  } else {
+    andConditions.push({
+      $or: [
+        { sourceIntegrityVerified: true },
+        { sourceIntegrityVerified: { $exists: false } }
+      ]
+    });
+  }
+
+  // 9. Corrigendum parity: allow resolved/verified corrigenda cleanly while protecting unresolved/null ones
+  if (doc.hasCorrigendum === true || doc.hasCorrigendum === 'true') {
+    filter.hasCorrigendum = doc.hasCorrigendum;
+    if (doc.corrigendumResolved === true) {
+      filter.corrigendumResolved = true;
+    } else {
+      filter.corrigendumVerified = true;
+    }
+  } else {
+    andConditions.push({
+      $or: [
+        { hasCorrigendum: { $exists: false } },
+        { hasCorrigendum: { $in: [false, 'false'] } }
+      ]
+    });
+  }
+
+  // 10. Ingestion & Record Status parity (must remain published or omitted; rejects null, rejected, pending, quarantined)
+  if (doc.ingestionStatus !== undefined) {
+    filter.ingestionStatus = doc.ingestionStatus;
+  } else {
+    andConditions.push({
+      $or: [
+        { ingestionStatus: 'published' },
+        { ingestionStatus: { $exists: false } }
+      ]
+    });
+  }
+
+  if (doc.status !== undefined) {
+    filter.status = doc.status;
+  } else {
+    andConditions.push({
+      $or: [
+        { status: { $exists: false } },
+        { status: { $type: 'string', $nin: ['', ...UNRESOLVED_RECORD_STATUSES] } }
+      ]
+    });
+  }
+
+  // 11. Exact stage/interview applicability assertions if explicitly set
   if (doc.interviewApplicable !== undefined) {
     filter.interviewApplicable = doc.interviewApplicable;
   }
@@ -1065,10 +1243,19 @@ export function buildConditionalDeletionFilter(doc) {
   if (doc.corrigendumVerified !== undefined) {
     filter.corrigendumVerified = doc.corrigendumVerified;
   }
+  if (doc.corrigendumResolved !== undefined) {
+    filter.corrigendumResolved = doc.corrigendumResolved;
+  }
 
-  // 10. Optimistic Concurrency Control (OCC) Timestamp Assertion
+  // 12. Optimistic Concurrency Control (OCC) Timestamp Assertion (including absent-to-updated transition)
   if (doc.updatedAt) {
     filter.updatedAt = doc.updatedAt;
+  } else {
+    filter.updatedAt = { $in: [null] };
+  }
+
+  if (andConditions.length > 0) {
+    filter.$and = andConditions;
   }
 
   return filter;
@@ -1190,24 +1377,39 @@ export async function executeExpiredExamCleanup({
         }
 
         if (verifiedCandidates.length > 0) {
+          if (typeof NotificationModel?.deleteOne !== 'function') {
+            throw new Error(
+              'ATOMIC_DELETE_UNAVAILABLE: NotificationModel.deleteOne() is required for atomic per-record conditional deletion.'
+            );
+          }
+
           // Step 3c: Atomic per-record conditional deletion with field-level assertions & OCC
           console.log(`🧹 [Expired Exam Cleanup]: Commencing atomic per-record conditional deletion for ${verifiedCandidates.length} candidate(s)...`);
 
           for (const doc of verifiedCandidates) {
-            // Heartbeat & Lease check before EACH record deletion
+            // Heartbeat & Lease ownership check before EACH record deletion
             if (CleanupScheduleModel && lockData) {
               if (heartbeat && !heartbeat.isStillValid()) {
                 throw new Error(`CONCURRENCY_ABORT: Cleanup lease renewal failed or expired during deletion (${heartbeat.getFailureReason()}). Halting deletion.`);
               }
+              const taskKey = lockData.taskKey || lockData.scheduleState?.taskKey || CLEANUP_TASK_KEY;
+              const perRecordLockQuery = CleanupScheduleModel.findOne({
+                taskKey,
+                ownerRunId: lockData.runId,
+                fencingToken: lockData.fencingToken,
+                leaseExpiresAt: { $gt: new Date() }
+              });
+              const perRecordVerifiedLock = typeof perRecordLockQuery?.lean === 'function'
+                ? await perRecordLockQuery.lean()
+                : await perRecordLockQuery;
+
+              if (!perRecordVerifiedLock) {
+                throw new Error('CONCURRENCY_ABORT: Cleanup lock lease expired or was preempted before record deletion. Halting deletion.');
+              }
             }
 
             const condition = buildConditionalDeletionFilter(doc);
-            let deleteRes;
-            if (typeof NotificationModel.deleteOne === 'function') {
-              deleteRes = await NotificationModel.deleteOne(condition);
-            } else {
-              deleteRes = await NotificationModel.deleteMany(condition);
-            }
+            const deleteRes = await NotificationModel.deleteOne(condition);
 
             const count = deleteRes?.deletedCount || 0;
             if (count > 0) {

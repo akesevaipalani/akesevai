@@ -1,9 +1,19 @@
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
 
-export async function scrapeIbpsNotifications(sourceConfig) {
+function resolveUrlSafe(href, baseUrl) {
+  if (!href || href === '#' || href.startsWith('javascript:')) return '';
+  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
+export async function scrapeIbpsNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -36,7 +46,7 @@ export async function scrapeIbpsNotifications(sourceConfig) {
 
     if (isRecruitment && !isPastResult && !seenTitles.has(text)) {
       seenTitles.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'ibps',
         category: 'banking',
@@ -62,9 +72,9 @@ export async function scrapeIbpsNotifications(sourceConfig) {
   return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
-export async function scrapeSbiNotifications(sourceConfig) {
+export async function scrapeSbiNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -125,7 +135,8 @@ export async function scrapeSbiNotifications(sourceConfig) {
       const aHref = $(a).attr('href');
       if (!aHref) return;
 
-      const fullHref = aHref.startsWith('http') ? aHref : new URL(aHref, url).toString();
+      const fullHref = resolveUrlSafe(aHref, url);
+      if (!fullHref) return;
 
       if (aText.includes('apply now') || aText.includes('apply online') || fullHref.includes('/apply')) {
         if (!applyLink) applyLink = fullHref;
@@ -162,9 +173,9 @@ export async function scrapeSbiNotifications(sourceConfig) {
   return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
-export async function scrapeRbiNotifications(sourceConfig) {
+export async function scrapeRbiNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -190,10 +201,7 @@ export async function scrapeRbiNotifications(sourceConfig) {
     } else {
       // Content row with link
       const title = a.text().trim().replace(/\s+/g, ' ') || text;
-      let link = a.attr('href') || '';
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
+      const link = resolveUrlSafe(a.attr('href') || '', url);
 
       if (title && title.length > 5) {
         items.push({

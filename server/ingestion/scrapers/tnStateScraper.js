@@ -31,14 +31,24 @@ export function classifyTnpscGroup(serviceTitle = '') {
   return 'TNPSC State Recruitment';
 }
 
+function resolveUrlSafe(href, baseUrl) {
+  if (!href || href === '#' || href.startsWith('javascript:')) return '';
+  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
 function extractPdfLink($, row, baseUrl) {
   let pdfLink = '';
   let fallbackLink = '';
   $(row).find('a').each((_, a) => {
     const href = $(a).attr('href') || '';
     const text = $(a).text().trim().toLowerCase();
-    if (!href || href === '#' || href.startsWith('javascript:')) return;
-    const abs = href.startsWith('http') ? href : new URL(href, baseUrl).toString();
+    const abs = resolveUrlSafe(href, baseUrl);
+    if (!abs) return;
     if (href.toLowerCase().endsWith('.pdf') || text.includes('pdf') || text.includes('notification')) {
       if (!pdfLink) pdfLink = abs;
     } else if (!fallbackLink) {
@@ -156,9 +166,9 @@ export async function scrapeTnpscNotifications(sourceConfig, options = {}) {
 /**
  * Scrapes TNUSRB Official Recruitment Portal
  */
-export async function scrapeTnusrbNotifications(sourceConfig) {
+export async function scrapeTnusrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -180,7 +190,7 @@ export async function scrapeTnusrbNotifications(sourceConfig) {
         text.toLowerCase().includes('constable') ||
         text.toLowerCase().includes('police recruitment'))
     ) {
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'tnusrb',
         category: 'police_defence',
@@ -209,9 +219,9 @@ export async function scrapeTnusrbNotifications(sourceConfig) {
 /**
  * Scrapes TRB (Teachers Recruitment Board Tamil Nadu) Structured Table
  */
-export async function scrapeTrbNotifications(sourceConfig) {
+export async function scrapeTrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -230,10 +240,7 @@ export async function scrapeTrbNotifications(sourceConfig) {
       const examDate = cols.length >= 6 ? $(cols[5]).text().trim().replace(/\s+/g, ' ') : '';
 
       const a = $(cols[cols.length - 1]).find('a');
-      let link = a.attr('href') || '';
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
+      const link = resolveUrlSafe(a.attr('href') || '', url);
 
       if (service && service.length > 5 && !service.toLowerCase().includes('name of the post')) {
         items.push({
@@ -265,9 +272,9 @@ export async function scrapeTrbNotifications(sourceConfig) {
 /**
  * Scrapes MRB (Medical Services Recruitment Board Tamil Nadu) Structured Table
  */
-export async function scrapeMrbNotifications(sourceConfig) {
+export async function scrapeMrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -283,21 +290,19 @@ export async function scrapeMrbNotifications(sourceConfig) {
       const descText = $(cols[2]).text().trim().replace(/\s+/g, ' ');
 
       // Find primary notification link (prioritize "Notification for..." or first pdf link)
-      let link = '';
+      let rawHref = '';
       $(cols[2]).find('a').each((_, a) => {
         const t = $(a).text().trim().toLowerCase();
         const h = $(a).attr('href') || '';
-        if (t.includes('notification for') || (!link && h.endsWith('.pdf'))) {
-          link = h;
+        if (t.includes('notification for') || (!rawHref && h.endsWith('.pdf'))) {
+          rawHref = h;
         }
       });
-      if (!link) {
-        link = $(row).find('a').first().attr('href') || '';
+      if (!rawHref) {
+        rawHref = $(row).find('a').first().attr('href') || '';
       }
 
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
+      const link = resolveUrlSafe(rawHref, url);
 
       // Extract a clean post name
       let postName = '';

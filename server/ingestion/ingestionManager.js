@@ -128,6 +128,8 @@ function emptySourceStats() {
  */
 export function recomputeJobSummary(sourceQueue = []) {
   const agg = {
+    sourcesQueued: sourceQueue.length,
+    sourcesRemaining: 0,
     sourcesAttempted: 0,
     sourcesSucceeded: 0,
     sourcesFailed: 0,
@@ -143,6 +145,8 @@ export function recomputeJobSummary(sourceQueue = []) {
   for (const slot of sourceQueue) {
     if (slot.status === 'completed' || slot.status === 'failed') {
       agg.sourcesAttempted++;
+    } else {
+      agg.sourcesRemaining++;
     }
     if (slot.status === 'completed') {
       agg.sourcesSucceeded++;
@@ -519,6 +523,8 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
         startedAt: currentRunStartedAt,
         completedAt: getNow().toISOString(),
         durationMs: 0,
+        sourcesQueued: 0,
+        sourcesRemaining: 0,
         sourcesAttempted: 0,
         sourcesSucceeded: 0,
         sourcesFailed: 0,
@@ -541,21 +547,29 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
     // 3. Create or resume durable IngestionJob bound with same (runId, fencingToken)
     let activeJob = null;
     let jobId = options.jobId || generateJobId();
+    let isDryRun = Boolean(options.dryRun);
 
     if (IngestionJob) {
       if (!options.sourceKey && !options.dryRun) {
-        // Attempt to resume oldest recovered pending job first
-        const pendingJob = await IngestionJob.findOne({ status: 'pending' }).sort({ createdAt: 1 }).lean();
+        // Attempt to resume oldest recovered pending or retry_pending job first
+        const pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
+          .sort({ createdAt: 1 })
+          .lean();
         if (pendingJob) {
           const resetQueue = (pendingJob.sourceQueue || []).map((slot) =>
             slot.status === 'running' ? { ...slot, status: 'pending' } : slot
           );
+          const claimFilter = {
+            jobId: pendingJob.jobId,
+            status: { $in: ['pending', 'retry_pending'] }
+          };
+          if (IngestionLock) {
+            claimFilter.$or = [{ fencingToken: { $lt: fencingToken } }, { fencingToken: null }];
+          } else {
+            claimFilter.$or = [{ fencingToken: { $lte: fencingToken } }, { fencingToken: null }];
+          }
           const claimedJob = await IngestionJob.findOneAndUpdate(
-            {
-              jobId: pendingJob.jobId,
-              status: 'pending',
-              $or: [{ fencingToken: { $lt: fencingToken } }, { fencingToken: null }]
-            },
+            claimFilter,
             {
               $set: {
                 status: 'running',
@@ -573,6 +587,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
           if (claimedJob) {
             activeJob = claimedJob.toObject ? claimedJob.toObject() : claimedJob;
             jobId = activeJob.jobId;
+            isDryRun = options.dryRun !== undefined ? Boolean(options.dryRun) : Boolean(activeJob.dryRun);
           }
         }
       }
@@ -593,7 +608,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
           jobId,
           triggerType: options.triggerType || 'manual_admin',
           status: 'running',
-          dryRun: Boolean(options.dryRun),
+          dryRun: isDryRun,
           sourceKeyFilter: options.sourceKey || '',
           ownerRunId: runId,
           fencingToken,
@@ -822,7 +837,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
               else srcStats.pendingReview++;
             } else {
               srcStats.duplicatesSkipped++;
-              if (!options.dryRun && dupCheck.matchedExistingId) {
+              if (!isDryRun && dupCheck.matchedExistingId) {
                 await NotificationModel.updateOne(
                   {
                     id: dupCheck.matchedExistingId,
@@ -867,7 +882,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
             }
 
             if (corrDecision.decision === 'apply_corrigendum_update') {
-              if (!options.dryRun) {
+              if (!isDryRun) {
                 await executeWithTransactionOrStandalone({
                   useTransactions,
                   mongooseConnection,
@@ -959,7 +974,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
               updatedAt: nowDt
             };
 
-            if (!options.dryRun) {
+            if (!isDryRun) {
               await insertNotificationIdempotently({
                 NotificationModel,
                 candidate: proposalPayload,
@@ -1016,7 +1031,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
             updatedAt: nowDt
           };
 
-          if (!options.dryRun) {
+          if (!isDryRun) {
             const insRes = await insertNotificationIdempotently({
               NotificationModel,
               candidate: recordToPersist,
@@ -1057,7 +1072,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
 
         await assertLockOwnership(IngestionLock, { lockKey, runId, fencingToken, now: getNow() });
 
-        if (!options.dryRun) {
+        if (!isDryRun) {
           await persistSourceHealthTelemetry(IngestionSourceHealth, {
             source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: srcDur, status: 'ok', stats: srcStats
           });
@@ -1147,7 +1162,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       }
     }
 
-    if (IngestionRunLog && !options.dryRun) {
+    if (IngestionRunLog && !isDryRun) {
       await IngestionRunLog.create({
         runId,
         jobId,

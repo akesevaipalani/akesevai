@@ -316,6 +316,25 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         }
 
         if (!pendingJob && IngestionJob) {
+          const runningJob = await IngestionJob.findOne({ status: 'running' })
+            .sort({ createdAt: -1 })
+            .lean();
+          if (runningJob) {
+            return res.status(409).json({
+              success: false,
+              error: 'CONFLICT',
+              code: 'INGESTION_IN_PROGRESS',
+              message: 'An automated ingestion job is currently running. Please retry once the active lease advances.',
+              activeJobDetails: {
+                reason: 'JOB_RUNNING',
+                jobId: runningJob.jobId,
+                startedAt: runningJob.startedAt || null,
+                leaseExpiresAt: runningJob.leaseExpiresAt || null,
+                ownerRunId: runningJob.ownerRunId || null
+              }
+            });
+          }
+
           return res.json({
             success: true,
             status: 'idle',
@@ -326,7 +345,7 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
 
         const summary = await ingestionRunner(Notification, {
           sourceKey,
-          dryRun: dryRun === 'true',
+          dryRun: dryRun !== undefined ? dryRun === 'true' : undefined,
           maxSources: batchLimit,
           triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
           env,
@@ -340,7 +359,9 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         });
 
         const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
-        const remainingSources = Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+        const remainingSources = typeof summary.sourcesRemaining === 'number'
+          ? summary.sourcesRemaining
+          : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
 
         return res.json({
           success: true,
@@ -503,6 +524,25 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
       }
 
       if (!pendingJob && IngestionJob) {
+        const runningJob = await IngestionJob.findOne({ status: 'running' })
+          .sort({ createdAt: -1 })
+          .lean();
+        if (runningJob) {
+          return res.status(409).json({
+            success: false,
+            error: 'CONFLICT',
+            code: 'INGESTION_IN_PROGRESS',
+            message: 'An automated ingestion job is currently running. Please retry once the active lease advances.',
+            activeJobDetails: {
+              reason: 'JOB_RUNNING',
+              jobId: runningJob.jobId,
+              startedAt: runningJob.startedAt || null,
+              leaseExpiresAt: runningJob.leaseExpiresAt || null,
+              ownerRunId: runningJob.ownerRunId || null
+            }
+          });
+        }
+
         return res.json({
           success: true,
           status: 'idle',
@@ -513,7 +553,7 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
 
       // 3. Execute bounded worker tick using ingestionRunner
       const summary = await ingestionRunner(Notification, {
-        dryRun: dryRun === 'true',
+        dryRun: dryRun !== undefined ? dryRun === 'true' : undefined,
         maxSources: batchLimit,
         triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
         env,
@@ -527,7 +567,9 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
       });
 
       const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
-      const remainingSources = Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+      const remainingSources = typeof summary.sourcesRemaining === 'number'
+        ? summary.sourcesRemaining
+        : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
 
       return res.json({
         success: true,

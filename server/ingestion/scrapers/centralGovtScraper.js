@@ -3,18 +3,30 @@ import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
 import { toKolkataIsoDate } from '../../../src/utils/notificationDateHelper.js';
 
+function resolveUrlSafe(href, baseUrl) {
+  if (!href) return '';
+  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Scrapes UPSC Active Examinations & Notices
+ * Supports both structured table layout and Drupal .views-row layout.
  */
-export async function scrapeUpscNotifications(sourceConfig) {
+export async function scrapeUpscNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url || 'https://upsc.gov.in/active-examinations';
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
 
   const $ = cheerio.load(res.html);
   const items = [];
+  const seenTitles = new Set();
   const rows = $('table tr');
 
   rows.each((i, row) => {
@@ -27,15 +39,19 @@ export async function scrapeUpscNotifications(sourceConfig) {
     const rawTitle = titleEl.text().replace(/\s+/g, ' ').trim();
     if (!rawTitle || rawTitle.toLowerCase().includes('examination name')) return;
 
+    const lower = rawTitle.toLowerCase();
+    if (lower.startsWith('final result:') || lower.includes('marks of recommended candidates')) {
+      return;
+    }
+    if (seenTitles.has(rawTitle)) return;
+    seenTitles.add(rawTitle);
+
     const notifNo = $(cols[1]).text().replace(/\s+/g, ' ').trim().replace(/^[—\-]+$/, '');
     const examDate = $(cols[2]).text().replace(/\s+/g, ' ').trim();
     const closingDate = cols.length >= 4 ? $(cols[3]).text().replace(/\s+/g, ' ').trim().replace(/^(?:NA|—|-)$/i, '') : '';
 
-    let href = a.attr('href') || '';
-    let absLink = url;
-    if (href) {
-      absLink = href.startsWith('http') ? href : new URL(href, 'https://upsc.gov.in/').toString();
-    }
+    const href = a.attr('href') || '';
+    const absLink = resolveUrlSafe(href, url || 'https://upsc.gov.in/') || url;
 
     items.push({
       sourceKey: 'upsc_active',
@@ -58,15 +74,52 @@ export async function scrapeUpscNotifications(sourceConfig) {
     });
   });
 
+  if (items.length === 0) {
+    $('.views-row').each((_, row) => {
+      const a = $(row).find('a').first();
+      const rawTitle = $(row).text().replace(/\s+/g, ' ').trim();
+      const href = a.attr('href') || '';
+      if (!rawTitle || !href) return;
+
+      const lower = rawTitle.toLowerCase();
+      if (lower.startsWith('final result:') || lower.includes('marks of recommended candidates')) {
+        return;
+      }
+      if (seenTitles.has(rawTitle)) return;
+      seenTitles.add(rawTitle);
+
+      const absLink = resolveUrlSafe(href, 'https://upsc.gov.in/') || url;
+      items.push({
+        sourceKey: 'upsc_active',
+        category: 'upsc',
+        organization: 'Union Public Service Commission (UPSC)',
+        service: rawTitle,
+        postName: rawTitle.replace(/^(Notice:|Written Result:|Interview Schedule:)\s*/i, '').trim(),
+        notificationNo: '',
+        openingDate: '',
+        closingDate: '',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
+        detailsLink: absLink,
+        applyLink: 'https://upsconline.nic.in/',
+        source: 'Official UPSC Active Examinations Portal (upsc.gov.in)',
+        sourceUrl: url
+      });
+    });
+  }
+
   return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
 /**
  * Scrapes SSC Official Notice Board (Direct REST API)
  */
-export async function scrapeSscNotifications(sourceConfig) {
+export async function scrapeSscNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -130,9 +183,9 @@ export async function scrapeSscNotifications(sourceConfig) {
 /**
  * Scrapes RRB (Railway Recruitment Board Chennai / CEN Notices)
  */
-export async function scrapeRrbNotifications(sourceConfig) {
+export async function scrapeRrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -205,9 +258,9 @@ export async function scrapeRrbNotifications(sourceConfig) {
 /**
  * Scrapes India Post GDS
  */
-export async function scrapeIndiaPostNotifications(sourceConfig) {
+export async function scrapeIndiaPostNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, options);
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -229,7 +282,7 @@ export async function scrapeIndiaPostNotifications(sourceConfig) {
       lower.includes('special drive')
     ) {
       seenHrefs.add(href);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'india_post_gds',
         category: 'psu',
