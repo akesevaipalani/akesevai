@@ -61,6 +61,47 @@ export function verifyIngestionSecretHeader(req, env = process.env) {
   return crypto.timingSafeEqual(headerBuf, envBuf);
 }
 
+function parseDryRunParam(val) {
+  if (typeof val === 'boolean') return val;
+  if (val === undefined || val === null) return undefined;
+  const normalized = String(val).trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return undefined;
+}
+
+function getRequestParam(req, key) {
+  if (req?.query && req.query[key] !== undefined) return req.query[key];
+  if (req?.body && typeof req.body === 'object' && req.body[key] !== undefined) return req.body[key];
+  return undefined;
+}
+
+function resolveValidatedSourceKey(sourceKey) {
+  if (sourceKey === undefined) {
+    return { valid: true, normalized: '', sources: OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled) };
+  }
+  const normalized = String(sourceKey).trim();
+  const matched = normalized
+    ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === normalized && s.enabled !== false)
+    : [];
+  if (matched.length === 0) {
+    return {
+      valid: false,
+      status: 400,
+      body: {
+        success: false,
+        error: 'INVALID_SOURCE_KEY',
+        code: 'INVALID_SOURCE_KEY',
+        message: normalized
+          ? `Unknown or disabled sourceKey '${normalized}'. Provide a valid enabled sourceKey or omit sourceKey.`
+          : 'sourceKey query parameter cannot be empty when explicitly supplied.',
+        validSourceKeys: OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled !== false).map((s) => s.key)
+      }
+    };
+  }
+  return { valid: true, normalized, sources: matched };
+}
+
 /**
  * Registers notification & automated ingestion endpoints on Express app.
  * Separated so synthetic unit/integration tests can verify HTTP behavior in isolation.
@@ -82,6 +123,146 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
   } = deps;
 
   const isDbReady = () => !mongooseConnection || mongooseConnection.readyState === 1;
+
+  async function executeWorkerTickRequest(req, res, { isSecretValid }) {
+    const rawSourceKey = getRequestParam(req, 'sourceKey');
+    const sourceCheck = resolveValidatedSourceKey(rawSourceKey);
+    if (!sourceCheck.valid) {
+      return res.status(sourceCheck.status).json(sourceCheck.body);
+    }
+
+    const parsedDryRun = parseDryRunParam(getRequestParam(req, 'dryRun'));
+    const isDryRunRequest = parsedDryRun === true;
+    const rawMaxSources = getRequestParam(req, 'maxSources');
+    const rawBatchSize = getRequestParam(req, 'batchSize');
+    const rawOffset = getRequestParam(req, 'offset');
+
+    const parsedBatch = parseInt(String(rawBatchSize || rawMaxSources || '3'), 10);
+    const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
+    const parsedOffset = parseInt(String(rawOffset ?? '0'), 10);
+    const sourceOffset = Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+
+    if (isDryRunRequest) {
+      // Strictly read-only dry-run: zero DB recovery, zero job/lock creation, zero persistence
+      const summary = await ingestionRunner(Notification, {
+        sourceKey: sourceCheck.normalized || undefined,
+        sourceOffset,
+        dryRun: true,
+        maxSources: batchLimit,
+        triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
+        env,
+        models: {
+          IngestionJob,
+          IngestionLock,
+          IngestionSourceHealth,
+          IngestionRunLog,
+          mongooseConnection
+        }
+      });
+
+      const remainingSources = typeof summary.sourcesRemaining === 'number'
+        ? summary.sourcesRemaining
+        : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+      const isCompleted =
+        summary.status === 'completed' ||
+        summary.status === 'completed_with_errors' ||
+        summary.status === 'failed' ||
+        remainingSources === 0;
+
+      return res.json({
+        success: true,
+        dryRun: true,
+        readOnly: true,
+        persisted: false,
+        status: isCompleted ? (summary.status === 'pending' ? 'completed' : summary.status) : 'in_progress',
+        jobId: summary.jobId,
+        runId: summary.runId,
+        sourceOffset: summary.sourceOffset ?? sourceOffset,
+        nextOffset: summary.nextOffset ?? (sourceOffset + (summary.sourcesAttempted || 0)),
+        sourcesProcessedThisTick: summary.sourcesAttempted,
+        remainingSources,
+        totalSourcesMatching: summary.totalSourcesMatching ?? sourceCheck.sources.length,
+        isCompleted,
+        recoveredCount: 0,
+        summary
+      });
+    }
+
+    // 1. Live mode: Auto-recover crashed/stale jobs whose lease expired
+    let recoveredInfo = { recoveredCount: 0 };
+    if (IngestionJob) {
+      recoveredInfo = await recoverStaleIngestionJobs(IngestionJob, { maxAttempts: 3 });
+    }
+
+    // 2. Check if there are pending jobs to process
+    let pendingJob = null;
+    if (IngestionJob) {
+      pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
+        .sort({ createdAt: 1 })
+        .lean();
+    }
+
+    if (!pendingJob && IngestionJob) {
+      const runningJob = await IngestionJob.findOne({ status: 'running' })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (runningJob) {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'INGESTION_IN_PROGRESS',
+          message: 'An automated ingestion job is currently running. Please retry once the active lease advances.',
+          activeJobDetails: {
+            reason: 'JOB_RUNNING',
+            jobId: runningJob.jobId,
+            startedAt: runningJob.startedAt || null,
+            leaseExpiresAt: runningJob.leaseExpiresAt || null,
+            ownerRunId: runningJob.ownerRunId || null
+          }
+        });
+      }
+
+      return res.json({
+        success: true,
+        status: 'idle',
+        message: 'No pending ingestion jobs in queue.',
+        recoveredCount: recoveredInfo.recoveredCount
+      });
+    }
+
+    // 3. Execute bounded live worker tick using ingestionRunner
+    const summary = await ingestionRunner(Notification, {
+      sourceKey: sourceCheck.normalized || undefined,
+      dryRun: parsedDryRun,
+      maxSources: batchLimit,
+      triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
+      env,
+      models: {
+        IngestionJob,
+        IngestionLock,
+        IngestionSourceHealth,
+        IngestionRunLog,
+        mongooseConnection
+      }
+    });
+
+    const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
+    const remainingSources = typeof summary.sourcesRemaining === 'number'
+      ? summary.sourcesRemaining
+      : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+
+    return res.json({
+      success: true,
+      status: isCompleted ? summary.status : 'in_progress',
+      jobId: summary.jobId,
+      runId: summary.runId,
+      sourcesProcessedThisTick: summary.sourcesAttempted,
+      remainingSources,
+      isCompleted,
+      recoveredCount: recoveredInfo.recoveredCount,
+      summary
+    });
+  }
 
   // 1. GET all notifications (Public only sees 'published' or legacy; pending/quarantined/rejected isolated)
   app.get('/api/notifications', async (req, res) => {
@@ -294,106 +475,41 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         });
       }
 
-      const { sourceKey, dryRun, enqueueOnly, action, maxSources, batchSize } = req.query || {};
+      const sourceKey = getRequestParam(req, 'sourceKey');
+      const dryRun = getRequestParam(req, 'dryRun');
+      const enqueueOnly = getRequestParam(req, 'enqueueOnly');
+      const action = getRequestParam(req, 'action');
+      const maxSources = getRequestParam(req, 'maxSources');
+      const rawOffset = getRequestParam(req, 'offset');
 
       // Route 6A: Worker processing action (?action=work or ?action=worker_tick)
       if (action === 'work' || action === 'worker_tick') {
-        const parsedBatch = parseInt(String(batchSize || maxSources || '3'), 10);
-        const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
-
-        // Auto-recover crashed/stale jobs whose lease expired
-        let recoveredInfo = { recoveredCount: 0 };
-        if (IngestionJob) {
-          recoveredInfo = await recoverStaleIngestionJobs(IngestionJob, { maxAttempts: 3 });
-        }
-
-        // Check if there are pending jobs to process
-        let pendingJob = null;
-        if (IngestionJob) {
-          pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
-            .sort({ createdAt: 1 })
-            .lean();
-        }
-
-        if (!pendingJob && IngestionJob) {
-          const runningJob = await IngestionJob.findOne({ status: 'running' })
-            .sort({ createdAt: -1 })
-            .lean();
-          if (runningJob) {
-            return res.status(409).json({
-              success: false,
-              error: 'CONFLICT',
-              code: 'INGESTION_IN_PROGRESS',
-              message: 'An automated ingestion job is currently running. Please retry once the active lease advances.',
-              activeJobDetails: {
-                reason: 'JOB_RUNNING',
-                jobId: runningJob.jobId,
-                startedAt: runningJob.startedAt || null,
-                leaseExpiresAt: runningJob.leaseExpiresAt || null,
-                ownerRunId: runningJob.ownerRunId || null
-              }
-            });
-          }
-
-          return res.json({
-            success: true,
-            status: 'idle',
-            message: 'No pending ingestion jobs in queue.',
-            recoveredCount: recoveredInfo.recoveredCount
-          });
-        }
-
-        const summary = await ingestionRunner(Notification, {
-          sourceKey,
-          dryRun: dryRun !== undefined ? dryRun === 'true' : undefined,
-          maxSources: batchLimit,
-          triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
-          env,
-          models: {
-            IngestionJob,
-            IngestionLock,
-            IngestionSourceHealth,
-            IngestionRunLog,
-            mongooseConnection
-          }
-        });
-
-        const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
-        const remainingSources = typeof summary.sourcesRemaining === 'number'
-          ? summary.sourcesRemaining
-          : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
-
-        return res.json({
-          success: true,
-          status: isCompleted ? summary.status : 'in_progress',
-          jobId: summary.jobId,
-          runId: summary.runId,
-          sourcesProcessedThisTick: summary.sourcesAttempted,
-          remainingSources,
-          isCompleted,
-          recoveredCount: recoveredInfo.recoveredCount,
-          summary
-        });
+        return await executeWorkerTickRequest(req, res, { isSecretValid });
       }
 
-      // Route 6B: Pure durable enqueue mode (creates/coalesces DB job without running detached background promises)
-      if (enqueueOnly === 'true' || action === 'enqueue') {
-        const normalizedSourceKey = sourceKey !== undefined ? String(sourceKey).trim() : '';
-        if (sourceKey !== undefined) {
-          const matchedSource = normalizedSourceKey
-            ? OFFICIAL_EXAM_SOURCES.find((s) => s.key === normalizedSourceKey && s.enabled !== false)
-            : null;
-          if (!matchedSource) {
-            return res.status(400).json({
-              success: false,
-              error: 'INVALID_SOURCE_KEY',
-              code: 'INVALID_SOURCE_KEY',
-              message: normalizedSourceKey
-                ? `Unknown or disabled sourceKey '${normalizedSourceKey}'. Provide a valid enabled sourceKey or omit sourceKey.`
-                : 'sourceKey query parameter cannot be empty when explicitly supplied.',
-              validSourceKeys: OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled !== false).map((s) => s.key)
-            });
-          }
+      const sourceCheck = resolveValidatedSourceKey(sourceKey);
+      if (!sourceCheck.valid) {
+        return res.status(sourceCheck.status).json(sourceCheck.body);
+      }
+
+      const parsedDryRun = parseDryRunParam(dryRun);
+      const isDryRunRequest = parsedDryRun === true;
+
+      // Route 6B: Pure durable enqueue mode (creates/coalesces DB job ONLY when NOT dryRun)
+      if (String(enqueueOnly) === 'true' || action === 'enqueue') {
+        if (isDryRunRequest) {
+          return res.status(202).json({
+            success: true,
+            dryRun: true,
+            readOnly: true,
+            persisted: false,
+            simulated: true,
+            jobId: `dryrun_${generateJobId()}`,
+            status: 'dry_run_ready',
+            sourceKeyFilter: sourceCheck.normalized,
+            sourcesQueued: sourceCheck.sources.length,
+            message: `Dry-run enqueue validated cleanly (${sourceCheck.sources.length} source(s)); 0 database records created.`
+          });
         }
 
         if (!IngestionJob) {
@@ -414,12 +530,8 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           });
         }
 
-        const sources = normalizedSourceKey
-          ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === normalizedSourceKey && s.enabled !== false)
-          : OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled);
-
         const jobId = generateJobId();
-        const queue = sources.map((s) => ({
+        const queue = sourceCheck.sources.map((s) => ({
           sourceKey: s.key,
           status: 'pending',
           attempts: 0,
@@ -431,8 +543,8 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           jobId,
           triggerType: isSecretValid ? 'external_cron' : 'manual_admin',
           status: 'pending',
-          dryRun: dryRun === 'true',
-          sourceKeyFilter: normalizedSourceKey,
+          dryRun: false,
+          sourceKeyFilter: sourceCheck.normalized,
           sourceQueue: queue,
           summary: recomputeJobSummary(queue),
           errors: [],
@@ -449,11 +561,13 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
       }
 
       const parsedMax = maxSources ? parseInt(String(maxSources), 10) : undefined;
-      console.log(`📡 [Ingestion Trigger]: Running durable ingestion job (source: ${sourceKey || 'ALL'}, dryRun: ${dryRun || 'false'})...`);
+      const parsedOffset = rawOffset !== undefined ? parseInt(String(rawOffset), 10) : undefined;
+      console.log(`📡 [Ingestion Trigger]: Running durable ingestion job (source: ${sourceCheck.normalized || 'ALL'}, dryRun: ${isDryRunRequest})...`);
 
       const summary = await ingestionRunner(Notification, {
-        sourceKey,
-        dryRun: dryRun === 'true',
+        sourceKey: sourceCheck.normalized || undefined,
+        sourceOffset: Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined,
+        dryRun: isDryRunRequest,
         maxSources: Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : undefined,
         triggerType: isSecretValid ? 'external_cron' : 'manual_admin',
         env,
@@ -468,6 +582,9 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
 
       res.json({
         success: true,
+        dryRun: isDryRunRequest,
+        readOnly: isDryRunRequest,
+        persisted: !isDryRunRequest,
         message: `Ingestion job ${summary.status || 'completed'}. New: ${summary.newRecordsInserted}, Updated: ${summary.corrigendaUpdatedCount || 0}, Quarantined: ${summary.quarantinedCount || 0}, Duplicates: ${summary.duplicatesSkipped}.`,
         summary
       });
@@ -523,83 +640,7 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         });
       }
 
-      const { maxSources, batchSize, dryRun } = req.query || {};
-      const parsedBatch = parseInt(String(batchSize || maxSources || '3'), 10);
-      const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
-
-      // 1. Crash recovery: auto-recover stale/crashed jobs if lease expired
-      let recoveredInfo = { recoveredCount: 0 };
-      if (IngestionJob) {
-        recoveredInfo = await recoverStaleIngestionJobs(IngestionJob, { maxAttempts: 3 });
-      }
-
-      // 2. Check if there are pending jobs to process
-      let pendingJob = null;
-      if (IngestionJob) {
-        pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
-          .sort({ createdAt: 1 })
-          .lean();
-      }
-
-      if (!pendingJob && IngestionJob) {
-        const runningJob = await IngestionJob.findOne({ status: 'running' })
-          .sort({ createdAt: -1 })
-          .lean();
-        if (runningJob) {
-          return res.status(409).json({
-            success: false,
-            error: 'CONFLICT',
-            code: 'INGESTION_IN_PROGRESS',
-            message: 'An automated ingestion job is currently running. Please retry once the active lease advances.',
-            activeJobDetails: {
-              reason: 'JOB_RUNNING',
-              jobId: runningJob.jobId,
-              startedAt: runningJob.startedAt || null,
-              leaseExpiresAt: runningJob.leaseExpiresAt || null,
-              ownerRunId: runningJob.ownerRunId || null
-            }
-          });
-        }
-
-        return res.json({
-          success: true,
-          status: 'idle',
-          message: 'No pending ingestion jobs in queue.',
-          recoveredCount: recoveredInfo.recoveredCount
-        });
-      }
-
-      // 3. Execute bounded worker tick using ingestionRunner
-      const summary = await ingestionRunner(Notification, {
-        dryRun: dryRun !== undefined ? dryRun === 'true' : undefined,
-        maxSources: batchLimit,
-        triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
-        env,
-        models: {
-          IngestionJob,
-          IngestionLock,
-          IngestionSourceHealth,
-          IngestionRunLog,
-          mongooseConnection
-        }
-      });
-
-      const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
-      const remainingSources = typeof summary.sourcesRemaining === 'number'
-        ? summary.sourcesRemaining
-        : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
-
-      return res.json({
-        success: true,
-        status: isCompleted ? summary.status : 'in_progress',
-        jobId: summary.jobId,
-        runId: summary.runId,
-        sourcesProcessedThisTick: summary.sourcesAttempted,
-        remainingSources,
-        isCompleted,
-        recoveredCount: recoveredInfo.recoveredCount,
-        summary
-      });
+      return await executeWorkerTickRequest(req, res, { isSecretValid });
     } catch (err) {
       if (err.code === 'CONCURRENT_INGESTION_LOCKED' || err.message === 'INGESTION_IN_PROGRESS') {
         return res.status(409).json({

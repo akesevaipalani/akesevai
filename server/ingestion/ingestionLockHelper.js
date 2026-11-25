@@ -50,6 +50,9 @@ export async function supportsMongoTransactions(mongooseConnection, options = {}
  * @returns {Promise<{ acquired: boolean, runId?: string, fencingToken?: number, reason?: string, existingOwnerRunId?: string, existingExpiresAt?: Date }>}
  */
 export async function acquireIngestionLock(IngestionLockModel, options = {}) {
+  if (options?.dryRun === true) {
+    return { acquired: false, dryRun: true, skipped: true, reason: 'DRY_RUN_NO_LOCK' };
+  }
   if (!IngestionLockModel) {
     return { acquired: false, reason: 'LOCK_MODEL_REQUIRED' };
   }
@@ -182,7 +185,10 @@ export async function acquireIngestionLock(IngestionLockModel, options = {}) {
 /**
  * Renews an active lease strictly verifying lockKey, ownerRunId, fencingToken, and valid expiry.
  */
-export async function renewIngestionLock(IngestionLockModel, { lockKey = DEFAULT_LOCK_KEY, runId, fencingToken, leaseMs = LEASE_DURATION_MS, now = new Date() }) {
+export async function renewIngestionLock(IngestionLockModel, { lockKey = DEFAULT_LOCK_KEY, runId, fencingToken, leaseMs = LEASE_DURATION_MS, now = new Date(), dryRun = false }) {
+  if (dryRun === true) {
+    return { renewed: false, dryRun: true, skipped: true, reason: 'DRY_RUN_NO_LOCK' };
+  }
   if (!IngestionLockModel || !runId || typeof fencingToken !== 'number') {
     return { renewed: false, reason: 'INVALID_LOCK_PARAMS' };
   }
@@ -213,8 +219,8 @@ export async function renewIngestionLock(IngestionLockModel, { lockKey = DEFAULT
 /**
  * Authoritative ownership verification helper (also usable inside a MongoDB session).
  */
-export async function assertLockOwnership(IngestionLockModel, { lockKey = DEFAULT_LOCK_KEY, runId, fencingToken, now = new Date(), session = null }) {
-  if (!IngestionLockModel) return true; // Unit-test mock without lock model
+export async function assertLockOwnership(IngestionLockModel, { lockKey = DEFAULT_LOCK_KEY, runId, fencingToken, now = new Date(), session = null, dryRun = false }) {
+  if (!IngestionLockModel || dryRun === true) return true; // Unit-test mock or strictly read-only dry-run
   const query = {
     lockKey,
     ownerRunId: runId,
@@ -235,7 +241,10 @@ export async function assertLockOwnership(IngestionLockModel, { lockKey = DEFAUL
  * Safely releases the lock ONLY if owned by the exact (ownerRunId, fencingToken).
  * Clears ownership without deleting the lock document so fencingToken never resets.
  */
-export async function releaseIngestionLock(IngestionLockModel, { lockKey = DEFAULT_LOCK_KEY, runId, fencingToken, now = new Date() }) {
+export async function releaseIngestionLock(IngestionLockModel, { lockKey = DEFAULT_LOCK_KEY, runId, fencingToken, now = new Date(), dryRun = false }) {
+  if (dryRun === true) {
+    return { released: false, dryRun: true, skipped: true };
+  }
   if (!IngestionLockModel || !runId || typeof fencingToken !== 'number') {
     return { released: false };
   }
@@ -263,8 +272,8 @@ export async function releaseIngestionLock(IngestionLockModel, { lockKey = DEFAU
  * - Leaves 'pending' checkpoints intact.
  */
 export async function recoverStaleIngestionJobs(IngestionJobModel, options = {}) {
-  if (!IngestionJobModel) {
-    return { recoveredCount: 0, failedCount: 0, recoveredJobIds: [] };
+  if (!IngestionJobModel || options?.dryRun === true) {
+    return { recoveredCount: 0, failedCount: 0, recoveredJobIds: [], dryRun: Boolean(options?.dryRun), skipped: Boolean(options?.dryRun) };
   }
 
   const now = options.now instanceof Date ? options.now : new Date();

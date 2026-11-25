@@ -220,7 +220,7 @@ async function executeWithTransactionOrStandalone({
  * and per-job once-only counter tracking (`lastCountedJobId !== jobId`).
  */
 async function persistSourceHealthTelemetry(IngestionSourceHealth, params) {
-  if (!IngestionSourceHealth) return;
+  if (!IngestionSourceHealth || params?.dryRun) return;
   const {
     source,
     jobId,
@@ -461,13 +461,14 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
     ? options.now
     : () => (options.now instanceof Date ? options.now : new Date());
 
+  const isStrictReadOnlyDryRun = options.dryRun === true || String(options.dryRun ?? '').trim().toLowerCase() === 'true';
   const lockKey = options.lockKey || DEFAULT_LOCK_KEY;
   const leaseMs = options.leaseMs || LEASE_DURATION_MS;
   const heartbeatMs = options.heartbeatMs || HEARTBEAT_INTERVAL_MS;
   const runId = options.runId || generateRunId();
 
-  // In-memory lock fallback if no distributed lock model is supplied
-  if (!IngestionLock && isInMemoryRunning) {
+  // In-memory lock fallback if no distributed lock model is supplied (skipped in strict read-only dry-run)
+  if (!isStrictReadOnlyDryRun && !IngestionLock && isInMemoryRunning) {
     const error = new Error('INGESTION_IN_PROGRESS');
     error.code = 'CONCURRENT_INGESTION_LOCKED';
     error.status = 409;
@@ -475,24 +476,27 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
     throw error;
   }
 
-  let fencingToken = 1;
+  let fencingToken = isStrictReadOnlyDryRun ? 0 : 1;
   let acquiredLock = false;
   let heartbeatTimer = null;
   let leaseLost = false;
   let leaseLostReason = '';
 
   const startTime = getNow().getTime();
-  isInMemoryRunning = true;
-  currentRunStartedAt = new Date(startTime).toISOString();
+  const runStartedIso = new Date(startTime).toISOString();
+  if (!isStrictReadOnlyDryRun) {
+    isInMemoryRunning = true;
+    currentRunStartedAt = runStartedIso;
+  }
 
   try {
     // 1. Recover any crashed stale jobs whose leases expired before acquiring lock
-    if (IngestionJob) {
+    if (!isStrictReadOnlyDryRun && IngestionJob) {
       await recoverStaleIngestionJobs(IngestionJob, { now: getNow(), maxAttempts: options.maxAttempts || 3 });
     }
 
     // 2. Acquire durable distributed lock (monotonic fencingToken)
-    if (IngestionLock) {
+    if (!isStrictReadOnlyDryRun && IngestionLock) {
       const lockRes = await acquireIngestionLock(IngestionLock, {
         lockKey,
         leaseMs,
@@ -504,23 +508,28 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
         error.code = 'CONCURRENT_INGESTION_LOCKED';
         error.status = 409;
         error.reason = lockRes.reason;
-        error.startedAt = lockRes.existingExpiresAt ? new Date(lockRes.existingExpiresAt).toISOString() : currentRunStartedAt;
+        error.startedAt = lockRes.existingExpiresAt ? new Date(lockRes.existingExpiresAt).toISOString() : runStartedIso;
         throw error;
       }
       fencingToken = lockRes.fencingToken;
       acquiredLock = true;
     }
 
-    // Check replica-set transaction capability once per run
-    const useTransactions = await supportsMongoTransactions(mongooseConnection, {
-      forceStandaloneMode: Boolean(options.forceStandaloneMode)
-    });
+    // Check replica-set transaction capability once per run (never needed in read-only dry-run)
+    const useTransactions = isStrictReadOnlyDryRun
+      ? false
+      : await supportsMongoTransactions(mongooseConnection, {
+        forceStandaloneMode: Boolean(options.forceStandaloneMode)
+      });
 
     if (!NotificationModel) {
       return {
         runId,
         fencingToken,
-        startedAt: currentRunStartedAt,
+        dryRun: isStrictReadOnlyDryRun,
+        readOnly: isStrictReadOnlyDryRun,
+        persisted: false,
+        startedAt: runStartedIso,
         completedAt: getNow().toISOString(),
         durationMs: 0,
         sourcesQueued: 0,
@@ -540,17 +549,25 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       };
     }
 
-    const sourcesToRun = options.sourceKey
+    const allMatchingSources = options.sourceKey
       ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === options.sourceKey)
       : OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled);
+    const totalSourcesMatching = allMatchingSources.length;
+    const rawOffset = Number(options.sourceOffset);
+    const effectiveOffset = isStrictReadOnlyDryRun && Number.isInteger(rawOffset) && rawOffset >= 0
+      ? Math.min(rawOffset, totalSourcesMatching)
+      : 0;
+    const sourcesToRun = effectiveOffset > 0
+      ? allMatchingSources.slice(effectiveOffset)
+      : allMatchingSources;
 
     // 3. Create or resume durable IngestionJob bound with same (runId, fencingToken)
     let activeJob = null;
-    let jobId = options.jobId || generateJobId();
-    let isDryRun = Boolean(options.dryRun);
+    let jobId = options.jobId || (isStrictReadOnlyDryRun ? `dryrun_${generateJobId()}` : generateJobId());
+    let isDryRun = isStrictReadOnlyDryRun;
 
-    if (IngestionJob) {
-      if (!options.sourceKey && !options.dryRun) {
+    if (!isStrictReadOnlyDryRun && IngestionJob) {
+      if (!options.sourceKey && !isStrictReadOnlyDryRun) {
         // Attempt to resume oldest recovered pending or retry_pending job first
         const pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
           .sort({ createdAt: 1 })
@@ -626,8 +643,8 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       }
     }
 
-    // 4. Start periodic 45-second lease renewal heartbeat
-    if (IngestionLock && heartbeatMs > 0) {
+    // 4. Start periodic 45-second lease renewal heartbeat (live runs only)
+    if (!isStrictReadOnlyDryRun && IngestionLock && heartbeatMs > 0) {
       heartbeatTimer = setInterval(async () => {
         try {
           const nowDt = getNow();
@@ -714,7 +731,9 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       }
 
       // Authoritative check before touching next source
-      await assertLockOwnership(IngestionLock, { lockKey, runId, fencingToken, now: getNow() });
+      if (!isStrictReadOnlyDryRun) {
+        await assertLockOwnership(IngestionLock, { lockKey, runId, fencingToken, now: getNow() });
+      }
 
       const source = OFFICIAL_EXAM_SOURCES.find((s) => s.key === slot.sourceKey);
       if (!source) {
@@ -730,7 +749,7 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       slot.status = 'running';
       slot.attempts = (slot.attempts || 0) + 1;
       slot.startedAt = srcStartTime;
-      if (IngestionJob) {
+      if (!isStrictReadOnlyDryRun && IngestionJob) {
         const markRes = await IngestionJob.updateOne(
           { jobId, ownerRunId: runId, fencingToken, status: 'running' },
           { $set: { [`sourceQueue.${idx}.status`]: 'running', [`sourceQueue.${idx}.attempts`]: slot.attempts, [`sourceQueue.${idx}.startedAt`]: srcStartTime, currentSourceKey: source.key, heartbeatAt: srcStartTime } }
@@ -750,9 +769,11 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
         slot.completedAt = getNow();
         sourceResults[source.key] = { success: false, error: failErr, itemsFound: 0 };
         errors.push(`[${source.key}] ${failErr}`);
-        await persistSourceHealthTelemetry(IngestionSourceHealth, {
-          source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: 0, status: 'failed', error: failErr
-        });
+        if (!isDryRun) {
+          await persistSourceHealthTelemetry(IngestionSourceHealth, {
+            source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: 0, status: 'failed', error: failErr, dryRun: isDryRun
+          });
+        }
         continue;
       }
 
@@ -771,11 +792,15 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
           sourceResults[source.key] = { success: false, error: failErr, status: failStatus, itemsFound: 0 };
           errors.push(`[${source.key}] ${failErr}`);
 
-          await assertLockOwnership(IngestionLock, { lockKey, runId, fencingToken, now: getNow() });
-          await persistSourceHealthTelemetry(IngestionSourceHealth, {
-            source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: srcDur, status: failStatus, error: failErr, stats: slot.stats
-          });
-          if (IngestionJob) {
+          if (!isStrictReadOnlyDryRun) {
+            await assertLockOwnership(IngestionLock, { lockKey, runId, fencingToken, now: getNow() });
+          }
+          if (!isDryRun) {
+            await persistSourceHealthTelemetry(IngestionSourceHealth, {
+              source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: srcDur, status: failStatus, error: failErr, stats: slot.stats, dryRun: isDryRun
+            });
+          }
+          if (!isStrictReadOnlyDryRun && IngestionJob) {
             const recomputed = recomputeJobSummary(sourceQueue);
             const cpRes = await IngestionJob.updateOne(
               { jobId, ownerRunId: runId, fencingToken, status: 'running' },
@@ -987,6 +1012,8 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
                 fencingToken,
                 getNow
               });
+            } else {
+              existingList.push({ ...proposalPayload });
             }
             if (isQuarantineCorr) srcStats.quarantined++;
             else srcStats.pendingReview++;
@@ -1048,6 +1075,8 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
               srcStats.duplicatesSkipped++;
               continue;
             }
+          } else {
+            existingList.push({ ...recordToPersist });
           }
 
           srcStats.newlyInserted++;
@@ -1070,15 +1099,17 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
           duplicates: srcStats.duplicatesSkipped
         };
 
-        await assertLockOwnership(IngestionLock, { lockKey, runId, fencingToken, now: getNow() });
+        if (!isStrictReadOnlyDryRun) {
+          await assertLockOwnership(IngestionLock, { lockKey, runId, fencingToken, now: getNow() });
+        }
 
         if (!isDryRun) {
           await persistSourceHealthTelemetry(IngestionSourceHealth, {
-            source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: srcDur, status: 'ok', stats: srcStats
+            source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: srcDur, status: 'ok', stats: srcStats, dryRun: isDryRun
           });
         }
 
-        if (IngestionJob) {
+        if (!isStrictReadOnlyDryRun && IngestionJob) {
           const recomputed = recomputeJobSummary(sourceQueue);
           const cpRes = await IngestionJob.updateOne(
             { jobId, ownerRunId: runId, fencingToken, status: 'running' },
@@ -1109,11 +1140,13 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
         sourceResults[source.key] = { success: false, error: sourceErr.message, itemsFound: 0 };
         errors.push(`[${source.key}] Unexpected exception: ${sourceErr.message}`);
 
-        await persistSourceHealthTelemetry(IngestionSourceHealth, {
-          source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: srcDur, status: 'failed', error: sourceErr.message
-        }).catch(() => {});
+        if (!isDryRun) {
+          await persistSourceHealthTelemetry(IngestionSourceHealth, {
+            source, jobId, runId, fencingToken, ranAt: getNow(), durationMs: srcDur, status: 'failed', error: sourceErr.message, dryRun: isDryRun
+          }).catch(() => {});
+        }
 
-        if (IngestionJob) {
+        if (!isStrictReadOnlyDryRun && IngestionJob) {
           const recomputed = recomputeJobSummary(sourceQueue);
           await IngestionJob.updateOne(
             { jobId, ownerRunId: runId, fencingToken, status: 'running' },
@@ -1130,20 +1163,28 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       ? 'pending'
       : (finalAgg.sourcesFailed === 0 ? 'completed' : (finalAgg.sourcesSucceeded === 0 ? 'failed' : 'completed_with_errors'));
 
+    const nextOffset = effectiveOffset + finalAgg.sourcesAttempted;
     const summary = {
       jobId,
       runId,
       fencingToken,
+      dryRun: isDryRun,
+      readOnly: isDryRun,
+      persisted: !isDryRun && !isStrictReadOnlyDryRun,
       status: finalJobStatus,
-      startedAt: currentRunStartedAt,
+      startedAt: runStartedIso,
       completedAt: new Date(endTime).toISOString(),
       durationMs: endTime - startTime,
+      totalSourcesMatching,
+      sourceOffset: effectiveOffset,
+      nextOffset,
+      hasMoreSources: isStrictReadOnlyDryRun ? nextOffset < totalSourcesMatching : hasRemainingPending,
       ...finalAgg,
       errors,
       sourceResults
     };
 
-    if (IngestionJob) {
+    if (!isStrictReadOnlyDryRun && IngestionJob) {
       const finalJobRes = await IngestionJob.updateOne(
         { jobId, ownerRunId: runId, fencingToken, status: 'running' },
         {
@@ -1186,20 +1227,22 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       }).catch(() => {});
     }
 
-    lastIngestionState = {
-      lastRunAt: summary.completedAt,
-      lastJobId: jobId,
-      lastRunId: runId,
-      lastFencingToken: fencingToken,
-      ...summary
-    };
+    if (!isDryRun && !isStrictReadOnlyDryRun) {
+      lastIngestionState = {
+        lastRunAt: summary.completedAt,
+        lastJobId: jobId,
+        lastRunId: runId,
+        lastFencingToken: fencingToken,
+        ...summary
+      };
+    }
 
     return summary;
   } finally {
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer);
     }
-    if (IngestionLock && acquiredLock) {
+    if (!isStrictReadOnlyDryRun && IngestionLock && acquiredLock) {
       await releaseIngestionLock(IngestionLock, {
         lockKey,
         runId,
@@ -1207,8 +1250,10 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
         now: getNow()
       }).catch(() => {});
     }
-    isInMemoryRunning = false;
-    currentRunStartedAt = null;
+    if (!isStrictReadOnlyDryRun) {
+      isInMemoryRunning = false;
+      currentRunStartedAt = null;
+    }
   }
 }
 

@@ -4785,8 +4785,12 @@ const createDurableSchedulerTick = (deps = {}) => {
       return { ran: false, reason: 'DB_NOT_CONNECTED' };
     }
     try {
-      // Recover any stale running jobs whose leases expired before evaluating queue state
-      await recoverJobs(IngestionJobModel, { maxAttempts: 3 }).catch(() => ({ recoveredCount: 0 }));
+      const isDryRunTick = tickOptions?.dryRun === true || String(tickOptions?.dryRun ?? '').trim().toLowerCase() === 'true';
+
+      // Recover any stale running jobs whose leases expired before evaluating queue state (skipped in dryRun)
+      if (!isDryRunTick) {
+        await recoverJobs(IngestionJobModel, { maxAttempts: 3 }).catch(() => ({ recoveredCount: 0 }));
+      }
 
       // Prevent duplicate execution if an active running job or live distributed lock lease exists
       const activeRunningJob = await IngestionJobModel.findOne({ status: 'running' }).lean();
@@ -4836,9 +4840,10 @@ const createDurableSchedulerTick = (deps = {}) => {
       const parsedBatch = parseInt(String(tickOptions.maxSources || env.INGESTION_SCHEDULER_MAX_SOURCES || defaultMaxSources), 10);
       const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
 
-      console.log(`🤖 [Scheduler]: Running durable ingestion tick (pending=${pendingCount}, retry_pending=${retryPendingCount}, stale=${isStale}, maxSources=${batchLimit})...`);
+      console.log(`🤖 [Scheduler]: Running durable ingestion tick (pending=${pendingCount}, retry_pending=${retryPendingCount}, stale=${isStale}, maxSources=${batchLimit}, dryRun=${isDryRunTick})...`);
       const summary = await ingestionRunner(NotificationModel, {
         triggerType: pendingRecoveries > 0 ? 'startup_recovery' : triggerType,
+        dryRun: isDryRunTick,
         maxSources: batchLimit,
         env,
         models: {
