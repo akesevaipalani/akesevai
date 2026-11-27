@@ -1,7 +1,7 @@
 // server/ingestion/scrapers/centralGovtScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
-import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP, validateExplicitSourceUrl } from '../officialDomainPolicy.js';
 import { toKolkataIsoDate } from '../../../src/utils/notificationDateHelper.js';
 
 function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
@@ -157,6 +157,99 @@ export async function scrapeUpscNotifications(sourceConfig, options = {}) {
 }
 
 /**
+ * Safely resolves and validates an SSC notice attachment path or URL.
+ * Rejects unsafe schemes, control characters, backslashes, protocol-relative URLs,
+ * path traversal segments, non-official hosts, and non-PDF attachments.
+ *
+ * @param {string} rawPath
+ * @param {Object} [options={}]
+ * @returns {string} Validated official SSC PDF URL, or '' if rejected
+ */
+export function resolveSafeSscAttachmentUrl(rawPath, options = {}) {
+  if (typeof rawPath !== 'string') return '';
+  const trimmed = rawPath.trim();
+  if (!trimmed) return '';
+  if (/[\u0000-\u001F\u007F]/.test(trimmed) || trimmed.includes('\\') || /%5c/i.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob|ftp):/i.test(trimmed)) {
+    return '';
+  }
+  // Reject arbitrary non-http(s) URI schemes (e.g. custom:, gopher:, smb:)
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !/^https?:/i.test(trimmed)) {
+    return '';
+  }
+  // Reject raw, percent-encoded, or double-encoded backslashes, control chars, traversal segments, and malformed encoding (S101-2)
+  if (/(^|[\\/])\.\.([\\/]|$)/.test(trimmed) || /(?:%2e|\.)(?:%2e|\.)/i.test(trimmed)) {
+    return '';
+  }
+  let decoded = trimmed;
+  for (let pass = 0; pass < 2; pass++) {
+    let nextDecoded;
+    try {
+      nextDecoded = decodeURIComponent(decoded);
+    } catch {
+      return '';
+    }
+    if (
+      /[\u0000-\u001F\u007F]/.test(nextDecoded) ||
+      nextDecoded.includes('\\') ||
+      /%5c/i.test(nextDecoded) ||
+      /(^|[\\/])\.\.([\\/]|$)/.test(nextDecoded) ||
+      /%2e%2e/i.test(nextDecoded)
+    ) {
+      return '';
+    }
+    if (nextDecoded === decoded) break;
+    decoded = nextDecoded;
+  }
+
+  let candidateUrl = '';
+  if (/^https?:\/\//i.test(trimmed)) {
+    candidateUrl = resolveUrlSafe(trimmed, 'https://ssc.gov.in/');
+  } else if (trimmed.startsWith('/api/attachment/')) {
+    candidateUrl = resolveUrlSafe(trimmed, 'https://ssc.gov.in/');
+  } else {
+    const relativePath = trimmed.replace(/^\/+/, '');
+    if (!relativePath) return '';
+    candidateUrl = resolveUrlSafe(relativePath, 'https://ssc.gov.in/api/attachment/');
+  }
+
+  if (!candidateUrl) return '';
+
+  const policyCheck = validateExplicitSourceUrl(candidateUrl, 'ssc_notices', 'notice', {
+    allowHttpForLocalMock: Boolean(options.allowHttpForLocalMock)
+  });
+  if (!policyCheck.valid || !policyCheck.parsedUrl) {
+    return '';
+  }
+
+  // Strictly accept valid official PDF attachments only (and re-verify decoded pathname)
+  const pathname = String(policyCheck.parsedUrl.pathname || '').trim();
+  let decodedPathname = '';
+  try {
+    decodedPathname = decodeURIComponent(pathname);
+  } catch {
+    return '';
+  }
+  if (
+    /[\u0000-\u001F\u007F]/.test(decodedPathname) ||
+    decodedPathname.includes('\\') ||
+    /(^|[\\/])\.\.([\\/]|$)/.test(decodedPathname)
+  ) {
+    return '';
+  }
+  if (!/\/[^/]+\.pdf$/i.test(pathname)) {
+    return '';
+  }
+
+  return policyCheck.parsedUrl.toString();
+}
+
+/**
  * Scrapes SSC Official Notice Board (Direct REST API)
  */
 export async function scrapeSscNotifications(sourceConfig, options = {}) {
@@ -176,11 +269,25 @@ export async function scrapeSscNotifications(sourceConfig, options = {}) {
       if (!headline || headline.length < 5) continue;
 
       let detailsLink = 'https://ssc.gov.in/notices';
-      if (notice.attachments && notice.attachments.length > 0 && notice.attachments[0].path) {
-        const cleanPath = notice.attachments[0].path.replace(/\\/g, '/');
-        detailsLink = `https://ssc.gov.in/api/attachment/${cleanPath}`;
-      } else if (notice.redirectUrl) {
-        detailsLink = resolveUrlSafe(notice.redirectUrl, 'https://ssc.gov.in/') || 'https://ssc.gov.in/notices';
+      if (Array.isArray(notice.attachments) && notice.attachments.length > 0) {
+        for (const attachment of notice.attachments) {
+          const validPdfUrl = resolveSafeSscAttachmentUrl(attachment?.path, options);
+          if (validPdfUrl) {
+            detailsLink = validPdfUrl;
+            break;
+          }
+        }
+      }
+      if (detailsLink === 'https://ssc.gov.in/notices' && notice.redirectUrl) {
+        const resolvedRedirect = resolveUrlSafe(notice.redirectUrl, 'https://ssc.gov.in/');
+        if (resolvedRedirect) {
+          const redirectCheck = validateExplicitSourceUrl(resolvedRedirect, 'ssc_notices', 'notice', {
+            allowHttpForLocalMock: Boolean(options.allowHttpForLocalMock)
+          });
+          if (redirectCheck.valid) {
+            detailsLink = resolvedRedirect;
+          }
+        }
       }
 
       // Project UTC/offset timestamp cleanly into Asia/Kolkata calendar date

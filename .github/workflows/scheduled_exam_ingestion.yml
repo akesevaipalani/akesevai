@@ -31,7 +31,9 @@ jobs:
     steps:
       - name: Trigger Decoupled Ingestion & Run Worker Batches
         env:
-          INGESTION_SECRET: ${{ secrets.INGESTION_SECRET_KEY || secrets.INGESTION_SECRET }}
+          # Strictly isolated secrets by ref (never fall back to production secret on non-main/staging refs)
+          PROD_INGESTION_SECRET: ${{ github.ref == 'refs/heads/main' && (secrets.INGESTION_SECRET_KEY || secrets.INGESTION_SECRET) || '' }}
+          STAGING_INGESTION_SECRET: ${{ github.ref != 'refs/heads/main' && secrets.STAGING_INGESTION_SECRET_KEY || '' }}
           PRODUCTION_BASE_URL: "https://akesevai.onrender.com"
           BASE_URL: ${{ github.ref == 'refs/heads/main' && 'https://akesevai.onrender.com' || vars.STAGING_BASE_URL || '' }}
           WORKFLOW_REF: ${{ github.ref }}
@@ -43,14 +45,43 @@ jobs:
           echo "🚀 Starting AK E-SEVAI Decoupled Queue + Worker Ingestion Job..."
           echo "================================================================"
 
-          # 0. Strict Staging-vs-Production Separation Guard:
-          # Never allow non-main / staging runs to trigger production ingestion accidentally.
-          if [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
-            if [ -z "$BASE_URL" ] || [ "$BASE_URL" = "$PRODUCTION_BASE_URL" ]; then
-              echo "::error::STAGING_WORKFLOW_BLOCKED: Ref '$WORKFLOW_REF' is not 'refs/heads/main' and no non-production vars.STAGING_BASE_URL is configured. Refusing to target production."
-              exit 1
-            fi
-          fi
+          # 0. Strict Staging-vs-Production BASE_URL Validation & Separation Guard (S101-4):
+          # Parse BASE_URL safely, strip trailing slashes, normalize hostname case, and refuse malformed or production-targeting staging URLs.
+          NORMALIZED_BASE_URL=$(BASE_URL="$BASE_URL" PRODUCTION_BASE_URL="$PRODUCTION_BASE_URL" WORKFLOW_REF="$WORKFLOW_REF" node -e '
+            const rawBase = String(process.env.BASE_URL || "").trim();
+            const rawProd = String(process.env.PRODUCTION_BASE_URL || "").trim();
+            const ref = String(process.env.WORKFLOW_REF || "").trim();
+            if (!rawBase) {
+              console.error("EMPTY_BASE_URL");
+              process.exit(2);
+            }
+            let parsedBase;
+            let parsedProd;
+            try {
+              parsedBase = new URL(rawBase);
+              parsedProd = new URL(rawProd);
+            } catch {
+              console.error("INVALID_BASE_URL");
+              process.exit(3);
+            }
+            if (parsedBase.protocol !== "https:" || !parsedBase.hostname || parsedBase.username || parsedBase.password || parsedBase.search || parsedBase.hash) {
+              console.error("INVALID_BASE_URL_SCHEME_OR_HOST");
+              process.exit(4);
+            }
+            const normBaseHost = parsedBase.hostname.toLowerCase().replace(/\.+$/, "");
+            const normProdHost = parsedProd.hostname.toLowerCase().replace(/\.+$/, "");
+            const cleanPath = (parsedBase.pathname || "").replace(/\/+$/, "");
+            const normalizedUrl = `${parsedBase.protocol}//${normBaseHost}${parsedBase.port ? ":" + parsedBase.port : ""}${cleanPath}`;
+            if (ref !== "refs/heads/main" && normBaseHost === normProdHost) {
+              console.error("STAGING_TARGETS_PRODUCTION");
+              process.exit(5);
+            }
+            process.stdout.write(normalizedUrl);
+          ') || {
+            echo "::error::STAGING_WORKFLOW_BLOCKED: Ref '$WORKFLOW_REF' received an invalid, non-HTTPS, missing, or production-targeting BASE_URL. Non-main runs must configure a valid non-production HTTPS vars.STAGING_BASE_URL."
+            exit 1
+          }
+          BASE_URL="$NORMALIZED_BASE_URL"
 
           # 0B. Fail-Closed Manual Dispatch Safety Guard:
           # Manual workflow_dispatch runs MUST strictly remain dry-run only; scheduled cron behavior is untouched.
@@ -77,9 +108,33 @@ jobs:
             fi
           fi
 
-          # 1. Fail-closed guard: Refuse execution if INGESTION_SECRET_KEY is not configured
-          if [ -z "$INGESTION_SECRET" ]; then
-            echo "::error::INGESTION_SECRET_KEY is missing or empty in GitHub Secrets. Please ensure INGESTION_SECRET_KEY is defined in Repository Settings -> Secrets and variables -> Actions. Request aborted."
+          # 1. Fail-closed environment-isolated secret resolution (NEVER log secret values; NEVER fall back across environments)
+          if [ "$WORKFLOW_REF" = "refs/heads/main" ]; then
+            TARGET_ENV="production"
+            EXPECTED_SECRET_LABEL="INGESTION_SECRET_KEY (or INGESTION_SECRET)"
+            ACTIVE_INGESTION_SECRET="$PROD_INGESTION_SECRET"
+            if [ -n "$STAGING_INGESTION_SECRET" ]; then
+              echo "::error::SECRET_ISOLATION_VIOLATION: Staging secret unexpectedly present for production ref '$WORKFLOW_REF'. Request aborted."
+              exit 1
+            fi
+          else
+            TARGET_ENV="staging"
+            EXPECTED_SECRET_LABEL="STAGING_INGESTION_SECRET_KEY"
+            ACTIVE_INGESTION_SECRET="$STAGING_INGESTION_SECRET"
+            if [ -n "$PROD_INGESTION_SECRET" ]; then
+              echo "::error::SECRET_ISOLATION_VIOLATION: Production secret unexpectedly present for non-main ref '$WORKFLOW_REF'. Request aborted."
+              exit 1
+            fi
+          fi
+
+          unset PROD_INGESTION_SECRET STAGING_INGESTION_SECRET
+
+          if [ -z "$ACTIVE_INGESTION_SECRET" ]; then
+            if [ "$TARGET_ENV" = "staging" ]; then
+              echo "::error::STAGING_SECRET_MISSING: STAGING_INGESTION_SECRET_KEY is missing or empty in GitHub Secrets for non-main ref '$WORKFLOW_REF'. Production secrets cannot be used as staging fallback. Request aborted."
+            else
+              echo "::error::PRODUCTION_SECRET_MISSING: INGESTION_SECRET_KEY (or INGESTION_SECRET) is missing or empty in GitHub Secrets for 'refs/heads/main'. Request aborted."
+            fi
             exit 1
           fi
 
@@ -99,7 +154,7 @@ jobs:
             --retry-delay 10 \
             --retry-connrefused \
             -H "Content-Type: application/json" \
-            -H "x-ingestion-secret: $INGESTION_SECRET")
+            -H "x-ingestion-secret: $ACTIVE_INGESTION_SECRET")
 
           echo "Enqueue HTTP Status: $ENQUEUE_HTTP_STATUS"
           cat enqueue_response.json || true
@@ -126,7 +181,7 @@ jobs:
               exit 1
             fi
           elif [ "$ENQUEUE_HTTP_STATUS" -eq 401 ] || [ "$ENQUEUE_HTTP_STATUS" -eq 403 ]; then
-            echo "::error::Authentication failed during enqueue (HTTP $ENQUEUE_HTTP_STATUS). Please verify INGESTION_SECRET_KEY secret."
+            echo "::error::Authentication failed during enqueue (HTTP $ENQUEUE_HTTP_STATUS). Please verify $EXPECTED_SECRET_LABEL secret."
             exit 1
           elif [ "$ENQUEUE_HTTP_STATUS" -eq 404 ]; then
             echo "::error::Ingestion endpoint not found (HTTP 404). Check BASE_URL and routing."
@@ -159,7 +214,7 @@ jobs:
               --connect-timeout 20 \
               --max-time 90 \
               -H "Content-Type: application/json" \
-              -H "x-ingestion-secret: $INGESTION_SECRET")
+              -H "x-ingestion-secret: $ACTIVE_INGESTION_SECRET")
 
             echo "Worker HTTP Status: $WORKER_HTTP_STATUS"
             cat worker_response.json || true
@@ -181,7 +236,7 @@ jobs:
 
             # Check authentication / client / server errors
             if [ "$WORKER_HTTP_STATUS" -eq 401 ] || [ "$WORKER_HTTP_STATUS" -eq 403 ]; then
-              echo "::error::Worker authentication failed with HTTP $WORKER_HTTP_STATUS. Please verify INGESTION_SECRET_KEY secret."
+              echo "::error::Worker authentication failed with HTTP $WORKER_HTTP_STATUS. Please verify $EXPECTED_SECRET_LABEL secret."
               exit 1
             elif [ "$WORKER_HTTP_STATUS" -eq 404 ]; then
               echo "::error::Worker endpoint not found (HTTP 404). Check BASE_URL and routing."

@@ -28,6 +28,7 @@ import {
   extractMongoDatabaseName,
   maskMongoUri,
   resolveAppEnvironment,
+  resolveRenderCloudIdentity,
   validateDatabaseEnvironmentIsolation,
   validateActualConnectedDatabase,
   isCleanupSchedulerAllowedInEnvironment
@@ -187,7 +188,7 @@ setInterval(() => {
   for (const [k, v] of rateLimitStore.entries()) {
     if (now > v.resetAt) rateLimitStore.delete(k);
   }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000).unref?.();
 
 // Specific Rate Limiters
 const otpSendLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 8, message: 'Too many OTP requests. Please wait a few minutes before trying again.' });
@@ -300,8 +301,8 @@ const notificationSchema = new mongoose.Schema({
   applicationFee: { type: String, default: 'Refer Official Notification' },
   notificationDate: { type: String, default: '' },
   importantDetails: { type: String, default: '' },
-  detailsLink: { type: String, default: 'https://www.india.gov.in/' },
-  applyLink: { type: String, default: 'https://www.india.gov.in/' },
+  detailsLink: { type: String, default: '' },
+  applyLink: { type: String, default: '' },
   isVerified: { type: Boolean, default: false },
   sourceIntegrityVerified: { type: Boolean, default: false, index: true },
   applicationDatesVerified: { type: Boolean, default: false, index: true },
@@ -1700,54 +1701,73 @@ const isStartupJobRecoveryDisabled = (env = process.env) =>
 
 // --- REST API ENDPOINTS ---
 
-// Health Check (Safe production diagnostics without leaking secrets)
-app.get('/api/health', (req, res) => {
-  const isProd = process.env.NODE_ENV === 'production';
-  const fast2smsKey = (process.env.FAST2SMS_API_KEY || '').trim().replace(/^["']|["']$/g, '');
-  const provider = (process.env.SMS_GATEWAY_PROVIDER || '').trim().replace(/^["']|["']$/g, '') || (fast2smsKey ? 'fast2sms' : 'none');
-  const route = (process.env.FAST2SMS_ROUTE || 'q').trim().replace(/^["']|["']$/g, '');
+const extractSafeShortGitCommit = (env = process.env) => {
+  const raw = String((env || process.env).RENDER_GIT_COMMIT || '').trim();
+  if (!raw || !/^[0-9a-f]{7,40}$/i.test(raw)) {
+    return null;
+  }
+  return raw.slice(0, 7).toLowerCase();
+};
+
+const buildHealthStatusPayload = ({
+  env = process.env,
+  mongooseConnection = mongoose.connection,
+  mongoUri = MONGODB_URI
+} = {}) => {
+  const safeEnv = env && typeof env === 'object' ? env : {};
+  const isProdEnv = safeEnv.NODE_ENV === 'production';
+  const fast2smsKey = (safeEnv.FAST2SMS_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+  const provider = (safeEnv.SMS_GATEWAY_PROVIDER || '').trim().replace(/^["']|["']$/g, '') || (fast2smsKey ? 'fast2sms' : 'none');
+  const route = (safeEnv.FAST2SMS_ROUTE || 'q').trim().replace(/^["']|["']$/g, '');
+  const identity = resolveRenderCloudIdentity(safeEnv);
 
   let appEnv = 'development';
   try {
-    appEnv = resolveAppEnvironment(process.env);
+    appEnv = resolveAppEnvironment(safeEnv);
   } catch (_) {
     appEnv = 'misconfigured';
   }
 
-  const activeDbName = mongoose.connection.name || extractMongoDatabaseName(MONGODB_URI) || 'unknown';
+  const activeDbName = mongooseConnection?.name || extractMongoDatabaseName(mongoUri) || 'unknown';
   const schedulerGate = isCleanupSchedulerAllowedInEnvironment({
-    env: process.env,
+    env: safeEnv,
     activeDbName
   });
 
   const isIsolated =
     (appEnv === 'staging' && activeDbName === 'akesevai_staging') ||
     (appEnv === 'development' && activeDbName === 'akesevai_dev') ||
-    (appEnv === 'production' && activeDbName === 'akesevai');
+    (appEnv === 'production' && activeDbName === 'akesevai' && identity.isVerifiedRenderProd);
 
-  res.json({
+  return {
     status: 'ok',
+    commitSha: extractSafeShortGitCommit(safeEnv),
     database: {
-      connected: mongoose.connection.readyState === 1,
+      connected: mongooseConnection?.readyState === 1,
       provider: 'MongoDB Atlas Cloud',
       name: activeDbName,
       isIsolated
     },
-    environment: isProd ? 'production' : 'development',
+    environment: isProdEnv ? 'production' : 'development',
     environmentDetails: {
       appEnv,
-      nodeEnv: process.env.NODE_ENV || 'development',
-      isRender: Boolean(process.env.RENDER === 'true' || process.env.RENDER_SERVICE_NAME),
-      serviceName: process.env.RENDER_SERVICE_NAME || 'local'
+      nodeEnv: safeEnv.NODE_ENV || 'development',
+      isRender: identity.isRender,
+      serviceName: safeEnv.RENDER_SERVICE_NAME || 'local',
+      externalHostname: identity.hostname || null,
+      identityVerified:
+        appEnv === 'production'
+          ? identity.isVerifiedRenderProd
+          : (appEnv === 'staging' ? (!identity.isRender || identity.isVerifiedRenderStaging) : appEnv !== 'misconfigured')
     },
     cleanupScheduler: {
       allowed: schedulerGate.allowed,
       reason: schedulerGate.reason || 'ALLOWED',
-      purgeEnabled: process.env.ENABLE_EXPIRED_EXAM_PURGE === 'true',
-      schedulerEnabled: process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false'
+      purgeEnabled: safeEnv.ENABLE_EXPIRED_EXAM_PURGE === 'true',
+      schedulerEnabled: safeEnv.ENABLE_IN_PROCESS_SCHEDULER !== 'false'
     },
-    masterFeedAutoSyncDisabled: isMasterFeedAutoSyncDisabled(process.env),
-    startupJobRecoveryDisabled: isStartupJobRecoveryDisabled(process.env),
+    masterFeedAutoSyncDisabled: isMasterFeedAutoSyncDisabled(safeEnv),
+    startupJobRecoveryDisabled: isStartupJobRecoveryDisabled(safeEnv),
     smsGateway: {
       provider,
       route,
@@ -1755,7 +1775,16 @@ app.get('/api/health', (req, res) => {
       keyLength: fast2smsKey ? fast2smsKey.length : 0
     },
     timestamp: new Date().toISOString()
-  });
+  };
+};
+
+// Health Check (Safe production diagnostics without leaking secrets)
+app.get('/api/health', (req, res) => {
+  res.json(buildHealthStatusPayload({
+    env: process.env,
+    mongooseConnection: mongoose.connection,
+    mongoUri: MONGODB_URI
+  }));
 });
 
 // --- OTP & SMS GATEWAY SECURITY SYSTEM ---
@@ -1795,7 +1824,7 @@ setInterval(() => {
       recentDispatches.delete(phone);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref?.();
 
 // Real SMS Gateway Dispatcher (Guaranteed Single Execution)
 async function dispatchSmsOtp(phone, otp, purpose = 'verification') {
@@ -5254,6 +5283,9 @@ if (isMainModule && process.env.DISABLE_AUTO_START !== 'true') {
 
 export {
   app,
+  notificationSchema,
+  extractSafeShortGitCommit,
+  buildHealthStatusPayload,
   createVaultRouteHandlers,
   createDurableSchedulerTick,
   runDurableSchedulerTick,

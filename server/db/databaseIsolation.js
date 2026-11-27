@@ -27,6 +27,23 @@ export const STAGING_DB_NAME = 'akesevai_staging';
 export const DEVELOPMENT_DB_NAME = 'akesevai_dev';
 export const TEST_DB_NAME = 'akesevai_test';
 
+export const VERIFIED_PRODUCTION_HOSTNAMES = Object.freeze([
+  'akesevai.onrender.com'
+]);
+
+export const VERIFIED_PRODUCTION_SERVICE_NAMES = Object.freeze([
+  'akesevai',
+  'akesevai-production'
+]);
+
+export const VERIFIED_STAGING_HOSTNAMES = Object.freeze([
+  'akesevai-staging-api-jqp2.onrender.com'
+]);
+
+export const VERIFIED_STAGING_SERVICE_NAMES = Object.freeze([
+  'akesevai-staging-api-jqp2'
+]);
+
 export const APPROVED_DEV_DATABASES = Object.freeze([
   DEVELOPMENT_DB_NAME,
   'akesevai_local',
@@ -39,6 +56,113 @@ export const APPROVED_TEST_DATABASES = Object.freeze([
   'memory',
   'test'
 ]);
+
+const VALID_HOSTNAME_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
+
+/**
+ * Strictly normalizes and validates a Render external hostname value.
+ * Accepts bare hostnames only (e.g. 'akesevai.onrender.com'); rejects schemes, paths, ports, or whitespace.
+ *
+ * @param {string} rawValue
+ * @returns {{ provided: boolean, valid: boolean, hostname: string }}
+ */
+export function normalizeRenderHostname(rawValue) {
+  if (rawValue === undefined || rawValue === null) {
+    return { provided: false, valid: false, hostname: '' };
+  }
+  const trimmed = String(rawValue).trim().toLowerCase().replace(/\.+$/, '');
+  if (!trimmed) {
+    return { provided: false, valid: false, hostname: '' };
+  }
+  if (!VALID_HOSTNAME_RE.test(trimmed)) {
+    return { provided: true, valid: false, hostname: '' };
+  }
+  return { provided: true, valid: true, hostname: trimmed };
+}
+
+/**
+ * Classifies Render cloud service identity using RENDER, RENDER_EXTERNAL_HOSTNAME,
+ * RENDER_SERVICE_NAME, and RENDER_GIT_BRANCH.
+ *
+ * Fail-closed guarantees:
+ * - Staging service ('akesevai-staging-api-jqp2' / staging hostname / staging branch) is NEVER classified as production.
+ * - Unknown or malformed Render hostnames are NEVER permitted.
+ * - Verified production identity strictly requires RENDER=true AND exact verified production hostname
+ *   ('akesevai.onrender.com'), with zero staging signals or identity contradictions.
+ *
+ * @param {Object} [env=process.env]
+ */
+export function resolveRenderCloudIdentity(env = process.env) {
+  const safeEnv = env && typeof env === 'object' ? env : {};
+  const renderFlag = String(safeEnv.RENDER || '').trim().toLowerCase() === 'true';
+  const renderService = String(safeEnv.RENDER_SERVICE_NAME || '').trim().toLowerCase();
+  const renderBranch = String(safeEnv.RENDER_GIT_BRANCH || '').trim().toLowerCase();
+  const hostInfo = normalizeRenderHostname(safeEnv.RENDER_EXTERNAL_HOSTNAME);
+  const hostname = hostInfo.valid ? hostInfo.hostname : '';
+
+  const isRender = Boolean(renderFlag || renderService || renderBranch || hostInfo.provided);
+
+  const isVerifiedStagingHostname = Boolean(hostname && VERIFIED_STAGING_HOSTNAMES.includes(hostname));
+  const isVerifiedStagingService = Boolean(renderService && VERIFIED_STAGING_SERVICE_NAMES.includes(renderService));
+  const isStagingServicePattern = Boolean(isVerifiedStagingService || renderService.includes('staging'));
+  const isStagingHostnamePattern = Boolean(isVerifiedStagingHostname || hostname.includes('staging'));
+  const isStagingBranchPattern = Boolean(renderBranch.includes('staging'));
+  const isRenderStaging = Boolean(isStagingServicePattern || isStagingHostnamePattern || isStagingBranchPattern);
+
+  const isVerifiedProdHostname = Boolean(hostname && VERIFIED_PRODUCTION_HOSTNAMES.includes(hostname));
+  const isVerifiedProdServiceName = Boolean(renderService && VERIFIED_PRODUCTION_SERVICE_NAMES.includes(renderService));
+
+  const hasInvalidHostname = Boolean(hostInfo.provided && !hostInfo.valid);
+  const hasUnknownHostname = Boolean(
+    hostname &&
+    !isVerifiedProdHostname &&
+    !isVerifiedStagingHostname
+  );
+
+  const hasIdentityConflict = Boolean(
+    (isVerifiedProdHostname && isRenderStaging) ||
+    (isVerifiedProdServiceName && isRenderStaging) ||
+    (isVerifiedProdHostname && isVerifiedStagingHostname)
+  );
+
+  const isVerifiedRenderProd = Boolean(
+    renderFlag &&
+    isVerifiedProdHostname &&
+    !isRenderStaging &&
+    !hasInvalidHostname &&
+    !hasUnknownHostname &&
+    !hasIdentityConflict
+  );
+
+  const isVerifiedRenderStaging = Boolean(
+    renderFlag &&
+    !isVerifiedProdHostname &&
+    !isVerifiedProdServiceName &&
+    !hasInvalidHostname &&
+    !hasUnknownHostname &&
+    !hasIdentityConflict &&
+    (isVerifiedStagingHostname || (!hostInfo.provided && isVerifiedStagingService))
+  );
+
+  return {
+    isRender,
+    renderFlag,
+    renderService,
+    renderBranch,
+    hostname,
+    hostnameProvided: hostInfo.provided,
+    hasInvalidHostname,
+    hasUnknownHostname,
+    hasIdentityConflict,
+    isRenderStaging,
+    isVerifiedProdHostname,
+    isVerifiedProdServiceName,
+    isVerifiedStagingHostname,
+    isVerifiedStagingService,
+    isVerifiedRenderProd,
+    isVerifiedRenderStaging
+  };
+}
 
 /**
  * Safely extracts the target database name from a mongodb:// or mongodb+srv:// connection URI.
@@ -90,81 +214,90 @@ export function maskMongoUri(uri) {
 }
 
 /**
- * Strictly resolves the application environment from APP_ENV, RENDER_SERVICE_NAME,
- * RENDER_GIT_BRANCH, and NODE_ENV.
+ * Strictly resolves the application environment from APP_ENV, RENDER,
+ * RENDER_EXTERNAL_HOSTNAME, RENDER_SERVICE_NAME, RENDER_GIT_BRANCH, and NODE_ENV.
  *
  * Detects conflicts between explicit APP_ENV and Render cloud service identity.
- * Rejects missing or ambiguous environment identities.
+ * Rejects unknown Render hostnames, missing cloud identity metadata, or staging/prod contradictions.
  *
  * @param {Object} [env=process.env]
  * @returns {'production'|'staging'|'development'|'test'}
- * @throws {Error} When conflicting, ambiguous, or invalid configuration is detected
+ * @throws {Error} When conflicting, ambiguous, unknown, or invalid configuration is detected
  */
 export function resolveAppEnvironment(env = process.env) {
-  const rawAppEnv = String(env.APP_ENV || '').trim().toLowerCase();
-  const renderService = String(env.RENDER_SERVICE_NAME || '').trim().toLowerCase();
-  const renderBranch = String(env.RENDER_GIT_BRANCH || '').trim().toLowerCase();
-  const nodeEnv = String(env.NODE_ENV || '').trim().toLowerCase();
-  const isRender = Boolean(env.RENDER === 'true' || env.RENDER_SERVICE_NAME || env.RENDER_GIT_BRANCH);
+  const safeEnv = env && typeof env === 'object' ? env : {};
+  const rawAppEnv = String(safeEnv.APP_ENV || '').trim().toLowerCase();
+  const nodeEnv = String(safeEnv.NODE_ENV || '').trim().toLowerCase();
 
   // 1. Explicit Automated Test Mode
   if (nodeEnv === 'test' || rawAppEnv === 'test') {
     return 'test';
   }
 
-  // 2. Classify Render cloud infrastructure hints
-  const isRenderServiceStaging = renderService.includes('staging');
-  const isRenderBranchStaging = renderBranch.includes('staging');
-  const isRenderStaging = isRenderServiceStaging || isRenderBranchStaging;
+  // 2. Classify Render cloud infrastructure identity fail-closed
+  const identity = resolveRenderCloudIdentity(safeEnv);
 
-  const isRenderServiceProd = (renderService === 'akesevai' || (renderService.includes('prod') && !isRenderStaging));
-  const isRenderBranchProd = (renderBranch === 'main' || renderBranch === 'master') && !isRenderStaging;
-  const isRenderProd = isRenderServiceProd && !isRenderStaging;
+  if (identity.hasIdentityConflict) {
+    throw new Error(
+      `ENVIRONMENT_CONFLICT: Contradictory Render cloud identity metadata detected (SERVICE='${safeEnv.RENDER_SERVICE_NAME || ''}', HOSTNAME='${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}', BRANCH='${safeEnv.RENDER_GIT_BRANCH || ''}'). Refusing startup.`
+    );
+  }
+
+  if (identity.isRender && (identity.hasInvalidHostname || identity.hasUnknownHostname)) {
+    throw new Error(
+      `UNKNOWN_RENDER_SERVICE: Unrecognized or invalid Render external hostname '${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}'. Only verified production ('akesevai.onrender.com') or staging ('akesevai-staging-api-jqp2.onrender.com') services are permitted.`
+    );
+  }
 
   // 3. Resolve when explicit APP_ENV is supplied
   if (rawAppEnv) {
     if (rawAppEnv === 'staging') {
-      if (isRenderServiceProd && !isRenderServiceStaging) {
+      if (identity.isVerifiedProdHostname || identity.isVerifiedProdServiceName) {
         throw new Error(
-          `ENVIRONMENT_CONFLICT: APP_ENV is 'staging' but RENDER_SERVICE_NAME indicates production ('${env.RENDER_SERVICE_NAME}'). Refusing startup.`
+          `ENVIRONMENT_CONFLICT: APP_ENV is 'staging' but Render identity indicates production (SERVICE='${safeEnv.RENDER_SERVICE_NAME || ''}', HOSTNAME='${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}'). Refusing startup.`
+        );
+      }
+      if (identity.isRender && !identity.isVerifiedRenderStaging) {
+        throw new Error(
+          `UNVERIFIED_RENDER_STAGING_IDENTITY: Running on Render with APP_ENV='staging' without verified staging identity metadata (SERVICE='${safeEnv.RENDER_SERVICE_NAME || ''}', HOSTNAME='${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}'). Refusing startup.`
         );
       }
       return 'staging';
     }
 
     if (rawAppEnv === 'production') {
-      if (isRenderStaging) {
+      if (identity.isRenderStaging) {
         throw new Error(
-          `ENVIRONMENT_CONFLICT: APP_ENV is 'production' but Render service identity indicates staging (SERVICE='${env.RENDER_SERVICE_NAME || ''}', BRANCH='${env.RENDER_GIT_BRANCH || ''}'). Refusing startup.`
+          `ENVIRONMENT_CONFLICT: APP_ENV is 'production' but Render identity indicates staging (SERVICE='${safeEnv.RENDER_SERVICE_NAME || ''}', HOSTNAME='${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}', BRANCH='${safeEnv.RENDER_GIT_BRANCH || ''}'). Refusing startup.`
         );
       }
       return 'production';
     }
 
     if (rawAppEnv === 'development') {
-      if (isRender) {
+      if (identity.isRender) {
         throw new Error(
-          `ENVIRONMENT_CONFLICT: Cloud Render instance cannot run in 'development' mode (RENDER_SERVICE_NAME='${env.RENDER_SERVICE_NAME}'). Refusing startup.`
+          `ENVIRONMENT_CONFLICT: Cloud Render instance cannot run in 'development' mode (SERVICE='${safeEnv.RENDER_SERVICE_NAME || ''}', HOSTNAME='${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}'). Refusing startup.`
         );
       }
       return 'development';
     }
 
     throw new Error(
-      `INVALID_APP_ENV: Unrecognized APP_ENV value '${env.APP_ENV}'. Allowed values are 'production', 'staging', 'development', or 'test'.`
+      `INVALID_APP_ENV: Unrecognized APP_ENV value '${safeEnv.APP_ENV}'. Allowed values are 'production', 'staging', 'development', or 'test'.`
     );
   }
 
-  // 4. Missing APP_ENV: Deduce strictly from Render Cloud identity
-  if (isRender) {
-    if (isRenderStaging) {
+  // 4. Missing APP_ENV: Deduce strictly from verified Render Cloud identity
+  if (identity.isRender) {
+    if (identity.isVerifiedRenderStaging) {
       return 'staging';
     }
-    if (isRenderProd) {
+    if (identity.isVerifiedRenderProd) {
       return 'production';
     }
     throw new Error(
-      `MISSING_APP_ENV: Running on Render with ambiguous service identity (SERVICE='${env.RENDER_SERVICE_NAME || ''}', BRANCH='${env.RENDER_GIT_BRANCH || ''}'). APP_ENV must be explicitly set to 'staging' or 'production'.`
+      `MISSING_APP_ENV: Running on Render with missing or unverified service identity (SERVICE='${safeEnv.RENDER_SERVICE_NAME || ''}', HOSTNAME='${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}', BRANCH='${safeEnv.RENDER_GIT_BRANCH || ''}'). Explicit APP_ENV and verified Render hostname metadata are required.`
     );
   }
 
@@ -181,8 +314,8 @@ export function resolveAppEnvironment(env = process.env) {
 /**
  * Validates MongoDB database name against the resolved environment.
  * Ensures that:
- * - Staging startup is rejected if DB is not 'akesevai_staging'.
- * - Production startup is rejected if DB is not 'akesevai' or if running outside verified Render production.
+ * - Staging startup is rejected if DB is not 'akesevai_staging' (or Render staging identity is unverified).
+ * - Production startup is rejected if DB is not 'akesevai' or if running outside verified Render production ('akesevai.onrender.com' + RENDER=true).
  * - Local development startup is rejected if DB is 'akesevai'.
  * - No normal local override is provided to bypass production database protection.
  *
@@ -190,23 +323,22 @@ export function resolveAppEnvironment(env = process.env) {
  * @param {string} options.uri
  * @param {Object} [options.env=process.env]
  * @param {boolean} [options.exitOnError=true]
- * @returns {{ ok: boolean, appEnv: string, targetDb: string, isIsolated: boolean }}
+ * @returns {{ ok: boolean, appEnv: string, targetDb: string, isIsolated: boolean, renderIdentity: Object }}
  */
 export function validateDatabaseEnvironmentIsolation({
   uri,
   env = process.env,
   exitOnError = true
 }) {
+  const safeEnv = env && typeof env === 'object' ? env : {};
   const targetDb = extractMongoDatabaseName(uri);
-  const isRender = Boolean(env.RENDER === 'true' || env.RENDER_SERVICE_NAME || env.RENDER_GIT_BRANCH);
-  const renderService = String(env.RENDER_SERVICE_NAME || '').trim().toLowerCase();
-  const isVerifiedRenderProd = isRender && (renderService === 'akesevai' || renderService === 'akesevai-production');
+  const identity = resolveRenderCloudIdentity(safeEnv);
 
   let appEnv = 'development';
   let envError = null;
 
   try {
-    appEnv = resolveAppEnvironment(env);
+    appEnv = resolveAppEnvironment(safeEnv);
   } catch (err) {
     envError = err;
   }
@@ -230,9 +362,13 @@ export function validateDatabaseEnvironmentIsolation({
       case 'production':
         if (targetDb !== PRODUCTION_DB_NAME) {
           violationMessage = `PRODUCTION_DATABASE_MISMATCH: Production environment must connect strictly to '${PRODUCTION_DB_NAME}', but MONGODB_URI targets '${targetDb}'.`;
-        } else if (!isVerifiedRenderProd) {
-          // Reject local execution attempting to connect to production database
-          violationMessage = `LOCAL_PRODUCTION_DB_BLOCKED: Local execution is strictly forbidden from connecting to production database '${PRODUCTION_DB_NAME}'. Local development must use '${DEVELOPMENT_DB_NAME}'. No local bypass is permitted.`;
+        } else if (!identity.isVerifiedRenderProd) {
+          if (!identity.renderFlag) {
+            // Reject local execution (or non-Render runtime without RENDER=true) attempting to connect to production database
+            violationMessage = `LOCAL_PRODUCTION_DB_BLOCKED: Local execution is strictly forbidden from connecting to production database '${PRODUCTION_DB_NAME}'. Local development must use '${DEVELOPMENT_DB_NAME}'. No local bypass is permitted.`;
+          } else {
+            violationMessage = `UNVERIFIED_RENDER_PRODUCTION_IDENTITY: Production startup requires verified Render production identity (RENDER=true and exact RENDER_EXTERNAL_HOSTNAME='akesevai.onrender.com' with zero staging indicators). Received HOSTNAME='${safeEnv.RENDER_EXTERNAL_HOSTNAME || ''}', SERVICE='${safeEnv.RENDER_SERVICE_NAME || ''}'.`;
+          }
         }
         break;
 
@@ -282,7 +418,13 @@ export function validateDatabaseEnvironmentIsolation({
     ok: true,
     appEnv,
     targetDb,
-    isIsolated: true
+    isIsolated: true,
+    renderIdentity: {
+      isRender: identity.isRender,
+      hostname: identity.hostname || null,
+      isVerifiedRenderProd: identity.isVerifiedRenderProd,
+      isVerifiedRenderStaging: identity.isVerifiedRenderStaging
+    }
   };
 }
 
@@ -414,6 +556,16 @@ export function isCleanupSchedulerAllowedInEnvironment({
       };
 
     case 'production': {
+      const identity = resolveRenderCloudIdentity(env);
+      if (!identity.isVerifiedRenderProd) {
+        return {
+          allowed: false,
+          appEnv: 'production',
+          dbName,
+          dryRun: true,
+          reason: 'PRODUCTION_SCHEDULER_BLOCKED_UNVERIFIED_RENDER_IDENTITY'
+        };
+      }
       const isExplicitlyAllowedInProd =
         String(env.ENABLE_PROD_CLEANUP_SCHEDULER || '').trim().toLowerCase() === 'true';
 
