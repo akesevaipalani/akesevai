@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>TNUSRB Official Recruitment Fixture</title></head>
+<body>
+  <section class="recruitments">
+    <!-- 1. Complete valid structured card with Notification No, Vacancies, Published/Opening/Closing/Exam dates, PDF details & specific Apply URL -->
+    <div class="recruitment-card">
+      <h3>Joint Recruitment of Sub-Inspectors of Police (Taluk &amp; AR) 2026</h3>
+      <p>
+        Notification No. 01/2026. Notification Date: 10-11-2026.
+        Total Vacancies: 1,299 Posts.
+        Online Application from 15-11-2026 to 22-12-2026.
+        Written Examination Date: 18-04-2027.
+      </p>
+      <a href="/notifications/2026/si_notification_01_2026.pdf">Download Notification PDF</a>
+      <a href="/online-application/si-2026">Apply Online</a>
+    </div>
+
+    <!-- 2. Duplicate card (must be deduplicated in-scraper) -->
+    <div class="recruitment-card">
+      <h3>Joint Recruitment of Sub-Inspectors of Police (Taluk &amp; AR) 2026</h3>
+      <p>Notification No. 01/2026. Total Vacancies: 1,299 Posts.</p>
+      <a href="/notifications/2026/si_notification_01_2026.pdf">Download Notification PDF</a>
+      <a href="/online-application/si-2026">Apply Online</a>
+    </div>
+
+    <!-- 3. Missing Closing Date, Missing/0 Vacancies, Published Date only (must NOT populate openingDate), Generic Root Apply URL (must be rejected) -->
+    <div class="recruitment-card">
+      <h3>Common Recruitment of Police Constables, Jail Warders and Firemen 2026</h3>
+      <p>
+        Notification No. 02/2026. Published on: 19-11-2026.
+        Vacancies: 0 Posts.
+      </p>
+      <a href="/notifications/2026/pc_constable_02_2026.pdf">Notification PDF</a>
+      <a href="https://tnusrb.tn.gov.in/">Apply Online</a>
+    </div>
+
+    <!-- 4. Invalid Closing Date (31-04-2026) & External Untrusted Apply URL (must be rejected) -->
+    <div class="recruitment-card">
+      <h3>Joint Recruitment of Technical Sub-Inspector 2026</h3>
+      <p>
+        Notification No. 03/2026. Notification Date: 20-11-2026.
+        Opening Date: 21-11-2026. Last Date: 31-04-2026.
+      </p>
+      <a href="/notifications/2026/tech_si_03_2026.pdf">Notification PDF</a>
+      <a href="https://fake-apply.example.com/tnusrb">Apply Online</a>
+    </div>
+
+    <!-- 5. Past Result noise (must be excluded) -->
+    <div class="recruitment-card">
+      <h3>Common Recruitment of Police Constables 2024 - Final Provisional Selection List</h3>
+      <a href="/results/2024/final_selection.pdf">Final Selection List</a>
+    </div>
+  </section>
+
+  <!-- Unsafe standalone links (must be rejected) -->
+  <a href="javascript:alert(1)">Joint Recruitment of Sub-Inspector Fake JS</a>
+  <a href="data:text/html,evil">Common Recruitment Constable Fake Data</a>
+</body>
+</html>

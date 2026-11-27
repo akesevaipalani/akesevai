@@ -4,9 +4,11 @@
 import crypto from 'crypto';
 import {
   getKolkataToday,
-  parseDateDetailed
+  parseDateDetailed,
+  isGenericRootHomepage
 } from '../../src/utils/notificationDateHelper.js';
 import { validateExplicitSourceUrl } from './officialDomainPolicy.js';
+import { isGenericListingOrDirectoryUrl, isPdfPathname } from './trustScoringEngine.js';
 
 export function normalizeCleanText(str) {
   if (!str) return '';
@@ -93,9 +95,11 @@ export function extractSnapshotValues(doc = {}) {
 }
 
 function isPlaceholderValue(field, val) {
-  const str = String(val || '').trim();
+  const str = String(val || '').trim().toLowerCase();
   if (!str) return true;
-  if (field === 'examDate' && str.toLowerCase() === 'announced soon') return true;
+  if (field === 'examDate' && (str === 'announced soon' || str === 'to be announced' || str === 'not_announced')) return true;
+  if ((field === 'qualification' || field === 'ageLimit' || field === 'applicationFee') && (str === 'refer official notification' || str === 'not specified')) return true;
+  if ((field === 'posts' || field === 'vacancies') && (str === 'not specified' || str === 'multiple posts')) return true;
   return false;
 }
 
@@ -240,6 +244,46 @@ export function evaluateCorrigendumUpdate(params = {}) {
       changedFields,
       previousValues
     };
+  }
+
+  if (merged.applyLink) {
+    const applyCheck = validateExplicitSourceUrl(merged.applyLink, sourceKey, 'apply', { allowHttpForLocalMock });
+    if (!applyCheck.valid) {
+      return {
+        decision: applyCheck.severity === 'quarantine' ? 'quarantined_corrigendum' : 'pending_corrigendum_review',
+        reason: `CORRIGENDUM_APPLY_URL_${applyCheck.reason}`,
+        changedFields,
+        previousValues,
+        proposedFields: merged
+      };
+    }
+    if (isPdfPathname(merged.applyLink, { allowHttpForLocalMock })) {
+      return {
+        decision: 'pending_corrigendum_review',
+        reason: 'CORRIGENDUM_APPLY_URL_IS_PDF',
+        changedFields,
+        previousValues,
+        proposedFields: merged
+      };
+    }
+    if (isGenericRootHomepage(merged.applyLink)) {
+      return {
+        decision: 'pending_corrigendum_review',
+        reason: 'CORRIGENDUM_GENERIC_APPLY_HOMEPAGE',
+        changedFields,
+        previousValues,
+        proposedFields: merged
+      };
+    }
+    if (isGenericListingOrDirectoryUrl(merged.applyLink)) {
+      return {
+        decision: 'pending_corrigendum_review',
+        reason: 'CORRIGENDUM_GENERIC_APPLY_LISTING_URL',
+        changedFields,
+        previousValues,
+        proposedFields: merged
+      };
+    }
   }
 
   const docState = docVerification?.docState || 'unavailable';

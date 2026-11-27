@@ -17,6 +17,24 @@ import {
   runAllIngestionJobs
 } from './server/ingestion/ingestionManager.js';
 import {
+  evaluateNotificationVerificationFlags
+} from './server/ingestion/trustScoringEngine.js';
+import {
+  shouldDeleteExpiredExamNotification,
+  runExpiredExamCleanupSchedulerTick,
+  CleanupScheduleState
+} from './server/cleanup/expiredExamCleanupHelper.js';
+import {
+  extractMongoDatabaseName,
+  maskMongoUri,
+  resolveAppEnvironment,
+  resolveRenderCloudIdentity,
+  validateDatabaseEnvironmentIsolation,
+  validateActualConnectedDatabase,
+  isCleanupSchedulerAllowedInEnvironment
+} from './server/db/databaseIsolation.js';
+import { getKolkataToday } from './src/utils/notificationDateHelper.js';
+import {
   escapeHtml,
   safeJsonLdStringify,
   resolveQueryRedirect,
@@ -70,7 +88,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || (isProd ? '' : 'mongodb://127.0.0.1:27017/akesevai');
+const MONGODB_URI = process.env.MONGODB_URI || (isProd ? '' : 'mongodb://127.0.0.1:27017/akesevai_dev');
 
 // Security: Disable x-powered-by banner
 app.disable('x-powered-by');
@@ -170,7 +188,7 @@ setInterval(() => {
   for (const [k, v] of rateLimitStore.entries()) {
     if (now > v.resetAt) rateLimitStore.delete(k);
   }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000).unref?.();
 
 // Specific Rate Limiters
 const otpSendLimiter = createRateLimiter({ windowMs: 5 * 60 * 1000, max: 8, message: 'Too many OTP requests. Please wait a few minutes before trying again.' });
@@ -274,18 +292,35 @@ const notificationSchema = new mongoose.Schema({
   organization: { type: String, default: 'Official Government / Exam Authority' },
   service: { type: String, required: true },
   postName: { type: String, default: '' },
-  qualification: { type: String, default: 'Any Graduation / Degree' },
-  ageLimit: { type: String, default: '18 - 30 Years' },
-  posts: { type: String, default: 'Multiple Posts' },
+  qualification: { type: String, default: 'Refer Official Notification' },
+  ageLimit: { type: String, default: 'Refer Official Notification' },
+  posts: { type: String, default: 'Not Specified' },
   openingDate: { type: String, default: '' },
   closingDate: { type: String, default: '' },
-  examDate: { type: String, default: 'Announced Soon' },
-  applicationFee: { type: String, default: '₹100 (SC/ST/Women Exempted)' },
+  examDate: { type: String, default: 'To Be Announced' },
+  applicationFee: { type: String, default: 'Refer Official Notification' },
   notificationDate: { type: String, default: '' },
   importantDetails: { type: String, default: '' },
-  detailsLink: { type: String, default: 'https://www.india.gov.in/' },
-  applyLink: { type: String, default: 'https://www.india.gov.in/' },
-  isVerified: { type: Boolean, default: true },
+  detailsLink: { type: String, default: '' },
+  applyLink: { type: String, default: '' },
+  isVerified: { type: Boolean, default: false },
+  sourceIntegrityVerified: { type: Boolean, default: false, index: true },
+  applicationDatesVerified: { type: Boolean, default: false, index: true },
+  vacanciesVerified: { type: Boolean, default: false },
+  hasSourceIntegrityIssue: { type: Boolean, default: false },
+  needsOfficialSource: { type: Boolean, default: false },
+  evidenceClassification: { type: String, default: '' },
+  officialNotificationNumber: { type: String, default: '' },
+  officialNotificationUrl: { type: String, default: '' },
+  officialPdfUrl: { type: String, default: '' },
+  sourcePublishedDate: { type: String, default: '' },
+  evidenceVerifiedAt: { type: Date, default: null },
+  isThirdParty: { type: Boolean, default: false },
+  sourceType: { type: String, default: '' },
+  isOfficialSourceVerified: { type: Boolean, default: false },
+  isExpired: { type: Boolean, default: false },
+  isLegacy: { type: Boolean, default: false },
+  auditNote: { type: String, default: '' },
   source: { type: String, default: 'Official Govt Portal' },
   isNew: { type: Boolean, default: true },
   status: { type: String, default: 'active' }, // 'active' | 'expired' | 'upcoming'
@@ -510,7 +545,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Premier All India Civil Services • Prelims, Mains & Personality Test • Central Cadre',
     detailsLink: 'https://upsc.gov.in/examinations/active-exams',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official UPSC Examination Portal (upsc.gov.in)',
     isNew: true,
     status: 'active'
@@ -532,7 +571,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Commissioned Officer Recruitment in Indian Armed Forces • Written Exam + SSB',
     detailsLink: 'https://upsc.gov.in/',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'UPSC Official CDS Portal',
     isNew: true,
     status: 'active'
@@ -554,7 +597,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Prestigious Tri-Services Officer Academy • Khadakwasla Pune Training',
     detailsLink: 'https://upsc.gov.in/',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official UPSC NDA Portal',
     isNew: true,
     status: 'active'
@@ -576,7 +623,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Group-A Gazetted Officer in Central Paramilitary Forces • Level 10 Pay Matrix',
     detailsLink: 'https://upsc.gov.in/',
     applyLink: 'https://upsconline.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official UPSC Examination Portal',
     isNew: true,
     status: 'active'
@@ -600,7 +651,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Group B & C Central Ministries Postings • Computer Based Exam Tier I & II',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/login',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Staff Selection Commission (ssc.gov.in)',
     isNew: true,
     status: 'active'
@@ -622,7 +677,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'All India Central Govt Offices & Ministries Posting • Tier 1 & 2 Computer Test',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SSC Portal',
     isNew: true,
     status: 'active'
@@ -644,7 +703,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Central Govt Group C Non-Gazetted Posts • Simple 10th Standard Syllabus in Tamil/English',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SSC MTS Portal',
     isNew: true,
     status: 'active'
@@ -666,7 +729,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Sub-Inspector Entry in Central Police Forces • Level 6 Pay Matrix (₹35,400 - ₹1,12,400)',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SSC CPO Recruitment',
     isNew: true,
     status: 'active'
@@ -690,7 +757,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Official Central Recruitment • Preliminary & Mains Online Exam • Direct Scale-I Posting',
     detailsLink: 'https://sbi.co.in/web/careers/current-openings',
     applyLink: 'https://bank.sbi/careers',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official SBI Careers Portal (sbi.co.in)',
     isNew: true,
     status: 'active'
@@ -712,7 +783,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Participating: Indian Bank, Canara Bank, PNB, BOB, Union Bank, Central Bank • State Wise Merit',
     detailsLink: 'https://www.ibps.in/',
     applyLink: 'https://ibpsonline.ibps.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official IBPS Portal (ibps.in)',
     isNew: true,
     status: 'active'
@@ -734,7 +809,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Apex Central Bank of India • Prestigious Grade B Career • Monthly Emoluments ~₹1,16,000/-',
     detailsLink: 'https://opportunities.rbi.org.in/',
     applyLink: 'https://opportunities.rbi.org.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Reserve Bank of India (rbi.org.in)',
     isNew: true,
     status: 'active'
@@ -756,7 +835,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Grama Bank & 42 Rural Banks • Direct Local Branch Appointment in TN',
     detailsLink: 'https://www.ibps.in/',
     applyLink: 'https://ibpsonline.ibps.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official IBPS RRB Portal',
     isNew: true,
     status: 'active'
@@ -778,7 +861,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'State Bank of India Largest Public Sector Bank • Posting in Tamil Nadu & Puducherry Circles',
     detailsLink: 'https://bank.sbi/careers',
     applyLink: 'https://bank.sbi/careers',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'SBI Central Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -800,7 +887,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Premier Insurance Corporation • Basic Pay ₹53,600 + DA/HRA (~₹92,870/month)',
     detailsLink: 'https://licindia.in/careers',
     applyLink: 'https://licindia.in/careers',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official LIC India Portal',
     isNew: true,
     status: 'active'
@@ -822,7 +913,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: '11 Public Sector Banks (Canara Bank, Indian Bank, PNB, BOB, UBI, etc.)',
     detailsLink: 'https://www.ibps.in/',
     applyLink: 'https://ibpsonline.ibps.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official IBPS PO Portal',
     isNew: true,
     status: 'active'
@@ -846,7 +941,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Train Driver Pilot Recruitment • Level 2 Pay Matrix (Initial Pay ₹19,900/- + Running Allowance)',
     detailsLink: 'https://www.rrbchennai.gov.in/',
     applyLink: 'https://www.rrbapply.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Railway Recruitment Board (rrbapply.gov.in)',
     isNew: true,
     status: 'active'
@@ -868,7 +967,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Southern Railway & ICF Perambur Openings • Computer Based Test + Trade Test',
     detailsLink: 'https://www.rrbchennai.gov.in/',
     applyLink: 'https://www.rrbapply.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official RRB Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -890,7 +993,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Prestigious Railway Station Operations & Commercial Jobs • CBT 1 & 2 Exam',
     detailsLink: 'https://www.rrbchennai.gov.in/',
     applyLink: 'https://www.rrbapply.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'RRB Chennai & Central Railways',
     isNew: true,
     status: 'active'
@@ -912,7 +1019,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Permanent Central Railway Jobs in Tamil Nadu • Written CBT + Physical Efficiency Test (PET)',
     detailsLink: 'https://www.rrcmas.in/',
     applyLink: 'https://www.rrcmas.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official RRC Southern Railway Chennai',
     isNew: true,
     status: 'active'
@@ -936,7 +1047,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Most Popular Competitive Exam • Tamil Eligibility + General Studies • Direct State Posting',
     detailsLink: 'https://www.tnpsc.gov.in/English/Notification.aspx',
     applyLink: 'https://www.tnpscexams.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNPSC Portal (tnpsc.gov.in)',
     isNew: true,
     status: 'active'
@@ -958,7 +1073,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Executive & Non-Executive State Services • Preliminary, Mains & Oral Test/Interview',
     detailsLink: 'https://www.tnpsc.gov.in/',
     applyLink: 'https://www.tnpscexams.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNPSC Exam Portal',
     isNew: true,
     status: 'active'
@@ -980,7 +1099,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Top State Executive Cadre in Tamil Nadu • Sub-Collector / DSP Direct Entry',
     detailsLink: 'https://www.tnpsc.gov.in/',
     applyLink: 'https://www.tnpscexams.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'TNPSC Official Group 1 Portal',
     isNew: true,
     status: 'active'
@@ -1004,7 +1127,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'State Uniformed Police Service • 20% PSTM Quota for Tamil Medium Candidates',
     detailsLink: 'https://www.tnusrb.tn.gov.in/',
     applyLink: 'https://www.tnusrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNUSRB Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -1026,7 +1153,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Tamil Nadu Uniformed Police Service • Written Test + Physical PET (Running, Rope Climbing)',
     detailsLink: 'https://www.tnusrb.tn.gov.in/',
     applyLink: 'https://www.tnusrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNUSRB Portal',
     isNew: true,
     status: 'active'
@@ -1048,7 +1179,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Join Indian Army • 4-Year Service with Seva Nidhi Package of ₹11.71 Lakhs + Regular Absorption',
     detailsLink: 'https://joinindianarmy.nic.in/',
     applyLink: 'https://joinindianarmy.nic.in/Authentication.aspx',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Indian Army Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -1070,7 +1205,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Central Armed Police Forces (CAPFs) & Assam Rifles • Computer Based Test + Physical PET/PST',
     detailsLink: 'https://ssc.gov.in/',
     applyLink: 'https://ssc.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'SSC Central CAPF Portal',
     isNew: true,
     status: 'active'
@@ -1094,7 +1233,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Government Higher Secondary School Teacher Posting • Level 18 Pay Scale',
     detailsLink: 'https://trb.tn.gov.in/',
     applyLink: 'https://trb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Teachers Recruitment Board TN',
     isNew: true,
     status: 'active'
@@ -1116,7 +1259,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Mandatory Lifetime Certificate for Govt & Aided School Teacher Appointments in Tamil Nadu',
     detailsLink: 'https://trb.tn.gov.in/',
     applyLink: 'https://trb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNTET Examination Portal',
     isNew: true,
     status: 'active'
@@ -1138,7 +1285,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Nationally recognized qualification for teaching appointments across Kendriya Vidyalaya (KVS) & CBSE',
     detailsLink: 'https://ctet.nic.in/',
     applyLink: 'https://ctet.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official CTET CBSE Portal (ctet.nic.in)',
     isNew: true,
     status: 'active'
@@ -1162,7 +1313,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu Government Doctors Recruitment • Level 22 Pay Matrix (₹56,100 - ₹1,77,500)',
     detailsLink: 'https://www.mrb.tn.gov.in/notifications.html',
     applyLink: 'https://www.mrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Tamil Nadu MRB Portal (mrb.tn.gov.in)',
     isNew: true,
     status: 'active'
@@ -1184,7 +1339,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Direct Tamil Nadu Health Services Appointment • Permanent Govt Hospital Nursing Officer Career',
     detailsLink: 'https://www.mrb.tn.gov.in/',
     applyLink: 'https://www.mrb.tn.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'TN MRB Official Portal',
     isNew: true,
     status: 'active'
@@ -1193,23 +1352,36 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     id: 'aiims-norcet-7-2026',
     category: 'medical',
     organization: 'All India Institute of Medical Sciences (AIIMS New Delhi)',
-    service: 'AIIMS NORCET-7 (Nursing Officer Recruitment Common Eligibility Test) 2026',
+    service: 'AIIMS NORCET-7 (Nursing Officer Recruitment Common Eligibility Test) [Advt 115/2024 - Completed]',
     postName: 'Nursing Officer (Group B) across AIIMS Institutions in India',
     qualification: 'B.Sc (Hons.) Nursing / B.Sc Nursing or Diploma in GNM with 2 years experience in 50 bedded Hospital',
     ageLimit: '18 - 30 Years (OBC 33, SC/ST 35)',
     posts: '4000+ Posts (AIIMS Madurai & All India AIIMS)',
-    openingDate: '01/08/2026',
-    closingDate: '21/11/2026',
-    examDate: 'Stage I (Prelims) & Stage II (Mains)',
+    openingDate: '01/08/2024',
+    closingDate: '21/08/2024',
+    examDate: '15/09/2024 & 25/10/2024',
     applicationFee: '₹3000 (SC/ST/EWS ₹2400 / PwBD Exempted)',
-    notificationDate: '01/08/2026',
-    importantDetails: 'Premier Central Govt Hospital Career • Level 7 Pay Matrix (₹44,900 - ₹1,42,400) + Central Allowances',
+    notificationDate: '01/08/2024',
+    importantDetails: 'Legacy 2024 Examination (Advt No. 115/2024) • Applications Closed 21/08/2024 • Stage I & Stage II Completed • Archived for Reference',
     detailsLink: 'https://www.aiimsexams.ac.in/',
     applyLink: 'https://www.aiimsexams.ac.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'OLD_RECRUITMENT_CYCLE',
     source: 'Official AIIMS Examination Section',
-    isNew: true,
-    status: 'active'
+    isNew: false,
+    status: 'closed',
+    isExpired: true,
+    isLegacy: true,
+    auditNote: 'Legacy 2024 recruitment (Advt No. 115/2024). Preserved for audit/reference. Applications closed on 21/08/2024; Stage I on 15/09/2024; Stage II on 25/10/2024.',
+    revisionHistory: [
+      {
+        revisionDate: '18/11/2026',
+        reason: 'Audit correction: Restored official 2024 dates and marked completed/closed; prevented false-positive 2026 application window.'
+      }
+    ]
   },
 
   // --- 9. 🎓 NATIONAL & STATE ENTRANCE EXAMS ---
@@ -1230,7 +1402,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Gateway for National Institutes of Technology (NIT Trichy) and IIT Admissions',
     detailsLink: 'https://jeemain.nta.nic.in/',
     applyLink: 'https://jeemain.nta.nic.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official NTA JEE Main Portal',
     isNew: true,
     status: 'active'
@@ -1252,7 +1428,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Single window admission test for Central University of Tamil Nadu (Tiruvarur), Delhi University, JNU, BHU',
     detailsLink: 'https://exams.nta.ac.in/CUET-UG/',
     applyLink: 'https://cuetug.ntaonline.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official NTA CUET Portal',
     isNew: true,
     status: 'active'
@@ -1274,7 +1454,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: '30 Subject Papers • Gateway for IIT Master’s and direct recruitment in Maharatna/Navratna PSUs',
     detailsLink: 'https://gate2026.iitr.ac.in/',
     applyLink: 'https://goaps.iitr.ac.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official GATE 2026 Organising Institute',
     status: 'active'
   },
@@ -1295,7 +1479,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'State Common Entrance Test conducted by Anna University for University Departments, Govt & Aided Colleges',
     detailsLink: 'https://tancet.annauniv.edu/',
     applyLink: 'https://tancet.annauniv.edu/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Anna University TANCET Portal',
     isNew: true,
     status: 'active'
@@ -1319,7 +1507,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: '1-Year Apprenticeship with Monthly Stipend under Apprentices Act 1961 at IOCL Chennai/Madurai/Coimbatore',
     detailsLink: 'https://iocl.com/apprenticeships',
     applyLink: 'https://www.iocl.com/apprenticeships',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Indian Oil Corporation Limited Careers',
     isNew: true,
     status: 'active'
@@ -1339,7 +1531,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Maharatna PSU • Basic Pay ₹60,000 - ₹1,80,000/- with high offshore allowances and benefits',
     detailsLink: 'https://www.ongcindia.com/wps/wcm/connect/en/career/recruitment-notice/',
     applyLink: 'https://ongcrecruit.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official ONGC Recruitment Portal',
     isNew: true,
     status: 'active'
@@ -1361,7 +1557,11 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Navratna Defence PSU • Starting CTC ₹11.5 - ₹12 Lakhs per annum with medical and housing allowances',
     detailsLink: 'https://bel-india.in/careers/',
     applyLink: 'https://bel-india.in/careers/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official Bharat Electronics Limited Portal',
     isNew: true,
     status: 'active'
@@ -1383,14 +1583,91 @@ const VERIFIED_ALL_EXAM_NOTIFICATIONS = [
     importantDetails: 'Tamil Nadu State Electricity Board Direct Officer Recruitment • Level 1 Pay in Class II Service',
     detailsLink: 'https://www.tnebltd.gov.in/',
     applyLink: 'https://www.tnebltd.gov.in/',
-    isVerified: true,
+    isVerified: false,
+    sourceIntegrityVerified: false,
+    applicationDatesVerified: false,
+    hasSourceIntegrityIssue: true,
+    evidenceClassification: 'NEEDS_OFFICIAL_SOURCE',
     source: 'Official TNEB / TANGEDCO Portal',
     isNew: true,
     status: 'active'
   }
 ];
 
-// Master Sync Function for All Exam Categories (Protects manualOverrideLock, corrigenda, rejected & quarantined)
+// Master Sync Function for All Exam Categories (Protects manualOverrideLock, corrigenda, rejected, quarantined & past expired exams)
+export const isArchivedMasterFeedRecord = (notif) => {
+  if (!notif || typeof notif !== 'object') return true;
+  const statusVal = String(notif.status || '').trim().toLowerCase();
+  const evidenceClass = String(notif.evidenceClassification || '').trim();
+  return Boolean(
+    notif.isLegacy === true ||
+    notif.isExpired === true ||
+    notif.isHistoricalCycle === true ||
+    statusVal === 'closed' ||
+    statusVal === 'archived' ||
+    statusVal === 'expired' ||
+    evidenceClass === 'OLD_RECRUITMENT_CYCLE' ||
+    evidenceClass === 'HISTORICAL_CYCLE'
+  );
+};
+
+export const buildMasterFeedSyncOps = (
+  feedRecords = VERIFIED_ALL_EXAM_NOTIFICATIONS,
+  protectedIds = new Set(),
+  kolkataToday = getKolkataToday()
+) => {
+  return (feedRecords || [])
+    .filter((notif) => notif && notif.id && !protectedIds.has(notif.id))
+    .filter((notif) => !isArchivedMasterFeedRecord(notif))
+    .filter((notif) => !shouldDeleteExpiredExamNotification(notif, kolkataToday))
+    .map((notif) => {
+      const targetIngestionStatus = notif.ingestionStatus || 'published';
+      const verification = evaluateNotificationVerificationFlags({
+        ...notif,
+        ingestionStatus: targetIngestionStatus
+      });
+      const sourceIntegrityVerified = Boolean(
+        verification.sourceIntegrityVerified &&
+        notif.sourceIntegrityVerified === true
+      );
+      const applicationDatesVerified = Boolean(
+        sourceIntegrityVerified &&
+        verification.applicationDatesVerified &&
+        notif.applicationDatesVerified === true
+      );
+      const canVerify = verification.isResultNotice
+        ? Boolean(sourceIntegrityVerified)
+        : Boolean(sourceIntegrityVerified && applicationDatesVerified);
+      const resolvedStatus = canVerify
+        ? (notif.status === 'under_review' ? 'active' : (notif.status || 'active'))
+        : (notif.status === 'closed' || notif.status === 'expired' ? notif.status : 'under_review');
+
+      return {
+        updateOne: {
+          filter: { id: notif.id },
+          update: {
+            $set: {
+              ...notif,
+              status: resolvedStatus,
+              ingestionStatus: targetIngestionStatus,
+              ingestionSource: notif.ingestionSource || 'verified_master_feed',
+              isVerified: canVerify,
+              sourceIntegrityVerified,
+              applicationDatesVerified,
+              hasSourceIntegrityIssue: !sourceIntegrityVerified,
+              needsOfficialSource: !verification.hasOfficialEvidence,
+              evidenceClassification: !sourceIntegrityVerified
+                ? (notif.evidenceClassification || 'NEEDS_OFFICIAL_SOURCE')
+                : (notif.evidenceClassification || (verification.isResultNotice ? 'VERIFIED_OFFICIAL_RESULT' : 'VERIFIED_OFFICIAL_NOTICE')),
+              updatedAt: new Date()
+            }
+          },
+          upsert: true
+        }
+      };
+    });
+};
+
 const syncAllVerifiedNotificationsFeed = async () => {
   try {
     const protectedDocs = await Notification.find(
@@ -1405,23 +1682,9 @@ const syncAllVerifiedNotificationsFeed = async () => {
       { id: 1 }
     ).lean();
     const protectedIds = new Set((protectedDocs || []).map((d) => d.id));
+    const kolkataToday = getKolkataToday();
 
-    const ops = VERIFIED_ALL_EXAM_NOTIFICATIONS
-      .filter((notif) => !protectedIds.has(notif.id))
-      .map((notif) => ({
-        updateOne: {
-          filter: { id: notif.id },
-          update: {
-            $set: {
-              ...notif,
-              ingestionStatus: notif.ingestionStatus || 'published',
-              ingestionSource: notif.ingestionSource || 'verified_master_feed',
-              updatedAt: new Date()
-            }
-          },
-          upsert: true
-        }
-      }));
+    const ops = buildMasterFeedSyncOps(VERIFIED_ALL_EXAM_NOTIFICATIONS, protectedIds, kolkataToday);
     if (ops.length > 0) {
       await Notification.bulkWrite(ops);
     }
@@ -1430,30 +1693,98 @@ const syncAllVerifiedNotificationsFeed = async () => {
   }
 };
 
+const isMasterFeedAutoSyncDisabled = (env = process.env) =>
+  String((env || process.env).DISABLE_MASTER_FEED_AUTO_SYNC || '').trim().toLowerCase() === 'true';
+
+const isStartupJobRecoveryDisabled = (env = process.env) =>
+  String((env || process.env).DISABLE_STARTUP_JOB_RECOVERY || '').trim().toLowerCase() === 'true';
+
 // --- REST API ENDPOINTS ---
 
-// Health Check (Safe production diagnostics without leaking secrets)
-app.get('/api/health', (req, res) => {
-  const isProd = process.env.NODE_ENV === 'production';
-  const fast2smsKey = (process.env.FAST2SMS_API_KEY || '').trim().replace(/^["']|["']$/g, '');
-  const provider = (process.env.SMS_GATEWAY_PROVIDER || '').trim().replace(/^["']|["']$/g, '') || (fast2smsKey ? 'fast2sms' : 'none');
-  const route = (process.env.FAST2SMS_ROUTE || 'q').trim().replace(/^["']|["']$/g, '');
+const extractSafeShortGitCommit = (env = process.env) => {
+  const raw = String((env || process.env).RENDER_GIT_COMMIT || '').trim();
+  if (!raw || !/^[0-9a-f]{7,40}$/i.test(raw)) {
+    return null;
+  }
+  return raw.slice(0, 7).toLowerCase();
+};
 
-  res.json({
+const buildHealthStatusPayload = ({
+  env = process.env,
+  mongooseConnection = mongoose.connection,
+  mongoUri = MONGODB_URI
+} = {}) => {
+  const safeEnv = env && typeof env === 'object' ? env : {};
+  const isProdEnv = safeEnv.NODE_ENV === 'production';
+  const fast2smsKey = (safeEnv.FAST2SMS_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+  const provider = (safeEnv.SMS_GATEWAY_PROVIDER || '').trim().replace(/^["']|["']$/g, '') || (fast2smsKey ? 'fast2sms' : 'none');
+  const route = (safeEnv.FAST2SMS_ROUTE || 'q').trim().replace(/^["']|["']$/g, '');
+  const identity = resolveRenderCloudIdentity(safeEnv);
+
+  let appEnv = 'development';
+  try {
+    appEnv = resolveAppEnvironment(safeEnv);
+  } catch (_) {
+    appEnv = 'misconfigured';
+  }
+
+  const activeDbName = mongooseConnection?.name || extractMongoDatabaseName(mongoUri) || 'unknown';
+  const schedulerGate = isCleanupSchedulerAllowedInEnvironment({
+    env: safeEnv,
+    activeDbName
+  });
+
+  const isIsolated =
+    (appEnv === 'staging' && activeDbName === 'akesevai_staging') ||
+    (appEnv === 'development' && activeDbName === 'akesevai_dev') ||
+    (appEnv === 'production' && activeDbName === 'akesevai' && identity.isVerifiedRenderProd);
+
+  return {
     status: 'ok',
+    commitSha: extractSafeShortGitCommit(safeEnv),
     database: {
-      connected: mongoose.connection.readyState === 1,
-      provider: 'MongoDB Atlas Cloud'
+      connected: mongooseConnection?.readyState === 1,
+      provider: 'MongoDB Atlas Cloud',
+      name: activeDbName,
+      isIsolated
     },
+    environment: isProdEnv ? 'production' : 'development',
+    environmentDetails: {
+      appEnv,
+      nodeEnv: safeEnv.NODE_ENV || 'development',
+      isRender: identity.isRender,
+      serviceName: safeEnv.RENDER_SERVICE_NAME || 'local',
+      externalHostname: identity.hostname || null,
+      identityVerified:
+        appEnv === 'production'
+          ? identity.isVerifiedRenderProd
+          : (appEnv === 'staging' ? (!identity.isRender || identity.isVerifiedRenderStaging) : appEnv !== 'misconfigured')
+    },
+    cleanupScheduler: {
+      allowed: schedulerGate.allowed,
+      reason: schedulerGate.reason || 'ALLOWED',
+      purgeEnabled: safeEnv.ENABLE_EXPIRED_EXAM_PURGE === 'true',
+      schedulerEnabled: safeEnv.ENABLE_IN_PROCESS_SCHEDULER !== 'false'
+    },
+    masterFeedAutoSyncDisabled: isMasterFeedAutoSyncDisabled(safeEnv),
+    startupJobRecoveryDisabled: isStartupJobRecoveryDisabled(safeEnv),
     smsGateway: {
       provider,
       route,
       configured: Boolean(fast2smsKey && fast2smsKey !== 'your_fast2sms_api_key_here'),
       keyLength: fast2smsKey ? fast2smsKey.length : 0
     },
-    environment: isProd ? 'production' : 'development',
     timestamp: new Date().toISOString()
-  });
+  };
+};
+
+// Health Check (Safe production diagnostics without leaking secrets)
+app.get('/api/health', (req, res) => {
+  res.json(buildHealthStatusPayload({
+    env: process.env,
+    mongooseConnection: mongoose.connection,
+    mongoUri: MONGODB_URI
+  }));
 });
 
 // --- OTP & SMS GATEWAY SECURITY SYSTEM ---
@@ -1493,7 +1824,7 @@ setInterval(() => {
       recentDispatches.delete(phone);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref?.();
 
 // Real SMS Gateway Dispatcher (Guaranteed Single Execution)
 async function dispatchSmsOtp(phone, otp, purpose = 'verification') {
@@ -4413,6 +4744,7 @@ registerNotificationAndIngestionRoutes(app, {
   IngestionLock,
   IngestionSourceHealth,
   IngestionRunLog,
+  CleanupScheduleModel: CleanupScheduleState,
   mongooseConnection: mongoose.connection,
   resolveAuthContext,
   syncAllVerifiedNotificationsFeed,
@@ -4656,28 +4988,108 @@ app.use((err, req, res, next) => {
   });
 });
 
+const runStartupPostConnectHooks = async ({
+  initializeAdmin = initializeAdminAuth,
+  syncMasterFeed = syncAllVerifiedNotificationsFeed,
+  recoverJobs = recoverStaleIngestionJobs,
+  ingestionJobModel = IngestionJob,
+  env = process.env
+} = {}) => {
+  // Initialize & bootstrap Admin Authentication record in MongoDB
+  await initializeAdmin();
+
+  const masterFeedAutoSyncDisabled = isMasterFeedAutoSyncDisabled(env);
+  let masterFeedSyncRan = false;
+  if (masterFeedAutoSyncDisabled) {
+    console.log('ℹ️ [Startup Sync]: Skipped automatic Master Exam Notifications Feed Sync (DISABLE_MASTER_FEED_AUTO_SYNC=true).');
+  } else {
+    // Auto-sync official exam notifications on startup (preserving locked/edited records)
+    await syncMasterFeed();
+    masterFeedSyncRan = true;
+    console.log(`📢 ✅ Master Exam Notifications Feed Synced to MongoDB Atlas!`);
+  }
+
+  const startupJobRecoveryDisabled = isStartupJobRecoveryDisabled(env);
+  let startupJobRecoveryRan = false;
+  let recoveryResult = { recoveredCount: 0, failedCount: 0, recoveredJobIds: [], skipped: false };
+  if (startupJobRecoveryDisabled) {
+    recoveryResult.skipped = true;
+    console.log('ℹ️ [Recovery]: Skipped automatic startup stale ingestion job recovery (DISABLE_STARTUP_JOB_RECOVERY=true).');
+  } else {
+    // Recover any stale durable ingestion jobs interrupted by process crash/restart
+    recoveryResult = await recoverJobs(ingestionJobModel);
+    startupJobRecoveryRan = true;
+    if (recoveryResult.recoveredCount > 0 || recoveryResult.failedCount > 0) {
+      console.log(`🔄 [Recovery]: Recovered ${recoveryResult.recoveredCount} stale ingestion job(s) to pending, marked ${recoveryResult.failedCount} exhausted.`);
+    }
+  }
+
+  return {
+    masterFeedSyncRan,
+    masterFeedAutoSyncDisabled,
+    startupJobRecoveryRan,
+    startupJobRecoveryDisabled,
+    recoveryResult
+  };
+};
+
+const registerMasterFeedAutoSyncInterval = ({
+  syncMasterFeed = syncAllVerifiedNotificationsFeed,
+  getConnectionReadyState = () => mongoose.connection.readyState,
+  setIntervalFn = setInterval,
+  intervalMs = 30 * 60 * 1000,
+  env = process.env
+} = {}) => {
+  if (isMasterFeedAutoSyncDisabled(env)) {
+    console.log('ℹ️ [Auto-Sync]: Skipped registering 30-minute Master Exam Notifications Feed Sync interval (DISABLE_MASTER_FEED_AUTO_SYNC=true).');
+    return null;
+  }
+
+  return setIntervalFn(async () => {
+    try {
+      if (isMasterFeedAutoSyncDisabled(env)) {
+        return;
+      }
+      if (getConnectionReadyState() === 1) {
+        await syncMasterFeed();
+        console.log(`⏰ [Auto-Sync] Exam notifications auto-refreshed from official registry at ${new Date().toLocaleTimeString()}`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ [Auto-Sync Warning]:`, e.message);
+    }
+  }, intervalMs);
+};
+
 const connectWithRetry = async () => {
   try {
+    // 1. Mandatory Pre-Connection Database & Environment Isolation Validation
+    validateDatabaseEnvironmentIsolation({
+      uri: MONGODB_URI,
+      env: process.env,
+      exitOnError: true
+    });
+
     await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 15000,
       socketTimeoutMS: 45000,
       autoIndex: true
     });
+
+    const actualConnectedDb = mongoose.connection.db?.databaseName || mongoose.connection.name;
+    const resolvedAppEnv = resolveAppEnvironment(process.env);
+
+    // 2. Mandatory Post-Connection Runtime Verification of Actual Connected Database
+    validateActualConnectedDatabase({
+      connectedDbName: actualConnectedDb,
+      appEnv: resolvedAppEnv,
+      exitOnError: true
+    });
+
     console.log(`🌐 ✅ Connected Successfully to MongoDB Atlas Cloud Database!`);
-    console.log(`📡 Database URI: ${MONGODB_URI.replace(/:([^@]+)@/, ':****@')}`);
+    console.log(`📡 Database Target: ${maskMongoUri(MONGODB_URI)}`);
+    console.log(`🔒 [Database Isolation Verified]: Target Database = ${actualConnectedDb}`);
 
-    // Initialize & bootstrap Admin Authentication record in MongoDB
-    await initializeAdminAuth();
-
-    // Auto-sync official exam notifications on startup (preserving locked/edited records)
-    await syncAllVerifiedNotificationsFeed();
-    console.log(`📢 ✅ Master Exam Notifications Feed Synced to MongoDB Atlas!`);
-
-    // Recover any stale durable ingestion jobs interrupted by process crash/restart
-    const rec = await recoverStaleIngestionJobs(IngestionJob);
-    if (rec.recoveredCount > 0 || rec.failedCount > 0) {
-      console.log(`🔄 [Recovery]: Recovered ${rec.recoveredCount} stale ingestion job(s) to pending, marked ${rec.failedCount} exhausted.`);
-    }
+    await runStartupPostConnectHooks();
   } catch (err) {
     console.warn(`⚠️ MongoDB Atlas Cloud Connection Warning: ${err.message}`);
     console.warn(`🔄 Retrying MongoDB Atlas connection in 3 seconds...`);
@@ -4685,56 +5097,128 @@ const connectWithRetry = async () => {
   }
 };
 
-const runDurableSchedulerTick = async (triggerType = 'in_process_interval') => {
-  if (process.env.INGESTION_SCHEDULER_DISABLED === 'true') {
-    return;
-  }
-  if (mongoose.connection.readyState !== 1) {
-    return;
-  }
-  try {
-    const pendingRecoveries = await IngestionJob.countDocuments({ status: 'pending' });
-    const latestRun = await IngestionRunLog.findOne({}, { completedAt: 1 }).sort({ completedAt: -1 }).lean();
-    const fourHoursMs = 4 * 60 * 60 * 1000;
-    const isStale = !latestRun?.completedAt || (Date.now() - new Date(latestRun.completedAt).getTime()) >= fourHoursMs;
+const createDurableSchedulerTick = (deps = {}) => {
+  const {
+    NotificationModel = Notification,
+    IngestionJobModel = IngestionJob,
+    IngestionLockModel = IngestionLock,
+    IngestionSourceHealthModel = IngestionSourceHealth,
+    IngestionRunLogModel = IngestionRunLog,
+    getMongooseConnection = () => mongoose.connection,
+    ingestionRunner = runAllIngestionJobs,
+    recoverJobs = recoverStaleIngestionJobs,
+    env = process.env,
+    defaultMaxSources = 3
+  } = deps;
 
-    if (pendingRecoveries === 0 && !isStale) {
-      return; // Skip unnecessary catch-up if recent run completed cleanly within 4 hours
+  return async (triggerType = 'in_process_interval', tickOptions = {}) => {
+    if (env.INGESTION_SCHEDULER_DISABLED === 'true') {
+      return { ran: false, reason: 'SCHEDULER_DISABLED' };
     }
+    const conn = typeof getMongooseConnection === 'function' ? getMongooseConnection() : getMongooseConnection;
+    if (!conn || conn.readyState !== 1) {
+      return { ran: false, reason: 'DB_NOT_CONNECTED' };
+    }
+    try {
+      const isDryRunTick = tickOptions?.dryRun === true || String(tickOptions?.dryRun ?? '').trim().toLowerCase() === 'true';
 
-    console.log(`🤖 [Scheduler]: Running durable ingestion tick (pending=${pendingRecoveries}, stale=${isStale})...`);
-    const summary = await runAllIngestionJobs(Notification, {
-      triggerType: pendingRecoveries > 0 ? 'startup_recovery' : triggerType,
-      models: {
-        IngestionJob,
-        IngestionLock,
-        IngestionSourceHealth,
-        IngestionRunLog,
-        mongooseConnection: mongoose.connection
+      // Recover any stale running jobs whose leases expired before evaluating queue state (skipped in dryRun)
+      if (!isDryRunTick) {
+        await recoverJobs(IngestionJobModel, { maxAttempts: 3 }).catch(() => ({ recoveredCount: 0 }));
       }
-    });
-    console.log(`🤖 [Scheduler]: Ingestion completed: ${summary.newRecordsInserted} new inserted, ${summary.duplicatesSkipped} duplicates skipped.`);
-  } catch (err) {
-    if (err.code !== 'CONCURRENT_INGESTION_LOCKED') {
-      console.warn(`⚠️ [Scheduler Warning]: Ingestion run failed:`, err.message);
+
+      // Prevent duplicate execution if an active running job or live distributed lock lease exists
+      const activeRunningJob = await IngestionJobModel.findOne({ status: 'running' }).lean();
+      if (activeRunningJob) {
+        return {
+          ran: false,
+          reason: 'JOB_ALREADY_RUNNING',
+          activeJobId: activeRunningJob.jobId || null
+        };
+      }
+      if (IngestionLockModel) {
+        const activeLock = await IngestionLockModel.findOne({
+          ownerRunId: { $nin: [null, ''] },
+          leaseExpiresAt: { $gt: new Date() }
+        }).lean();
+        if (activeLock) {
+          return {
+            ran: false,
+            reason: 'LOCK_HELD',
+            ownerRunId: activeLock.ownerRunId
+          };
+        }
+      }
+
+      const [pendingCount, retryPendingCount] = await Promise.all([
+        IngestionJobModel.countDocuments({ status: 'pending' }),
+        IngestionJobModel.countDocuments({ status: 'retry_pending' })
+      ]);
+      const pendingRecoveries = pendingCount + retryPendingCount;
+      const latestRun = IngestionRunLogModel
+        ? await IngestionRunLogModel.findOne({}, { completedAt: 1 }).sort({ completedAt: -1 }).lean()
+        : null;
+      const fourHoursMs = 4 * 60 * 60 * 1000;
+      const isStale = !latestRun?.completedAt || (Date.now() - new Date(latestRun.completedAt).getTime()) >= fourHoursMs;
+
+      if (pendingRecoveries === 0 && !isStale) {
+        return {
+          ran: false,
+          reason: 'EMPTY_QUEUE_NOT_STALE',
+          pendingCount: 0,
+          retryPendingCount: 0,
+          pendingRecoveries: 0,
+          isStale: false
+        }; // Skip unnecessary catch-up if queue is empty and recent run completed cleanly within 4 hours
+      }
+
+      const parsedBatch = parseInt(String(tickOptions.maxSources || env.INGESTION_SCHEDULER_MAX_SOURCES || defaultMaxSources), 10);
+      const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
+
+      console.log(`🤖 [Scheduler]: Running durable ingestion tick (pending=${pendingCount}, retry_pending=${retryPendingCount}, stale=${isStale}, maxSources=${batchLimit}, dryRun=${isDryRunTick})...`);
+      const summary = await ingestionRunner(NotificationModel, {
+        triggerType: pendingRecoveries > 0 ? 'startup_recovery' : triggerType,
+        dryRun: isDryRunTick,
+        maxSources: batchLimit,
+        env,
+        models: {
+          IngestionJob: IngestionJobModel,
+          IngestionLock: IngestionLockModel,
+          IngestionSourceHealth: IngestionSourceHealthModel,
+          IngestionRunLog: IngestionRunLogModel,
+          mongooseConnection: conn
+        }
+      });
+      console.log(`🤖 [Scheduler]: Ingestion completed: ${summary.newRecordsInserted} new inserted, ${summary.duplicatesSkipped} duplicates skipped.`);
+      return {
+        ran: true,
+        pendingCount,
+        retryPendingCount,
+        pendingRecoveries,
+        isStale,
+        maxSources: batchLimit,
+        summary
+      };
+    } catch (err) {
+      if (err.code !== 'CONCURRENT_INGESTION_LOCKED') {
+        console.warn(`⚠️ [Scheduler Warning]: Ingestion run failed:`, err.message);
+      }
+      return {
+        ran: false,
+        reason: err.code === 'CONCURRENT_INGESTION_LOCKED' ? 'CONCURRENT_INGESTION_LOCKED' : 'SCHEDULER_ERROR',
+        error: err.message
+      };
     }
-  }
+  };
 };
+
+const runDurableSchedulerTick = createDurableSchedulerTick();
 
 const startServer = async () => {
   connectWithRetry();
 
-  // Automated background periodic sync (Every 30 minutes, protecting manual/corrigendum docs)
-  setInterval(async () => {
-    try {
-      if (mongoose.connection.readyState === 1) {
-        await syncAllVerifiedNotificationsFeed();
-        console.log(`⏰ [Auto-Sync] Exam notifications auto-refreshed from official registry at ${new Date().toLocaleTimeString()}`);
-      }
-    } catch (e) {
-      console.warn(`⚠️ [Auto-Sync Warning]:`, e.message);
-    }
-  }, 30 * 60 * 1000);
+  // Automated background periodic sync (Every 30 minutes, protecting manual/corrigendum docs; disabled when DISABLE_MASTER_FEED_AUTO_SYNC=true)
+  registerMasterFeedAutoSyncInterval();
 
   // Staleness-aware Scheduler + Crash Recovery Resume (Primary external cron hits POST /api/notifications/ingest-job)
   if (process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false' && process.env.INGESTION_SCHEDULER_DISABLED !== 'true') {
@@ -4742,6 +5226,37 @@ const startServer = async () => {
       runDurableSchedulerTick('startup_recovery');
       setInterval(() => runDurableSchedulerTick('in_process_interval'), 4 * 60 * 60 * 1000);
     }, 2 * 60 * 1000);
+  }
+
+  // 10-Day Expired Exam Cleanup Scheduler (02:00 AM Asia/Kolkata, Singleton Locked, Dry-Run by Default)
+  if (process.env.ENABLE_IN_PROCESS_SCHEDULER !== 'false') {
+    const schedulerGate = isCleanupSchedulerAllowedInEnvironment({
+      env: process.env,
+      activeDbName: mongoose.connection.name || extractMongoDatabaseName(MONGODB_URI)
+    });
+
+    if (!schedulerGate.allowed) {
+      console.log(`ℹ️ [Cleanup Scheduler]: Skipped starting in-process cleanup interval: ${schedulerGate.reason} (Target DB: ${schedulerGate.dbName || 'unknown'})`);
+    } else {
+      setTimeout(() => {
+        runExpiredExamCleanupSchedulerTick({
+          NotificationModel: Notification,
+          CleanupScheduleModel: CleanupScheduleState
+        }).catch((err) => {
+          console.warn('⚠️ [Cleanup Scheduler Warning]:', err.message);
+        });
+
+        // Periodic evaluation every 15 minutes to trigger precisely when 02:00 AM IST is reached
+        setInterval(() => {
+          runExpiredExamCleanupSchedulerTick({
+            NotificationModel: Notification,
+            CleanupScheduleModel: CleanupScheduleState
+          }).catch((err) => {
+            console.warn('⚠️ [Cleanup Scheduler Warning]:', err.message);
+          });
+        }, 15 * 60 * 1000);
+      }, 60 * 1000);
+    }
   }
 
   const server = app.listen(PORT, '0.0.0.0', () => {
@@ -4768,7 +5283,16 @@ if (isMainModule && process.env.DISABLE_AUTO_START !== 'true') {
 
 export {
   app,
+  notificationSchema,
+  extractSafeShortGitCommit,
+  buildHealthStatusPayload,
   createVaultRouteHandlers,
+  createDurableSchedulerTick,
+  runDurableSchedulerTick,
+  isMasterFeedAutoSyncDisabled,
+  isStartupJobRecoveryDisabled,
+  runStartupPostConnectHooks,
+  registerMasterFeedAutoSyncInterval,
   inspectCustomerToken,
   verifyCustomerToken,
   signCustomerToken,
@@ -4784,4 +5308,3 @@ export {
   isSafeHttpsUrl,
   activeAdminTokensSet
 };
-

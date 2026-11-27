@@ -1,13 +1,65 @@
 // server/ingestion/scrapers/defenceTeachingScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
+
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
+
+function resolveUrlSafe(href, baseUrl) {
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
+  try {
+    parsed = new URL(trimmed, baseUrl);
+  } catch {
+    return '';
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
+}
 
 /**
  * Scrapes Indian Army / Defence Notifications (with CAPTCHA detection)
  */
-export async function scrapeIndianArmyNotifications(sourceConfig) {
+export async function scrapeIndianArmyNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'indian_army'));
   if (!res.ok) {
     return {
       success: false,
@@ -49,7 +101,8 @@ export async function scrapeIndianArmyNotifications(sourceConfig) {
       lower.includes('soldier') ||
       lower.includes('recruitment')
     ) {
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url);
+      if (!absLink) return;
       items.push({
         sourceKey: 'indian_army',
         category: 'police_defence',
@@ -59,10 +112,11 @@ export async function scrapeIndianArmyNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'Online CEE & Physical Fitness Test',
-        qualification: '8th / 10th / 10+2 / Degree (as per trade)',
-        ageLimit: '17.5 - 21 Years (Agniveer)',
-        applicationFee: '₹250 (CEE Fee)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://joinindianarmy.nic.in/',
         source: 'Official Join Indian Army Portal',
@@ -77,9 +131,9 @@ export async function scrapeIndianArmyNotifications(sourceConfig) {
 /**
  * Scrapes Indian Navy Notifications (from Current Events)
  */
-export async function scrapeIndianNavyNotifications(sourceConfig) {
+export async function scrapeIndianNavyNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'indian_navy'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -91,7 +145,8 @@ export async function scrapeIndianNavyNotifications(sourceConfig) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href === '#' || href.startsWith('javascript') || text.length < 10) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || text.length < 10) return;
 
     const lower = text.toLowerCase();
     const isNavyRecruit =
@@ -105,7 +160,6 @@ export async function scrapeIndianNavyNotifications(sourceConfig) {
 
     if (isNavyRecruit && !seenHeadings.has(text)) {
       seenHeadings.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
       items.push({
         sourceKey: 'indian_navy',
         category: 'police_defence',
@@ -115,10 +169,11 @@ export async function scrapeIndianNavyNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'INET / SSB Interview as per schedule',
-        qualification: '10th (MR) / 10+2 with Maths & Physics (SSR) / B.E/B.Tech (Officer)',
-        ageLimit: '17.5 - 21 Years (Agniveer) / 19 - 24 Years (Officer)',
-        applicationFee: '₹550 (Agniveer/Officer as applicable)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://www.joinindiannavy.gov.in/en/account/login',
         source: 'Official Join Indian Navy Portal (Current Events)',
@@ -133,9 +188,9 @@ export async function scrapeIndianNavyNotifications(sourceConfig) {
 /**
  * Scrapes Indian Air Force (Agnipath Vayu)
  */
-export async function scrapeIndianAirforceNotifications(sourceConfig) {
+export async function scrapeIndianAirforceNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'indian_airforce'));
   if (!res.ok) {
     return {
       success: false,
@@ -159,7 +214,8 @@ export async function scrapeIndianAirforceNotifications(sourceConfig) {
         text.toLowerCase().includes('recruitment') ||
         text.toLowerCase().includes('notification'))
     ) {
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
+      const absLink = resolveUrlSafe(href, url);
+      if (!absLink) return;
       items.push({
         sourceKey: 'indian_airforce',
         category: 'police_defence',
@@ -169,10 +225,11 @@ export async function scrapeIndianAirforceNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'Phase I Online Test',
-        qualification: '10+2 with Mathematics, Physics and English (min 50%) or 3-yr Diploma',
-        ageLimit: '17.5 - 21 Years',
-        applicationFee: '₹550',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://agnipathvayu.cdac.in/',
         source: 'Official Agnipath Vayu Portal',
@@ -187,9 +244,9 @@ export async function scrapeIndianAirforceNotifications(sourceConfig) {
 /**
  * Scrapes CTET (Central Teacher Eligibility Test)
  */
-export async function scrapeCtetNotifications(sourceConfig) {
+export async function scrapeCtetNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'ctet_cbse'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -201,7 +258,8 @@ export async function scrapeCtetNotifications(sourceConfig) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href.startsWith('#') || href.startsWith('javascript') || text.length < 6) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || text.length < 6) return;
 
     const lower = text.toLowerCase();
     if (
@@ -214,7 +272,6 @@ export async function scrapeCtetNotifications(sourceConfig) {
       if (seenTitles.has(text)) return;
       seenTitles.add(text);
 
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
       items.push({
         sourceKey: 'ctet_cbse',
         category: 'teaching',
@@ -224,10 +281,11 @@ export async function scrapeCtetNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'As per CBSE CTET Schedule',
-        qualification: 'Senior Secondary with min 50% + D.El.Ed / Graduation + B.Ed',
-        ageLimit: 'No Upper Age Limit',
-        applicationFee: '₹1000 (Paper 1 or 2) / ₹1200 (Both)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://ctet.nic.in/',
         source: 'Official CTET Examination Portal (ctet.nic.in)',
@@ -242,9 +300,9 @@ export async function scrapeCtetNotifications(sourceConfig) {
 /**
  * Scrapes KVS (Kendriya Vidyalaya Sangathan Interview & Recruitment Notices)
  */
-export async function scrapeKvsNotifications(sourceConfig) {
+export async function scrapeKvsNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'kvs_delhi'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -259,10 +317,7 @@ export async function scrapeKvsNotifications(sourceConfig) {
       const title = $(cols[0]).text().trim().replace(/\s+/g, ' ');
       const publishDate = $(cols[1]).text().trim().replace(/\s+/g, ' ');
       const a = $(row).find('a');
-      let link = a.attr('href') || '';
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
+      const link = resolveUrlSafe(a.attr('href') || '', url);
 
       if (title && title.length > 5) {
         items.push({
@@ -274,10 +329,11 @@ export async function scrapeKvsNotifications(sourceConfig) {
           notificationNo: '',
           openingDate: publishDate || '',
           closingDate: '',
-          examDate: 'As per KVS Schedule',
-          qualification: 'B.Ed / CTET / Post Graduate / As per post recruitment rules',
-          ageLimit: 'PRT: 30 Yrs, TGT: 35 Yrs, PGT: 40 Yrs (Relaxations Apply)',
-          applicationFee: '₹1500 (SC/ST/PwD Exempted)',
+          examDate: 'To Be Announced',
+          qualification: 'Refer Official Notification',
+          ageLimit: 'Refer Official Notification',
+          applicationFee: 'Refer Official Notification',
+          vacancies: 'Not Specified',
           detailsLink: link || url,
           applyLink: 'https://kvs.gov.in/',
           source: 'Official Kendriya Vidyalaya Sangathan Portal (kvs.gov.in)',

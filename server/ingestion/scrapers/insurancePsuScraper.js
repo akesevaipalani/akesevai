@@ -1,13 +1,65 @@
 // server/ingestion/scrapers/insurancePsuScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
+
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
+
+function resolveUrlSafe(href, baseUrl) {
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
+  try {
+    parsed = new URL(trimmed, baseUrl);
+  } catch {
+    return '';
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
+}
 
 /**
  * Scrapes LIC India Careers (Life Insurance Corporation)
  */
-export async function scrapeLicNotifications(sourceConfig) {
+export async function scrapeLicNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'lic_careers'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -19,7 +71,8 @@ export async function scrapeLicNotifications(sourceConfig) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href === '#' || href.startsWith('javascript') || text.length < 8) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || text.length < 8) return;
 
     const lower = text.toLowerCase();
     const isLicRecruit =
@@ -36,7 +89,6 @@ export async function scrapeLicNotifications(sourceConfig) {
 
     if (isLicRecruit && !seenTitles.has(text)) {
       seenTitles.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
       items.push({
         sourceKey: 'lic_careers',
         category: 'banking',
@@ -46,10 +98,11 @@ export async function scrapeLicNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'Announced Soon',
-        qualification: 'Bachelor’s Degree in any discipline / Relevant Professional Qualification',
-        ageLimit: '21 - 30 Years (Relaxation as per norms)',
-        applicationFee: '₹700 - ₹850 (SC/ST/PwBD Concessional)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: absLink,
         source: 'Official LIC India Careers Portal (licindia.in)',
@@ -64,9 +117,9 @@ export async function scrapeLicNotifications(sourceConfig) {
 /**
  * Scrapes NIACL Recruitment (New India Assurance Company Ltd)
  */
-export async function scrapeNiaclNotifications(sourceConfig) {
+export async function scrapeNiaclNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'niacl_careers'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -78,7 +131,8 @@ export async function scrapeNiaclNotifications(sourceConfig) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href === '#' || text.length < 10) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || text.length < 10) return;
 
     const lower = text.toLowerCase();
     const isNiaclJob =
@@ -92,7 +146,6 @@ export async function scrapeNiaclNotifications(sourceConfig) {
 
     if (isNiaclJob && !isPast && !seenTitles.has(text)) {
       seenTitles.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
       items.push({
         sourceKey: 'niacl_careers',
         category: 'banking',
@@ -102,10 +155,11 @@ export async function scrapeNiaclNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'Phase I / Phase II as per NIACL Schedule',
-        qualification: 'Graduate / Post Graduate in any discipline with min 60% marks',
-        ageLimit: '21 - 30 Years',
-        applicationFee: '₹850 (SC/ST/PwBD ₹100)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://www.newindia.co.in/recruitment/list',
         source: 'Official NIACL Recruitment Portal (newindia.co.in)',
@@ -120,9 +174,9 @@ export async function scrapeNiaclNotifications(sourceConfig) {
 /**
  * Scrapes Bharat Electronics Limited (BEL Job Notifications)
  */
-export async function scrapeBelNotifications(sourceConfig) {
+export async function scrapeBelNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'bel_psu'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -147,10 +201,10 @@ export async function scrapeBelNotifications(sourceConfig) {
       const h = $(a).attr('href') || '';
       const t = $(a).text().trim().toLowerCase();
       if (h.endsWith('.pdf') && !pdfLink && !h.toLowerCase().includes('format') && !h.toLowerCase().includes('certificate')) {
-        pdfLink = h.startsWith('http') ? h : new URL(h, url).toString();
+        pdfLink = resolveUrlSafe(h, url);
       }
       if (t.includes('apply') || h.includes('jobapply.in')) {
-        applyLink = h.startsWith('http') ? h : new URL(h, url).toString();
+        applyLink = resolveUrlSafe(h, url);
       }
     });
 
@@ -165,10 +219,11 @@ export async function scrapeBelNotifications(sourceConfig) {
       notificationNo: '',
       openingDate: '',
       closingDate: '',
-      examDate: 'Written Test / Interview as per BEL schedule',
-      qualification: 'B.E. / B.Tech / Diploma / ITI / Relevant Degree as per trade',
-      ageLimit: 'Upper Age Limit 28 - 32 Years (Relaxations apply)',
-      applicationFee: '₹400 - ₹500 (SC/ST/PwBD Exempted)',
+      examDate: 'To Be Announced',
+      qualification: 'Refer Official Notification',
+      ageLimit: 'Refer Official Notification',
+      applicationFee: 'Refer Official Notification',
+      vacancies: 'Not Specified',
       detailsLink: pdfLink || applyLink || url,
       applyLink: applyLink || pdfLink || url,
       source: 'Official BEL Careers Portal (bel-india.in)',
@@ -182,9 +237,9 @@ export async function scrapeBelNotifications(sourceConfig) {
 /**
  * Scrapes Bharat Heavy Electricals Limited (BHEL Careers)
  */
-export async function scrapeBhelNotifications(sourceConfig) {
+export async function scrapeBhelNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'bhel_psu'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -198,7 +253,8 @@ export async function scrapeBhelNotifications(sourceConfig) {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
 
-    if (!href || href === '#' || href.startsWith('javascript')) {
+    const absLink = resolveUrlSafe(href, 'https://careers.bhel.in/');
+    if (!absLink) {
       if (
         (text.includes('Recruitment') || text.includes('Engagement') || text.includes('Artisan') || text.includes('Openings')) &&
         !text.includes('Archives') &&
@@ -222,7 +278,6 @@ export async function scrapeBhelNotifications(sourceConfig) {
       if (seenHeadings.has(title) || text.length < 3) return;
       seenHeadings.add(title);
 
-      let absLink = href.startsWith('http') ? href : new URL(href, 'https://careers.bhel.in/').toString();
       items.push({
         sourceKey: 'bhel_psu',
         category: 'psu',
@@ -232,10 +287,11 @@ export async function scrapeBhelNotifications(sourceConfig) {
         notificationNo: '',
         openingDate: '',
         closingDate: '',
-        examDate: 'Computer Based Examination (CBE) / Skill Test',
-        qualification: 'ITI / Diploma / B.E/B.Tech / Degree as per post',
-        ageLimit: '27 - 30 Years (Relaxation as per Govt directives)',
-        applicationFee: '₹300 - ₹500 (SC/ST/PwD Exempted)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: href.includes('login.html') ? absLink : 'https://careers.bhel.in/',
         source: 'Official BHEL Careers Portal (careers.bhel.in)',

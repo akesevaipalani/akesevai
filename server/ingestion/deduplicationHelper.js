@@ -171,8 +171,8 @@ export function isDuplicateNotification(candidate, existingList = []) {
     }
   }
 
-  // Exact match (identical content hash or exact legacy duplicate without field changes)
-  if (existingContentHash === candidateContentHash || matchReason === 'EXACT_ID_MATCH' || matchReason === 'FINGERPRINT_MATCH') {
+  // Exact match ONLY when full contentHash is identical; otherwise route to corrigendum/update reconciliation
+  if (existingContentHash === candidateContentHash) {
     return {
       isDuplicate: true,
       isCorrigendumCandidate: false,

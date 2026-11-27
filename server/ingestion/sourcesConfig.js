@@ -9,6 +9,8 @@ export const OFFICIAL_EXAM_SOURCES = [
     name: 'Tamil Nadu Public Service Commission (TNPSC)',
     url: 'https://www.tnpsc.gov.in/English/Notification.aspx',
     homepage: 'https://www.tnpsc.gov.in/',
+    plannerUrl: 'https://www.tnpsc.gov.in/English/annual_planner.aspx',
+    corrigendumUrl: 'https://www.tnpsc.gov.in/English/corrigendum.aspx',
     enabled: true,
     parserType: 'html_table',
     expectedFields: ['notificationNo', 'service', 'openingDate', 'closingDate', 'detailsLink']
@@ -73,7 +75,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     homepage: 'https://opportunities.rbi.org.in/',
     enabled: true,
     parserType: 'html_table',
-    expectedFields: ['service', 'closingDate', 'detailsLink']
+    expectedFields: ['service', 'openingDate', 'detailsLink']
   },
 
   // --- 3. RAILWAY RECRUITMENT ---
@@ -84,7 +86,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     url: 'https://rrbchennai.gov.in/',
     homepage: 'https://rrbchennai.gov.in/',
     enabled: true,
-    parserType: 'html_table',
+    parserType: 'html_links',
     expectedFields: ['notificationNo', 'service', 'detailsLink']
   },
 
@@ -93,11 +95,11 @@ export const OFFICIAL_EXAM_SOURCES = [
     key: 'upsc_active',
     category: 'upsc',
     name: 'Union Public Service Commission (UPSC Active Exams)',
-    url: 'https://upsc.gov.in/examinations/active-exams',
+    url: 'https://upsc.gov.in/active-examinations',
     homepage: 'https://upsc.gov.in/',
     enabled: true,
-    parserType: 'views_rows',
-    expectedFields: ['service', 'openingDate', 'closingDate', 'detailsLink']
+    parserType: 'html_table',
+    expectedFields: ['notificationNo', 'service', 'closingDate', 'examDate', 'detailsLink']
   },
   {
     key: 'ssc_notices',
@@ -107,7 +109,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     homepage: 'https://ssc.gov.in/',
     enabled: true,
     parserType: 'rest_api_json',
-    expectedFields: ['service', 'detailsLink', 'publishedDate']
+    expectedFields: ['service', 'detailsLink', 'sourcePublishedAt']
   },
   {
     key: 'india_post_gds',
@@ -127,7 +129,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     name: 'Join Indian Army (Govt of India)',
     url: 'https://joinindianarmy.nic.in/',
     homepage: 'https://joinindianarmy.nic.in/',
-    enabled: true,
+    enabled: false,
     parserType: 'html_links',
     expectedFields: ['service', 'detailsLink'],
     requiresCaptcha: true
@@ -172,7 +174,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     homepage: 'https://kvs.gov.in/',
     enabled: true,
     parserType: 'html_table',
-    expectedFields: ['notificationNo', 'service', 'publishedDate', 'detailsLink']
+    expectedFields: ['service', 'openingDate', 'detailsLink']
   },
 
   // --- 7. INSURANCE CORPORATIONS ---
@@ -205,7 +207,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     url: 'https://bel-india.in/job-notifications/',
     homepage: 'https://bel-india.in/',
     enabled: true,
-    parserType: 'html_links',
+    parserType: 'html_cards',
     expectedFields: ['service', 'detailsLink']
   },
   {

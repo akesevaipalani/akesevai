@@ -1,14 +1,67 @@
 // server/ingestion/scrapers/centralGovtScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP, validateExplicitSourceUrl } from '../officialDomainPolicy.js';
 import { toKolkataIsoDate } from '../../../src/utils/notificationDateHelper.js';
+
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
+
+export function resolveUrlSafe(href, baseUrl) {
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
+  try {
+    parsed = new URL(trimmed, baseUrl);
+  } catch {
+    return '';
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
+}
 
 /**
  * Scrapes UPSC Active Examinations & Notices
+ * Supports both structured table layout and Drupal .views-row layout.
  */
-export async function scrapeUpscNotifications(sourceConfig) {
-  const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+export async function scrapeUpscNotifications(sourceConfig, options = {}) {
+  const url = sourceConfig.url || 'https://upsc.gov.in/active-examinations';
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'upsc_active'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -16,25 +69,31 @@ export async function scrapeUpscNotifications(sourceConfig) {
   const $ = cheerio.load(res.html);
   const items = [];
   const seenTitles = new Set();
+  const rows = $('table tr');
 
-  $('.views-row').each((_, row) => {
-    const a = $(row).find('a').first();
-    const rawTitle = $(row).text().replace(/\s+/g, ' ').trim();
-    let href = a.attr('href') || '';
-    if (!rawTitle || !href) return;
+  rows.each((i, row) => {
+    if (i === 0) return; // Skip table header: Examination Name | Notice No | Date of Commencement | Last Date
+    const cols = $(row).find('td');
+    if (cols.length < 3) return;
+
+    const titleEl = $(cols[0]);
+    const a = titleEl.find('a').first();
+    const rawTitle = titleEl.text().replace(/\s+/g, ' ').trim();
+    if (!rawTitle || rawTitle.toLowerCase().includes('examination name')) return;
 
     const lower = rawTitle.toLowerCase();
-    // Exclude final marks, archived lists if not an active notice/exam
     if (lower.startsWith('final result:') || lower.includes('marks of recommended candidates')) {
       return;
     }
-
     if (seenTitles.has(rawTitle)) return;
     seenTitles.add(rawTitle);
 
-    let absLink = href.startsWith('http')
-      ? href
-      : `https://upsc.gov.in/${href.startsWith('/') ? href.slice(1) : href}`;
+    const notifNo = $(cols[1]).text().replace(/\s+/g, ' ').trim().replace(/^[—\-]+$/, '');
+    const examDate = $(cols[2]).text().replace(/\s+/g, ' ').trim();
+    const closingDate = cols.length >= 4 ? $(cols[3]).text().replace(/\s+/g, ' ').trim().replace(/^(?:NA|—|-)$/i, '') : '';
+
+    const href = a.attr('href') || '';
+    const absLink = resolveUrlSafe(href, url || 'https://upsc.gov.in/') || url;
 
     items.push({
       sourceKey: 'upsc_active',
@@ -42,29 +101,160 @@ export async function scrapeUpscNotifications(sourceConfig) {
       organization: 'Union Public Service Commission (UPSC)',
       service: rawTitle,
       postName: rawTitle.replace(/^(Notice:|Written Result:|Interview Schedule:)\s*/i, '').trim(),
-      notificationNo: '',
+      notificationNo: notifNo || '',
       openingDate: '',
-      closingDate: '',
-      examDate: 'As per UPSC Calendar',
-      qualification: 'Degree of a recognized University in relevant discipline',
-      ageLimit: '21 - 32 Years (Relaxation as per Rules)',
-      applicationFee: '₹100 (Female/SC/ST/PwBD Exempted)',
+      closingDate: closingDate || '',
+      examDate: examDate || 'To Be Announced',
+      qualification: 'Refer Official Notification',
+      ageLimit: 'Refer Official Notification',
+      applicationFee: 'Refer Official Notification',
+      vacancies: 'Not Specified',
       detailsLink: absLink,
       applyLink: 'https://upsconline.nic.in/',
-      source: 'Official UPSC Examination Portal (upsc.gov.in)',
+      source: 'Official UPSC Active Examinations Portal (upsc.gov.in)',
       sourceUrl: url
     });
   });
+
+  if (items.length === 0) {
+    $('.views-row').each((_, row) => {
+      const a = $(row).find('a').first();
+      const rawTitle = $(row).text().replace(/\s+/g, ' ').trim();
+      const href = a.attr('href') || '';
+      if (!rawTitle || !href) return;
+
+      const lower = rawTitle.toLowerCase();
+      if (lower.startsWith('final result:') || lower.includes('marks of recommended candidates')) {
+        return;
+      }
+      if (seenTitles.has(rawTitle)) return;
+      seenTitles.add(rawTitle);
+
+      const absLink = resolveUrlSafe(href, 'https://upsc.gov.in/') || url;
+      items.push({
+        sourceKey: 'upsc_active',
+        category: 'upsc',
+        organization: 'Union Public Service Commission (UPSC)',
+        service: rawTitle,
+        postName: rawTitle.replace(/^(Notice:|Written Result:|Interview Schedule:)\s*/i, '').trim(),
+        notificationNo: '',
+        openingDate: '',
+        closingDate: '',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
+        detailsLink: absLink,
+        applyLink: 'https://upsconline.nic.in/',
+        source: 'Official UPSC Active Examinations Portal (upsc.gov.in)',
+        sourceUrl: url
+      });
+    });
+  }
 
   return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
 /**
+ * Safely resolves and validates an SSC notice attachment path or URL.
+ * Rejects unsafe schemes, control characters, backslashes, protocol-relative URLs,
+ * path traversal segments, non-official hosts, and non-PDF attachments.
+ *
+ * @param {string} rawPath
+ * @param {Object} [options={}]
+ * @returns {string} Validated official SSC PDF URL, or '' if rejected
+ */
+export function resolveSafeSscAttachmentUrl(rawPath, options = {}) {
+  if (typeof rawPath !== 'string') return '';
+  const trimmed = rawPath.trim();
+  if (!trimmed) return '';
+  if (/[\u0000-\u001F\u007F]/.test(trimmed) || trimmed.includes('\\') || /%5c/i.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob|ftp):/i.test(trimmed)) {
+    return '';
+  }
+  // Reject arbitrary non-http(s) URI schemes (e.g. custom:, gopher:, smb:)
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !/^https?:/i.test(trimmed)) {
+    return '';
+  }
+  // Reject raw, percent-encoded, or double-encoded backslashes, control chars, traversal segments, and malformed encoding (S101-2)
+  if (/(^|[\\/])\.\.([\\/]|$)/.test(trimmed) || /(?:%2e|\.)(?:%2e|\.)/i.test(trimmed)) {
+    return '';
+  }
+  let decoded = trimmed;
+  for (let pass = 0; pass < 2; pass++) {
+    let nextDecoded;
+    try {
+      nextDecoded = decodeURIComponent(decoded);
+    } catch {
+      return '';
+    }
+    if (
+      /[\u0000-\u001F\u007F]/.test(nextDecoded) ||
+      nextDecoded.includes('\\') ||
+      /%5c/i.test(nextDecoded) ||
+      /(^|[\\/])\.\.([\\/]|$)/.test(nextDecoded) ||
+      /%2e%2e/i.test(nextDecoded)
+    ) {
+      return '';
+    }
+    if (nextDecoded === decoded) break;
+    decoded = nextDecoded;
+  }
+
+  let candidateUrl = '';
+  if (/^https?:\/\//i.test(trimmed)) {
+    candidateUrl = resolveUrlSafe(trimmed, 'https://ssc.gov.in/');
+  } else if (trimmed.startsWith('/api/attachment/')) {
+    candidateUrl = resolveUrlSafe(trimmed, 'https://ssc.gov.in/');
+  } else {
+    const relativePath = trimmed.replace(/^\/+/, '');
+    if (!relativePath) return '';
+    candidateUrl = resolveUrlSafe(relativePath, 'https://ssc.gov.in/api/attachment/');
+  }
+
+  if (!candidateUrl) return '';
+
+  const policyCheck = validateExplicitSourceUrl(candidateUrl, 'ssc_notices', 'notice', {
+    allowHttpForLocalMock: Boolean(options.allowHttpForLocalMock)
+  });
+  if (!policyCheck.valid || !policyCheck.parsedUrl) {
+    return '';
+  }
+
+  // Strictly accept valid official PDF attachments only (and re-verify decoded pathname)
+  const pathname = String(policyCheck.parsedUrl.pathname || '').trim();
+  let decodedPathname = '';
+  try {
+    decodedPathname = decodeURIComponent(pathname);
+  } catch {
+    return '';
+  }
+  if (
+    /[\u0000-\u001F\u007F]/.test(decodedPathname) ||
+    decodedPathname.includes('\\') ||
+    /(^|[\\/])\.\.([\\/]|$)/.test(decodedPathname)
+  ) {
+    return '';
+  }
+  if (!/\/[^/]+\.pdf$/i.test(pathname)) {
+    return '';
+  }
+
+  return policyCheck.parsedUrl.toString();
+}
+
+/**
  * Scrapes SSC Official Notice Board (Direct REST API)
  */
-export async function scrapeSscNotifications(sourceConfig) {
+export async function scrapeSscNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'ssc_notices'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -79,11 +269,25 @@ export async function scrapeSscNotifications(sourceConfig) {
       if (!headline || headline.length < 5) continue;
 
       let detailsLink = 'https://ssc.gov.in/notices';
-      if (notice.attachments && notice.attachments.length > 0 && notice.attachments[0].path) {
-        const cleanPath = notice.attachments[0].path.replace(/\\/g, '/');
-        detailsLink = `https://ssc.gov.in/api/attachment/${cleanPath}`;
-      } else if (notice.redirectUrl) {
-        detailsLink = notice.redirectUrl;
+      if (Array.isArray(notice.attachments) && notice.attachments.length > 0) {
+        for (const attachment of notice.attachments) {
+          const validPdfUrl = resolveSafeSscAttachmentUrl(attachment?.path, options);
+          if (validPdfUrl) {
+            detailsLink = validPdfUrl;
+            break;
+          }
+        }
+      }
+      if (detailsLink === 'https://ssc.gov.in/notices' && notice.redirectUrl) {
+        const resolvedRedirect = resolveUrlSafe(notice.redirectUrl, 'https://ssc.gov.in/');
+        if (resolvedRedirect) {
+          const redirectCheck = validateExplicitSourceUrl(resolvedRedirect, 'ssc_notices', 'notice', {
+            allowHttpForLocalMock: Boolean(options.allowHttpForLocalMock)
+          });
+          if (redirectCheck.valid) {
+            detailsLink = resolvedRedirect;
+          }
+        }
       }
 
       // Project UTC/offset timestamp cleanly into Asia/Kolkata calendar date
@@ -101,13 +305,14 @@ export async function scrapeSscNotifications(sourceConfig) {
         organization: 'Staff Selection Commission (SSC Central)',
         service: headline,
         postName: headline,
-        notificationNo: notice.id || '',
+        notificationNo: notice.id !== undefined && notice.id !== null ? String(notice.id).trim() : '',
         openingDate: startIso || publishedDate || '',
         closingDate: endIso || '',
-        examDate: 'Announced Soon',
-        qualification: '10th / 12th / Any Degree (as per post)',
-        ageLimit: '18 - 30 Years (Post wise)',
-        applicationFee: '₹100 (Women/SC/ST/ESM Exempted)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink,
         applyLink: 'https://ssc.gov.in/',
         source: 'Official Staff Selection Commission Portal (ssc.gov.in)',
@@ -127,9 +332,9 @@ export async function scrapeSscNotifications(sourceConfig) {
 /**
  * Scrapes RRB (Railway Recruitment Board Chennai / CEN Notices)
  */
-export async function scrapeRrbNotifications(sourceConfig) {
+export async function scrapeRrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'rrb_chennai'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -164,15 +369,8 @@ export async function scrapeRrbNotifications(sourceConfig) {
       const dateMatch = rawText.match(/\((\d{2}-\d{2}-\d{4})\)/);
       const notifDate = dateMatch ? dateMatch[1] : '';
 
-      let absLink;
-      try {
-        absLink = new URL(href.trim(), 'https://rrbchennai.gov.in/').toString();
-      } catch {
-        const trimmedHref = href.trim();
-        absLink = trimmedHref.startsWith('http')
-          ? trimmedHref.replace(/\s+/g, '%20')
-          : `https://rrbchennai.gov.in${trimmedHref.startsWith('/') ? '' : '/'}${trimmedHref}`.replace(/\s+/g, '%20');
-      }
+      const absLink = resolveUrlSafe(href, 'https://rrbchennai.gov.in/');
+      if (!absLink) return;
 
       items.push({
         sourceKey: 'rrb_chennai',
@@ -183,10 +381,11 @@ export async function scrapeRrbNotifications(sourceConfig) {
         notificationNo: cenNo,
         openingDate: notifDate,
         closingDate: '',
-        examDate: 'Announced Soon',
-        qualification: '10th / ITI / Diploma / Degree as per post',
-        ageLimit: '18 - 33 Years (Relaxations Applicable)',
-        applicationFee: '₹500 (₹400 Refundable after CBT)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://rrbchennai.gov.in/',
         source: 'Official Railway Recruitment Board Portal (rrbchennai.gov.in)',
@@ -201,9 +400,9 @@ export async function scrapeRrbNotifications(sourceConfig) {
 /**
  * Scrapes India Post GDS
  */
-export async function scrapeIndiaPostNotifications(sourceConfig) {
+export async function scrapeIndiaPostNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'india_post_gds'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -215,7 +414,8 @@ export async function scrapeIndiaPostNotifications(sourceConfig) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href === '#' || href === 'javascript:void(0)' || seenHrefs.has(href)) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || seenHrefs.has(href)) return;
 
     const lower = text.toLowerCase();
     if (
@@ -225,7 +425,6 @@ export async function scrapeIndiaPostNotifications(sourceConfig) {
       lower.includes('special drive')
     ) {
       seenHrefs.add(href);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
       items.push({
         sourceKey: 'india_post_gds',
         category: 'psu',
@@ -236,9 +435,10 @@ export async function scrapeIndiaPostNotifications(sourceConfig) {
         openingDate: '',
         closingDate: '',
         examDate: 'Merit-Based (No Written Exam)',
-        qualification: 'Secondary School Examination pass certificate of 10th standard',
-        ageLimit: '18 - 40 Years',
-        applicationFee: '₹100 (Female/SC/ST/PwD Exempted)',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: 'https://indiapostgdsonline.gov.in/',
         source: 'Official India Post GDS Online Portal',

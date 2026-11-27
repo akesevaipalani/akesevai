@@ -13,12 +13,17 @@ import {
   computeContentHash
 } from './deduplicationHelper.js';
 import { extractSnapshotValues } from './corrigendumHelper.js';
-import { generateJobId } from './ingestionLockHelper.js';
+import { generateJobId, recoverStaleIngestionJobs } from './ingestionLockHelper.js';
+import { evaluateNotificationVerificationFlags } from './trustScoringEngine.js';
 import {
   runAllIngestionJobs,
   getIngestionStatus,
   recomputeJobSummary
 } from './ingestionManager.js';
+import {
+  isCleanupSchedulerAllowedInEnvironment,
+  resolveAppEnvironment
+} from '../db/databaseIsolation.js';
 
 export const normalizeCategoryStr = (cat) => {
   if (!cat) return 'all';
@@ -57,6 +62,111 @@ export function verifyIngestionSecretHeader(req, env = process.env) {
   return crypto.timingSafeEqual(headerBuf, envBuf);
 }
 
+function parseDryRunParam(val) {
+  if (val === undefined) {
+    return { valid: true, provided: false, value: false };
+  }
+  if (typeof val === 'boolean') {
+    return { valid: true, provided: true, value: val };
+  }
+  if (typeof val === 'string') {
+    const normalized = val.trim().toLowerCase();
+    if (normalized === 'true') {
+      return { valid: true, provided: true, value: true };
+    }
+    if (normalized === 'false') {
+      return { valid: true, provided: true, value: false };
+    }
+  }
+  return {
+    valid: false,
+    provided: true,
+    value: undefined,
+    status: 400,
+    body: {
+      success: false,
+      error: 'INVALID_DRY_RUN_PARAM',
+      message: 'Invalid dryRun parameter. Allowed values are boolean true/false or string "true"/"false".'
+    }
+  };
+}
+
+function resolveDryRunParam(req) {
+  const hasQuery = Boolean(
+    req?.query &&
+    Object.prototype.hasOwnProperty.call(req.query, 'dryRun') &&
+    req.query.dryRun !== undefined
+  );
+  const hasBody = Boolean(
+    req?.body &&
+    typeof req.body === 'object' &&
+    !Array.isArray(req.body) &&
+    Object.prototype.hasOwnProperty.call(req.body, 'dryRun') &&
+    req.body.dryRun !== undefined
+  );
+
+  if (hasQuery) {
+    const queryCheck = parseDryRunParam(req.query.dryRun);
+    if (!queryCheck.valid) return queryCheck;
+    if (hasBody) {
+      const bodyCheck = parseDryRunParam(req.body.dryRun);
+      if (!bodyCheck.valid) return bodyCheck;
+      if (queryCheck.value !== bodyCheck.value) {
+        return {
+          valid: false,
+          provided: true,
+          value: undefined,
+          status: 400,
+          body: {
+            success: false,
+            error: 'INVALID_DRY_RUN_PARAM',
+            message: 'Conflicting dryRun values supplied in query and request body.'
+          }
+        };
+      }
+    }
+    return queryCheck;
+  }
+
+  if (hasBody) {
+    return parseDryRunParam(req.body.dryRun);
+  }
+
+  return parseDryRunParam(undefined);
+}
+
+function getRequestParam(req, key) {
+  if (req?.query && req.query[key] !== undefined) return req.query[key];
+  if (req?.body && typeof req.body === 'object' && req.body[key] !== undefined) return req.body[key];
+  return undefined;
+}
+
+function resolveValidatedSourceKey(sourceKey) {
+  if (sourceKey === undefined) {
+    return { valid: true, normalized: '', sources: OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled) };
+  }
+  const normalized = String(sourceKey).trim();
+  const matched = normalized
+    ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === normalized && s.enabled !== false)
+    : [];
+  if (matched.length === 0) {
+    return {
+      valid: false,
+      status: 400,
+      body: {
+        success: false,
+        error: 'INVALID_SOURCE_KEY',
+        code: 'INVALID_SOURCE_KEY',
+        message: normalized
+          ? `Unknown or disabled sourceKey '${normalized}'. Provide a valid enabled sourceKey or omit sourceKey.`
+          : 'sourceKey query parameter cannot be empty when explicitly supplied.',
+        validSourceKeys: OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled !== false).map((s) => s.key)
+      }
+    };
+  }
+  return { valid: true, normalized, sources: matched };
+}
+
 /**
  * Registers notification & automated ingestion endpoints on Express app.
  * Separated so synthetic unit/integration tests can verify HTTP behavior in isolation.
@@ -68,6 +178,7 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
     IngestionLock = null,
     IngestionSourceHealth = null,
     IngestionRunLog = null,
+    CleanupScheduleModel = null,
     mongooseConnection = null,
     resolveAuthContext,
     syncAllVerifiedNotificationsFeed,
@@ -77,6 +188,150 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
   } = deps;
 
   const isDbReady = () => !mongooseConnection || mongooseConnection.readyState === 1;
+
+  async function executeWorkerTickRequest(req, res, { isSecretValid }) {
+    const rawSourceKey = getRequestParam(req, 'sourceKey');
+    const sourceCheck = resolveValidatedSourceKey(rawSourceKey);
+    if (!sourceCheck.valid) {
+      return res.status(sourceCheck.status).json(sourceCheck.body);
+    }
+
+    const dryRunCheck = resolveDryRunParam(req);
+    if (!dryRunCheck.valid) {
+      return res.status(dryRunCheck.status).json(dryRunCheck.body);
+    }
+    const parsedDryRun = dryRunCheck.provided ? dryRunCheck.value : undefined;
+    const isDryRunRequest = dryRunCheck.value === true;
+    const rawMaxSources = getRequestParam(req, 'maxSources');
+    const rawBatchSize = getRequestParam(req, 'batchSize');
+    const rawOffset = getRequestParam(req, 'offset');
+
+    const parsedBatch = parseInt(String(rawBatchSize || rawMaxSources || '3'), 10);
+    const batchLimit = Number.isFinite(parsedBatch) && parsedBatch > 0 ? Math.min(parsedBatch, 10) : 3;
+    const parsedOffset = parseInt(String(rawOffset ?? '0'), 10);
+    const sourceOffset = Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
+
+    if (isDryRunRequest) {
+      // Strictly read-only dry-run: zero DB recovery, zero job/lock creation, zero persistence
+      const summary = await ingestionRunner(Notification, {
+        sourceKey: sourceCheck.normalized || undefined,
+        sourceOffset,
+        dryRun: true,
+        maxSources: batchLimit,
+        triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
+        env,
+        models: {
+          IngestionJob,
+          IngestionLock,
+          IngestionSourceHealth,
+          IngestionRunLog,
+          mongooseConnection
+        }
+      });
+
+      const remainingSources = typeof summary.sourcesRemaining === 'number'
+        ? summary.sourcesRemaining
+        : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+      const isCompleted =
+        summary.status === 'completed' ||
+        summary.status === 'completed_with_errors' ||
+        summary.status === 'failed' ||
+        remainingSources === 0;
+
+      return res.json({
+        success: true,
+        dryRun: true,
+        readOnly: true,
+        persisted: false,
+        status: isCompleted ? (summary.status === 'pending' ? 'completed' : summary.status) : 'in_progress',
+        jobId: summary.jobId,
+        runId: summary.runId,
+        sourceOffset: summary.sourceOffset ?? sourceOffset,
+        nextOffset: summary.nextOffset ?? (sourceOffset + (summary.sourcesAttempted || 0)),
+        sourcesProcessedThisTick: summary.sourcesAttempted,
+        remainingSources,
+        totalSourcesMatching: summary.totalSourcesMatching ?? sourceCheck.sources.length,
+        isCompleted,
+        recoveredCount: 0,
+        summary
+      });
+    }
+
+    // 1. Live mode: Auto-recover crashed/stale jobs whose lease expired
+    let recoveredInfo = { recoveredCount: 0 };
+    if (IngestionJob) {
+      recoveredInfo = await recoverStaleIngestionJobs(IngestionJob, { maxAttempts: 3 });
+    }
+
+    // 2. Check if there are pending jobs to process
+    let pendingJob = null;
+    if (IngestionJob) {
+      pendingJob = await IngestionJob.findOne({ status: { $in: ['pending', 'retry_pending'] } })
+        .sort({ createdAt: 1 })
+        .lean();
+    }
+
+    if (!pendingJob && IngestionJob) {
+      const runningJob = await IngestionJob.findOne({ status: 'running' })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (runningJob) {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'INGESTION_IN_PROGRESS',
+          message: 'An automated ingestion job is currently running. Please retry once the active lease advances.',
+          activeJobDetails: {
+            reason: 'JOB_RUNNING',
+            jobId: runningJob.jobId,
+            startedAt: runningJob.startedAt || null,
+            leaseExpiresAt: runningJob.leaseExpiresAt || null,
+            ownerRunId: runningJob.ownerRunId || null
+          }
+        });
+      }
+
+      return res.json({
+        success: true,
+        status: 'idle',
+        message: 'No pending ingestion jobs in queue.',
+        recoveredCount: recoveredInfo.recoveredCount
+      });
+    }
+
+    // 3. Execute bounded live worker tick using ingestionRunner
+    const summary = await ingestionRunner(Notification, {
+      sourceKey: sourceCheck.normalized || undefined,
+      dryRun: parsedDryRun,
+      maxSources: batchLimit,
+      triggerType: isSecretValid ? 'worker_cron' : 'manual_admin',
+      env,
+      models: {
+        IngestionJob,
+        IngestionLock,
+        IngestionSourceHealth,
+        IngestionRunLog,
+        mongooseConnection
+      }
+    });
+
+    const isCompleted = summary.status === 'completed' || summary.status === 'completed_with_errors' || summary.status === 'failed';
+    const remainingSources = typeof summary.sourcesRemaining === 'number'
+      ? summary.sourcesRemaining
+      : Math.max(0, (summary.sourcesQueued || 0) - (summary.sourcesAttempted || 0));
+
+    return res.json({
+      success: true,
+      status: isCompleted ? summary.status : 'in_progress',
+      jobId: summary.jobId,
+      runId: summary.runId,
+      sourcesProcessedThisTick: summary.sourcesAttempted,
+      remainingSources,
+      isCompleted,
+      recoveredCount: recoveredInfo.recoveredCount,
+      summary
+    });
+  }
 
   // 1. GET all notifications (Public only sees 'published' or legacy; pending/quarantined/rejected isolated)
   app.get('/api/notifications', async (req, res) => {
@@ -138,14 +393,21 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
       });
     }
 
-    if (status === 'active' || status === 'active_app' || status === 'open') {
-      processedList = processedList.filter((n) => n.appStatus.isOpen);
+    if (status === 'active' || status === 'active_app' || status === 'active_jobs' || status === 'open') {
+      processedList = processedList.filter((n) => n.isActiveApplication === true);
     } else if (status === 'upcoming_exams' || status === 'upcoming') {
       processedList = processedList.filter((n) => n.examStatus.isUpcoming || n.examStatus.isToday);
-    } else if (status === 'expired' || status === 'app_closed') {
-      processedList = processedList.filter((n) => n.appStatus.isExpired);
+    } else if (status === 'upcoming_interviews' || status === 'interviews') {
+      processedList = processedList.filter((n) => n.interviewStatus?.isUpcoming || n.interviewStatus?.isToday);
+    } else if (status === 'closing_soon') {
+      processedList = processedList.filter((n) => n.isClosingSoon);
+    } else if (status === 'expired' || status === 'app_closed' || status === 'archived') {
+      processedList = processedList.filter((n) => !n.isNotificationActive || n.appStatus.isExpired);
     } else if (status === 'exam_completed') {
       processedList = processedList.filter((n) => n.examStatus.isCompleted);
+    } else if (req.query.includeExpired !== 'true') {
+      // By default for public feed, show ONLY current active notifications (no past 2015-2018 leaks)
+      processedList = processedList.filter((n) => n.isNotificationActive);
     }
 
     processedList.sort((a, b) => {
@@ -206,46 +468,297 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
   });
 
   // 4. Create / Update Notification (Admin Only — sets manualOverrideLock: true)
+  const ALLOWED_ADMIN_INGESTION_STATUSES = new Set(['published', 'pending_review']);
+  const ADMIN_EDITABLE_NOTIFICATION_FIELDS = [
+    'category',
+    'organization',
+    'service',
+    'postName',
+    'qualification',
+    'ageLimit',
+    'posts',
+    'openingDate',
+    'closingDate',
+    'examDate',
+    'applicationFee',
+    'notificationDate',
+    'importantDetails',
+    'detailsLink',
+    'applyLink',
+    'source',
+    'isNew',
+    'status',
+    'sourceKey',
+    'noticeType',
+    'notificationNo',
+    'officialNotificationNumber',
+    'officialNotificationUrl',
+    'officialPdfUrl',
+    'sourcePublishedDate',
+    'sourcePublishedAt',
+    'sourceUrl',
+    'auditNote',
+    'isThirdParty',
+    'sourceType',
+    'isExpired',
+    'isLegacy'
+  ];
+
+  function buildAtomicStateGuards(doc) {
+    const rev = Number(doc.revisionCount ?? 0);
+    const andConditions = [
+      {
+        $or: [
+          { quarantineReason: '' },
+          { quarantineReason: null },
+          { quarantineReason: { $exists: false } }
+        ]
+      }
+    ];
+    if (rev === 0) {
+      andConditions.push({ $or: [{ revisionCount: 0 }, { revisionCount: { $exists: false } }] });
+    } else {
+      andConditions.push({ revisionCount: rev });
+    }
+    const guardedFields = ['detailsLink', 'docVerificationStatus', 'officialPdfUrl', 'officialNotificationNumber'];
+    for (const field of guardedFields) {
+      const val = doc[field];
+      if (val === undefined || val === null || val === '') {
+        andConditions.push({ $or: [{ [field]: '' }, { [field]: null }, { [field]: { $exists: false } }] });
+      } else {
+        andConditions.push({ [field]: val });
+      }
+    }
+    return {
+      ingestionStatus: doc.ingestionStatus
+        ? doc.ingestionStatus
+        : { $nin: ['quarantined', 'rejected'] },
+      $and: andConditions
+    };
+  }
+
   app.post('/api/notifications', async (req, res) => {
     try {
       const auth = resolveAuthContext(req);
       if (!auth.isAdmin) {
         return res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Admin authorization required.' });
       }
-      const data = req.body || {};
-      if (!data.service) {
+      const rawData = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+      if (!rawData.service || typeof rawData.service !== 'string' || !rawData.service.trim()) {
         return res.status(400).json({ error: 'Notification service/title is required' });
       }
 
-      const id = data.id || `notif-${Date.now()}`;
-      const keyFilter = data.id
-        ? { id: data.id }
+      // Explicitly validate ingestionStatus against strict allowlist ('published' | 'pending_review')
+      let targetIngestionStatus = 'published';
+      if (rawData.ingestionStatus !== undefined) {
+        const normalizedStatus = typeof rawData.ingestionStatus === 'string' ? rawData.ingestionStatus.trim() : '';
+        if (!ALLOWED_ADMIN_INGESTION_STATUSES.has(normalizedStatus)) {
+          return res.status(400).json({
+            success: false,
+            error: 'INVALID_INGESTION_STATUS',
+            message: 'Invalid ingestionStatus. Allowed values are "published" or "pending_review".'
+          });
+        }
+        targetIngestionStatus = normalizedStatus;
+      }
+
+      // Extract ONLY explicitly allowlisted admin-editable content fields (prevents mass assignment of _id, __v, corrigendum, trust, scraper metadata)
+      const data = {};
+      for (const field of ADMIN_EDITABLE_NOTIFICATION_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(rawData, field) && rawData[field] !== undefined) {
+          data[field] = rawData[field];
+        }
+      }
+
+      const rawId = typeof rawData.id === 'string' ? rawData.id.trim() : '';
+      const id = rawId || `notif-${Date.now()}`;
+      const keyFilter = rawId
+        ? { id: rawId }
         : { service: data.service, organization: data.organization || '' };
 
-      const contentHash = computeContentHash(data);
-      const identityFingerprint = buildIdentityFingerprint({ ...data, id });
-      const fingerprint = generateNotificationFingerprint(data);
+      // Check existing DB state — quarantined & rejected records must never be overwritten via POST /api/notifications.
+      const existingDoc = await Notification.findOne(keyFilter).lean();
+      if (existingDoc) {
+        if (existingDoc.ingestionStatus === 'quarantined' || String(existingDoc.quarantineReason || '').trim()) {
+          return res.status(400).json({
+            success: false,
+            error: 'QUARANTINED_RECORD_CANNOT_BE_OVERWRITTEN',
+            message: 'Quarantined notifications cannot be overwritten or published via POST /api/notifications.'
+          });
+        }
+        if (existingDoc.ingestionStatus === 'rejected') {
+          return res.status(400).json({
+            success: false,
+            error: 'REJECTED_RECORD_CANNOT_BE_OVERWRITTEN',
+            message: 'Rejected notifications cannot be overwritten via POST /api/notifications.'
+          });
+        }
+      }
 
+      // Preserve explicit fail-closed client assertions (clients may force unverified, never force verified).
+      const clientForcedUnverified = rawData.isVerified === false || rawData.sourceIntegrityVerified === false;
+      const clientForcedUnverifiedDates = rawData.applicationDatesVerified === false;
+      const clientForcedIntegrityIssue = rawData.hasSourceIntegrityIssue === true || rawData.needsOfficialSource === true;
+      const clientBlockedClassification = ['OFFICIAL_CALENDAR_ONLY', 'OLD_RECRUITMENT_CYCLE', 'HISTORICAL_CYCLE'].includes(
+        String(rawData.evidenceClassification || '').trim()
+      )
+        ? String(rawData.evidenceClassification).trim()
+        : '';
+
+      const effectiveId = existingDoc?.id || id;
+      const mergedContent = { ...(existingDoc || {}), ...data, id: effectiveId };
+      const contentHash = computeContentHash(mergedContent);
+      const identityFingerprint = buildIdentityFingerprint(mergedContent);
+      const fingerprint = generateNotificationFingerprint(mergedContent);
+
+      // Preserve server-owned docVerificationStatus from existingDoc ONLY when detailsLink did not change.
+      const incomingDetailsLink = String(data.detailsLink ?? existingDoc?.detailsLink ?? '').trim();
+      const existingDetailsLink = String(existingDoc?.detailsLink || '').trim();
+      const canReuseServerDocState = Boolean(
+        existingDoc &&
+        existingDoc.docVerificationStatus &&
+        incomingDetailsLink &&
+        incomingDetailsLink === existingDetailsLink
+      );
+      const trustedDocVerificationStatus = canReuseServerDocState ? existingDoc.docVerificationStatus : '';
+
+      const mergedForEval = {
+        ...mergedContent,
+        ingestionStatus: targetIngestionStatus,
+        docVerificationStatus: trustedDocVerificationStatus,
+        hasSourceIntegrityIssue: clientForcedIntegrityIssue,
+        needsOfficialSource: rawData.needsOfficialSource === true,
+        evidenceClassification: clientBlockedClassification || (existingDoc?.isHistoricalCycle ? existingDoc.evidenceClassification : '')
+      };
+
+      // Evaluate official-source evidence and date validity fail-closed without trusting raw client verification flags.
+      const evidenceEval = evaluateNotificationVerificationFlags(
+        mergedForEval,
+        {
+          allowPromotionEvaluation: !clientForcedIntegrityIssue && !clientForcedUnverified,
+          allowVerifiedDocState: canReuseServerDocState
+        }
+      );
+
+      const isPublishedTarget = targetIngestionStatus === 'published';
+      const sourceIntegrityVerified = Boolean(
+        isPublishedTarget &&
+        evidenceEval.sourceIntegrityVerified &&
+        !clientForcedUnverified &&
+        !clientForcedIntegrityIssue
+      );
+      const applicationDatesVerified = Boolean(
+        sourceIntegrityVerified &&
+        evidenceEval.applicationDatesVerified &&
+        !clientForcedUnverifiedDates
+      );
+      const canVerifyOnCreate = evidenceEval.isResultNotice
+        ? Boolean(sourceIntegrityVerified)
+        : Boolean(sourceIntegrityVerified && applicationDatesVerified);
+      const hasIntegrityGap = evidenceEval.isResultNotice
+        ? !evidenceEval.sourceIntegrityVerified
+        : (!evidenceEval.sourceIntegrityVerified || !evidenceEval.applicationDatesVerified);
+      const requestedStatus = data.status ?? existingDoc?.status ?? 'active';
+      const resolvedStatus = (!hasIntegrityGap && !clientForcedUnverified && !clientForcedIntegrityIssue)
+        ? (requestedStatus === 'under_review' ? 'active' : (requestedStatus || 'active'))
+        : (requestedStatus === 'closed' || requestedStatus === 'expired' ? requestedStatus : 'under_review');
+
+      const now = new Date();
       const updatePayload = {
         ...data,
-        id,
+        id: effectiveId,
         contentHash,
         identityFingerprint,
         fingerprint,
         manualOverrideLock: true,
-        ingestionStatus: data.ingestionStatus || 'published',
-        ingestionSource: data.ingestionSource || 'manual_admin',
-        updatedAt: new Date()
+        ingestionStatus: targetIngestionStatus,
+        ingestionSource: existingDoc?.ingestionSource || 'manual_admin',
+        docVerificationStatus: trustedDocVerificationStatus,
+        status: resolvedStatus,
+        isVerified: canVerifyOnCreate,
+        sourceIntegrityVerified,
+        applicationDatesVerified,
+        hasSourceIntegrityIssue: !evidenceEval.sourceIntegrityVerified || clientForcedIntegrityIssue,
+        needsOfficialSource: !evidenceEval.hasOfficialEvidence || rawData.needsOfficialSource === true,
+        evidenceClassification: clientBlockedClassification || (!evidenceEval.sourceIntegrityVerified
+          ? 'NEEDS_OFFICIAL_SOURCE'
+          : (canVerifyOnCreate
+            ? (evidenceEval.isResultNotice ? 'VERIFIED_OFFICIAL_RESULT' : 'VERIFIED_OFFICIAL_NOTICE')
+            : '')),
+        evidenceVerifiedAt: canVerifyOnCreate ? now : null,
+        updatedAt: now
       };
 
-      const result = await Notification.findOneAndUpdate(
-        keyFilter,
-        { $set: updatePayload },
-        { upsert: true, new: true }
-      );
+      let result;
+      if (existingDoc) {
+        // Atomic conditional update (upsert: false) — prevents overwriting concurrent quarantine/rejection/evidence changes
+        const atomicUpdateFilter = {
+          id: existingDoc.id,
+          ...buildAtomicStateGuards(existingDoc)
+        };
+        result = await Notification.findOneAndUpdate(
+          atomicUpdateFilter,
+          { $set: updatePayload, $inc: { revisionCount: 1 } },
+          { new: true }
+        );
+        if (!result) {
+          return res.status(409).json({
+            success: false,
+            error: 'CONCURRENT_MODIFICATION_CONFLICT',
+            message: 'Notification changed concurrently (e.g. quarantined, rejected, or updated). Refresh and retry.'
+          });
+        }
+      } else {
+        // Atomic create path guarded against concurrent insert/quarantine on same key
+        const atomicCreateFilter = {
+          ...keyFilter,
+          ingestionStatus: { $nin: ['quarantined', 'rejected'] },
+          $and: [
+            {
+              $or: [
+                { quarantineReason: '' },
+                { quarantineReason: null },
+                { quarantineReason: { $exists: false } }
+              ]
+            },
+            { revisionCount: { $exists: false } }
+          ]
+        };
+        try {
+          result = await Notification.findOneAndUpdate(
+            atomicCreateFilter,
+            { $set: updatePayload, $inc: { revisionCount: 1 } },
+            { upsert: true, new: true }
+          );
+        } catch (upsertErr) {
+          if (upsertErr?.code === 11000) {
+            return res.status(409).json({
+              success: false,
+              error: 'CONCURRENT_CREATE_CONFLICT',
+              message: 'A notification with this identifier was created or modified concurrently. Refresh and retry.'
+            });
+          }
+          throw upsertErr;
+        }
+        if (!result) {
+          return res.status(409).json({
+            success: false,
+            error: 'CONCURRENT_CREATE_CONFLICT',
+            message: 'Notification could not be created due to a concurrent state conflict.'
+          });
+        }
+      }
+
       const obj = result.toObject ? result.toObject() : result;
       res.json({ success: true, ...obj });
     } catch (err) {
+      if (err?.code === 11000) {
+        return res.status(409).json({
+          success: false,
+          error: 'CONCURRENT_CREATE_CONFLICT',
+          message: 'A notification with this identifier already exists.'
+        });
+      }
       res.status(500).json({ error: 'SAVE_ERROR', message: err.message });
     }
   });
@@ -265,6 +778,10 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
   });
 
   // 6. Trigger Automated Ingestion Job (Admin OR valid X-Ingestion-Secret)
+  // Supports decoupled lifecycle:
+  // - Enqueue Only: ?enqueueOnly=true or ?action=enqueue (creates/coalesces job)
+  // - Worker Execution: POST /api/notifications/worker-tick or ?action=work (processes bounded batch)
+  // - Synchronous Run: default (processes with optional ?maxSources limit)
   app.post('/api/notifications/ingest-job', async (req, res) => {
     try {
       const auth = resolveAuthContext(req);
@@ -278,11 +795,55 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         });
       }
 
-      const { sourceKey, dryRun, enqueueOnly, maxSources } = req.query || {};
+      const sourceKey = getRequestParam(req, 'sourceKey');
+      const dryRun = getRequestParam(req, 'dryRun');
+      const enqueueOnly = getRequestParam(req, 'enqueueOnly');
+      const action = getRequestParam(req, 'action');
+      const maxSources = getRequestParam(req, 'maxSources');
+      const rawOffset = getRequestParam(req, 'offset');
 
-      // Pure durable enqueue mode (creates/coalesces DB job without running detached background promises)
-      if (enqueueOnly === 'true' && IngestionJob) {
-        const existingPending = await IngestionJob.findOne({ status: { $in: ['pending', 'running'] } }).lean();
+      // Route 6A: Worker processing action (?action=work or ?action=worker_tick)
+      if (action === 'work' || action === 'worker_tick') {
+        return await executeWorkerTickRequest(req, res, { isSecretValid });
+      }
+
+      const sourceCheck = resolveValidatedSourceKey(sourceKey);
+      if (!sourceCheck.valid) {
+        return res.status(sourceCheck.status).json(sourceCheck.body);
+      }
+
+      const dryRunCheck = resolveDryRunParam(req);
+      if (!dryRunCheck.valid) {
+        return res.status(dryRunCheck.status).json(dryRunCheck.body);
+      }
+      const parsedDryRun = dryRunCheck.provided ? dryRunCheck.value : undefined;
+      const isDryRunRequest = dryRunCheck.value === true;
+
+      // Route 6B: Pure durable enqueue mode (creates/coalesces DB job ONLY when NOT dryRun)
+      if (String(enqueueOnly) === 'true' || action === 'enqueue') {
+        if (isDryRunRequest) {
+          return res.status(202).json({
+            success: true,
+            dryRun: true,
+            readOnly: true,
+            persisted: false,
+            simulated: true,
+            jobId: `dryrun_${generateJobId()}`,
+            status: 'dry_run_ready',
+            sourceKeyFilter: sourceCheck.normalized,
+            sourcesQueued: sourceCheck.sources.length,
+            message: `Dry-run enqueue validated cleanly (${sourceCheck.sources.length} source(s)); 0 database records created.`
+          });
+        }
+
+        if (!IngestionJob) {
+          return res.status(503).json({
+            success: false,
+            error: 'SERVICE_UNAVAILABLE',
+            message: 'Durable queue model is not initialized.'
+          });
+        }
+        const existingPending = await IngestionJob.findOne({ status: { $in: ['pending', 'running', 'retry_pending'] } }).lean();
         if (existingPending) {
           return res.status(202).json({
             success: true,
@@ -293,12 +854,8 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           });
         }
 
-        const sources = sourceKey
-          ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === sourceKey)
-          : OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled);
-
         const jobId = generateJobId();
-        const queue = sources.map((s) => ({
+        const queue = sourceCheck.sources.map((s) => ({
           sourceKey: s.key,
           status: 'pending',
           attempts: 0,
@@ -310,8 +867,8 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           jobId,
           triggerType: isSecretValid ? 'external_cron' : 'manual_admin',
           status: 'pending',
-          dryRun: dryRun === 'true',
-          sourceKeyFilter: sourceKey || '',
+          dryRun: false,
+          sourceKeyFilter: sourceCheck.normalized,
           sourceQueue: queue,
           summary: recomputeJobSummary(queue),
           errors: [],
@@ -328,11 +885,13 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
       }
 
       const parsedMax = maxSources ? parseInt(String(maxSources), 10) : undefined;
-      console.log(`📡 [Ingestion Trigger]: Running durable ingestion job (source: ${sourceKey || 'ALL'}, dryRun: ${dryRun || 'false'})...`);
+      const parsedOffset = rawOffset !== undefined ? parseInt(String(rawOffset), 10) : undefined;
+      console.log(`📡 [Ingestion Trigger]: Running durable ingestion job (source: ${sourceCheck.normalized || 'ALL'}, dryRun: ${isDryRunRequest})...`);
 
       const summary = await ingestionRunner(Notification, {
-        sourceKey,
-        dryRun: dryRun === 'true',
+        sourceKey: sourceCheck.normalized || undefined,
+        sourceOffset: Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined,
+        dryRun: isDryRunRequest,
         maxSources: Number.isFinite(parsedMax) && parsedMax > 0 ? parsedMax : undefined,
         triggerType: isSecretValid ? 'external_cron' : 'manual_admin',
         env,
@@ -347,6 +906,9 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
 
       res.json({
         success: true,
+        dryRun: isDryRunRequest,
+        readOnly: isDryRunRequest,
+        persisted: !isDryRunRequest,
         message: `Ingestion job ${summary.status || 'completed'}. New: ${summary.newRecordsInserted}, Updated: ${summary.corrigendaUpdatedCount || 0}, Quarantined: ${summary.quarantinedCount || 0}, Duplicates: ${summary.duplicatesSkipped}.`,
         summary
       });
@@ -356,7 +918,13 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           success: false,
           error: 'CONFLICT',
           code: 'INGESTION_IN_PROGRESS',
-          message: 'An automated ingestion job already holds the distributed lock. Please wait for it to finish.'
+          message: 'An automated ingestion job already holds the distributed lock. Please wait for it to finish.',
+          activeJobDetails: {
+            reason: err.reason || 'LOCK_HELD',
+            startedAt: err.startedAt || null,
+            leaseExpiresAt: err.existingExpiresAt || null,
+            ownerRunId: err.existingOwnerRunId || null
+          }
         });
       }
       if (err.code === 'FENCING_OWNERSHIP_LOST') {
@@ -367,12 +935,73 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
           message: 'Worker lease expired or was fenced out by a newer job.'
         });
       }
+      if (err.code === 'DATA_CONFLICT') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'DATA_CONFLICT',
+          message: err.message || 'A data state conflict occurred during ingestion.'
+        });
+      }
       console.error('Ingestion job error:', err.message);
-      res.status(500).json({ success: false, error: 'INGESTION_ERROR' });
+      res.status(500).json({ success: false, error: 'INGESTION_ERROR', message: err.message });
     }
   });
 
-  // 7. Fetch Pending Review Notifications (Admin Only)
+  // 6B. Dedicated Background Worker Consumer Endpoint
+  // Decoupled from Enqueue: Picks up oldest pending job, processes a bounded batch (default: 3 sources),
+  // persists progress checkpoints, and returns status: idle | in_progress | completed
+  app.post(['/api/notifications/worker-tick', '/api/notifications/ingest-worker'], async (req, res) => {
+    try {
+      const auth = resolveAuthContext(req);
+      const isSecretValid = verifyIngestionSecretHeader(req, env);
+
+      if (!auth.isAdmin && !isSecretValid) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'Admin authorization or valid X-Ingestion-Secret header is required to run the worker.'
+        });
+      }
+
+      return await executeWorkerTickRequest(req, res, { isSecretValid });
+    } catch (err) {
+      if (err.code === 'CONCURRENT_INGESTION_LOCKED' || err.message === 'INGESTION_IN_PROGRESS') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'INGESTION_IN_PROGRESS',
+          message: 'An automated ingestion worker already holds the distributed lock. Please wait for it to finish.',
+          activeJobDetails: {
+            reason: err.reason || 'LOCK_HELD',
+            startedAt: err.startedAt || null,
+            leaseExpiresAt: err.existingExpiresAt || null,
+            ownerRunId: err.existingOwnerRunId || null
+          }
+        });
+      }
+      if (err.code === 'FENCING_OWNERSHIP_LOST') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'FENCING_OWNERSHIP_LOST',
+          message: 'Worker lease expired or was fenced out by a newer worker.'
+        });
+      }
+      if (err.code === 'DATA_CONFLICT') {
+        return res.status(409).json({
+          success: false,
+          error: 'CONFLICT',
+          code: 'DATA_CONFLICT',
+          message: err.message || 'A data state conflict occurred during worker execution.'
+        });
+      }
+      console.error('Worker tick error:', err.message);
+      res.status(500).json({ success: false, error: 'WORKER_ERROR', message: err.message });
+    }
+  });
+
+  // 7. Fetch Pending Review Notifications (Admin Only — partitioned by current, expired, missing date)
   app.get('/api/notifications/pending', async (req, res) => {
     try {
       const auth = resolveAuthContext(req);
@@ -386,7 +1015,30 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         .lean();
 
       const enriched = (pendingList || []).map((item) => enrichNotificationWithDateStatus(item, today));
-      res.json({ success: true, count: enriched.length, notifications: enriched });
+
+      const type = String(req.query?.type || 'all').toLowerCase();
+      let filtered = enriched;
+      if (type === 'current') {
+        filtered = enriched.filter((n) => n.isNotificationActive && !n.needsDateVerification);
+      } else if (type === 'expired' || type === 'expired_pending') {
+        filtered = enriched.filter((n) => !n.isNotificationActive);
+      } else if (type === 'missing_date') {
+        filtered = enriched.filter((n) => n.needsDateVerification);
+      }
+
+      const currentCount = enriched.filter((n) => n.isNotificationActive && !n.needsDateVerification).length;
+      const expiredCount = enriched.filter((n) => !n.isNotificationActive).length;
+      const missingDateCount = enriched.filter((n) => n.needsDateVerification).length;
+
+      res.json({
+        success: true,
+        count: filtered.length,
+        totalPending: enriched.length,
+        currentCount,
+        expiredCount,
+        missingDateCount,
+        notifications: filtered
+      });
     } catch (err) {
       res.status(500).json({ success: false, error: 'INTERNAL_ERROR' });
     }
@@ -461,6 +1113,36 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         return res.status(404).json({ success: false, error: 'NOT_FOUND', message: 'Notification not found' });
       }
 
+      if (existing.ingestionStatus === 'quarantined' || String(existing.quarantineReason || '').trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'QUARANTINED_RECORD_CANNOT_BE_VERIFIED',
+          message: 'Quarantined notifications cannot be verified or published by blind approval. Resolve source integrity, document verification, and application dates first.'
+        });
+      }
+
+      if (existing.ingestionStatus === 'rejected') {
+        return res.status(400).json({
+          success: false,
+          error: 'REJECTED_RECORD_CANNOT_BE_APPROVED',
+          message: 'Rejected notifications cannot be approved directly.'
+        });
+      }
+
+      const verification = evaluateNotificationVerificationFlags(
+        { ...existing, ingestionStatus: 'published' },
+        { allowPromotionEvaluation: true, allowVerifiedDocState: true }
+      );
+      const canVerifyOnApprove = Boolean(verification.isVerified);
+      const resolvedStatus = canVerifyOnApprove
+        ? (existing.status === 'under_review' ? 'active' : (existing.status || 'active'))
+        : (existing.status === 'closed' || existing.status === 'expired' ? existing.status : 'under_review');
+      const resolvedClassification = canVerifyOnApprove
+        ? (verification.isResultNotice ? 'VERIFIED_OFFICIAL_RESULT' : 'VERIFIED_OFFICIAL_NOTICE')
+        : (existing.evidenceClassification && !['VERIFIED_OFFICIAL_NOTICE', 'VERIFIED_OFFICIAL_RESULT'].includes(existing.evidenceClassification)
+          ? existing.evidenceClassification
+          : 'NEEDS_OFFICIAL_SOURCE');
+
       const now = new Date();
       const prevSnap = extractSnapshotValues(existing);
       const revEntry = {
@@ -469,19 +1151,39 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         changeType: 'manual_approve',
         triggerSource: 'admin_panel',
         verifiedDocUrl: existing.detailsLink || '',
-        summary: `Approved from ${existing.ingestionStatus || 'pending_review'} by Admin`,
-        changedFields: ['ingestionStatus', 'isVerified'],
+        summary: canVerifyOnApprove
+          ? `Approved and verified from ${existing.ingestionStatus || 'pending_review'} by Admin`
+          : `Manually published as unverified/review-only from ${existing.ingestionStatus || 'pending_review'} (${verification.reasons.join(', ') || 'INSUFFICIENT_EVIDENCE'})`,
+        changedFields: [
+          'ingestionStatus',
+          'isVerified',
+          'sourceIntegrityVerified',
+          'applicationDatesVerified',
+          'status'
+        ],
         previousValues: prevSnap,
         newValues: prevSnap,
         actor: 'admin'
       };
 
+      const atomicApproveFilter = {
+        id: req.params.id,
+        ...buildAtomicStateGuards(existing)
+      };
+
       const notif = await Notification.findOneAndUpdate(
-        { id: req.params.id },
+        atomicApproveFilter,
         {
           $set: {
             ingestionStatus: 'published',
-            isVerified: true,
+            status: resolvedStatus,
+            isVerified: canVerifyOnApprove,
+            sourceIntegrityVerified: verification.sourceIntegrityVerified,
+            applicationDatesVerified: verification.applicationDatesVerified,
+            hasSourceIntegrityIssue: !verification.sourceIntegrityVerified,
+            needsOfficialSource: !verification.hasOfficialEvidence,
+            evidenceClassification: resolvedClassification,
+            evidenceVerifiedAt: canVerifyOnApprove ? now : null,
             autoPublished: false,
             quarantineReason: '',
             manualOverrideLock: true,
@@ -492,6 +1194,14 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
         },
         { new: true }
       );
+
+      if (!notif) {
+        return res.status(409).json({
+          success: false,
+          error: 'CONCURRENT_APPROVAL_CONFLICT',
+          message: 'Notification state or evidence changed concurrently during approval. Refresh and retry.'
+        });
+      }
 
       res.json({
         success: true,
@@ -676,5 +1386,61 @@ export function registerNotificationAndIngestionRoutes(app, deps) {
       res.status(500).json({ success: false, error: 'STATUS_ERROR' });
     }
   });
-}
 
+  // 12. 10-Day Expired Exam Cleanup Status Endpoint (Strictly Read-Only Telemetry)
+  app.get('/api/notifications/cleanup-status', async (req, res) => {
+    try {
+      const auth = resolveAuthContext(req);
+      const isSecretValid = verifyIngestionSecretHeader(req, env);
+      if (!auth.isAdmin && !isSecretValid) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'Admin authorization or valid X-Ingestion-Secret header is required.'
+        });
+      }
+
+      const purgeEnabled = String(env.ENABLE_EXPIRED_EXAM_PURGE || '').trim().toLowerCase() === 'true';
+      let scheduleState = null;
+
+      if (CleanupScheduleModel && isDbReady()) {
+        scheduleState = await CleanupScheduleModel.findOne({ taskKey: 'expired_exam_cleanup' }).lean();
+      }
+
+      const activeDbName = (CleanupScheduleModel?.db?.name) || 'unknown';
+      let appEnv = 'development';
+      try {
+        appEnv = resolveAppEnvironment(env);
+      } catch (_) {
+        appEnv = 'misconfigured';
+      }
+      const schedulerGate = isCleanupSchedulerAllowedInEnvironment({
+        env,
+        activeDbName
+      });
+
+      res.json({
+        success: true,
+        purgeEnabled,
+        mode: purgeEnabled ? 'live_deletion' : 'dry_run',
+        scheduleIntervalDays: 10,
+        scheduleTargetIst: '02:00:00 AM IST',
+        database: {
+          name: activeDbName,
+          isIsolated: activeDbName === 'akesevai_staging' || activeDbName === 'akesevai_dev' || activeDbName === 'akesevai'
+        },
+        schedulerGate: {
+          allowed: schedulerGate.allowed,
+          appEnv: schedulerGate.appEnv,
+          reason: schedulerGate.reason || 'ALLOWED'
+        },
+        scheduleState: scheduleState || {
+          taskKey: 'expired_exam_cleanup',
+          status: 'not_initialized'
+        }
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: 'CLEANUP_STATUS_ERROR', message: err.message });
+    }
+  });
+}

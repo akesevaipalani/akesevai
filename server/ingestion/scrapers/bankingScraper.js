@@ -1,9 +1,61 @@
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
 
-export async function scrapeIbpsNotifications(sourceConfig) {
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
+
+function resolveUrlSafe(href, baseUrl) {
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
+  try {
+    parsed = new URL(trimmed, baseUrl);
+  } catch {
+    return '';
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
+}
+
+export async function scrapeIbpsNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'ibps'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -35,8 +87,9 @@ export async function scrapeIbpsNotifications(sourceConfig) {
       lower.includes('candidature cancelled');
 
     if (isRecruitment && !isPastResult && !seenTitles.has(text)) {
+      const absLink = resolveUrlSafe(href, url);
+      if (!absLink) return;
       seenTitles.add(text);
-      let absLink = href.startsWith('http') ? href : new URL(href, url).toString();
       items.push({
         sourceKey: 'ibps',
         category: 'banking',
@@ -46,10 +99,11 @@ export async function scrapeIbpsNotifications(sourceConfig) {
         notificationNo: text.match(/CRP[\s\w\-\/]+/i)?.[0] || '',
         openingDate: '',
         closingDate: '',
-        examDate: 'Announced Soon',
-        qualification: 'Bachelor’s Degree in any discipline from a recognized University',
-        ageLimit: '20 - 30 Years (Relaxation for SC/ST/OBC)',
-        applicationFee: '₹850 (SC/ST/PwBD ₹175)',
+        examDate: 'To Be Announced',
+        qualification: 'Refer Official Notification',
+        ageLimit: 'Refer Official Notification',
+        applicationFee: 'Refer Official Notification',
+        vacancies: 'Not Specified',
         detailsLink: absLink,
         applyLink: absLink,
         source: 'Official IBPS Examination Portal (ibps.in)',
@@ -61,9 +115,9 @@ export async function scrapeIbpsNotifications(sourceConfig) {
   return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
-export async function scrapeSbiNotifications(sourceConfig) {
+export async function scrapeSbiNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'sbi_careers'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -124,7 +178,8 @@ export async function scrapeSbiNotifications(sourceConfig) {
       const aHref = $(a).attr('href');
       if (!aHref) return;
 
-      const fullHref = aHref.startsWith('http') ? aHref : new URL(aHref, url).toString();
+      const fullHref = resolveUrlSafe(aHref, url);
+      if (!fullHref) return;
 
       if (aText.includes('apply now') || aText.includes('apply online') || fullHref.includes('/apply')) {
         if (!applyLink) applyLink = fullHref;
@@ -146,10 +201,11 @@ export async function scrapeSbiNotifications(sourceConfig) {
       notificationNo: notifNo,
       openingDate,
       closingDate,
-      examDate: 'Announced Soon',
-      qualification: 'Graduation in any discipline from a recognized University',
-      ageLimit: '21 - 30 Years (Post wise relaxations apply)',
-      applicationFee: '₹750 (SC/ST/PwBD Nil)',
+      examDate: 'To Be Announced',
+      qualification: 'Refer Official Notification',
+      ageLimit: 'Refer Official Notification',
+      applicationFee: 'Refer Official Notification',
+      vacancies: 'Not Specified',
       detailsLink,
       applyLink,
       source: 'Official SBI Careers Portal',
@@ -160,9 +216,9 @@ export async function scrapeSbiNotifications(sourceConfig) {
   return { success: true, source: sourceConfig.key, items: items.slice(0, 8) };
 }
 
-export async function scrapeRbiNotifications(sourceConfig) {
+export async function scrapeRbiNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'rbi_vacancies'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -188,10 +244,7 @@ export async function scrapeRbiNotifications(sourceConfig) {
     } else {
       // Content row with link
       const title = a.text().trim().replace(/\s+/g, ' ') || text;
-      let link = a.attr('href') || '';
-      if (link && !link.startsWith('http')) {
-        link = new URL(link, url).toString();
-      }
+      const link = resolveUrlSafe(a.attr('href') || '', url);
 
       if (title && title.length > 5) {
         items.push({
@@ -203,10 +256,11 @@ export async function scrapeRbiNotifications(sourceConfig) {
           notificationNo: '',
           openingDate: currentDate || '',
           closingDate: '',
-          examDate: 'Announced Soon',
-          qualification: 'Graduation with min 60% marks (Grade B) / Any Degree (Assistant) / As per post',
-          ageLimit: '21 - 30 Years',
-          applicationFee: '₹850 (SC/ST ₹100)',
+          examDate: 'To Be Announced',
+          qualification: 'Refer Official Notification',
+          ageLimit: 'Refer Official Notification',
+          applicationFee: 'Refer Official Notification',
+          vacancies: 'Not Specified',
           detailsLink: link || url,
           applyLink: link || url,
           source: 'Official RBI Portal',

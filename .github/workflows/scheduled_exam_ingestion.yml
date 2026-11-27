@@ -4,7 +4,23 @@ on:
   schedule:
     # Runs every 4 hours daily (04:00, 08:00, 12:00, 16:00, 20:00, 00:00 UTC)
     - cron: '0 */4 * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab (strictly dry-run enforced)
+    inputs:
+      dryRun:
+        description: 'Run strictly read-only dry-run (0 MongoDB writes). Must remain true on manual dispatch.'
+        required: false
+        type: boolean
+        default: true
+      sourceKey:
+        description: 'Optional enabled sourceKey filter (e.g. tnpsc, upsc_active, ssc_notices). Leave blank for all enabled sources.'
+        required: false
+        type: string
+        default: ''
+
+# Concurrency Guard: Strictly prevents duplicate concurrent workflow executions
+concurrency:
+  group: scheduled-exam-ingestion
+  cancel-in-progress: false
 
 jobs:
   ingest-exam-notifications:
@@ -13,36 +29,271 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Trigger Ingestion API Endpoint
+      - name: Trigger Decoupled Ingestion & Run Worker Batches
         env:
-          INGESTION_SECRET: ${{ secrets.INGESTION_SECRET_KEY || secrets.INGESTION_SECRET }}
+          # Strictly isolated secrets by ref (never fall back to production secret on non-main/staging refs)
+          PROD_INGESTION_SECRET: ${{ github.ref == 'refs/heads/main' && (secrets.INGESTION_SECRET_KEY || secrets.INGESTION_SECRET) || '' }}
+          STAGING_INGESTION_SECRET: ${{ github.ref != 'refs/heads/main' && secrets.STAGING_INGESTION_SECRET_KEY || '' }}
+          PRODUCTION_BASE_URL: "https://akesevai.onrender.com"
+          BASE_URL: ${{ github.ref == 'refs/heads/main' && 'https://akesevai.onrender.com' || vars.STAGING_BASE_URL || '' }}
+          WORKFLOW_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dryRun }}
+          INPUT_SOURCE_KEY: ${{ inputs.sourceKey }}
         run: |
-          echo "Starting AK E-SEVAI All-India Exam Ingestion Job..."
+          echo "================================================================"
+          echo "🚀 Starting AK E-SEVAI Decoupled Queue + Worker Ingestion Job..."
+          echo "================================================================"
 
-          # Fail-closed guard: Refuse execution if INGESTION_SECRET_KEY is not configured
-          if [ -z "$INGESTION_SECRET" ]; then
-            echo "::error::INGESTION_SECRET_KEY is missing or empty in GitHub Secrets. Please ensure INGESTION_SECRET_KEY is defined in Repository Settings -> Secrets and variables -> Actions. Request aborted."
+          # 0. Strict Staging-vs-Production BASE_URL Validation & Separation Guard (S101-4):
+          # Parse BASE_URL safely, strip trailing slashes, normalize hostname case, and refuse malformed or production-targeting staging URLs.
+          NORMALIZED_BASE_URL=$(BASE_URL="$BASE_URL" PRODUCTION_BASE_URL="$PRODUCTION_BASE_URL" WORKFLOW_REF="$WORKFLOW_REF" node -e '
+            const rawBase = String(process.env.BASE_URL || "").trim();
+            const rawProd = String(process.env.PRODUCTION_BASE_URL || "").trim();
+            const ref = String(process.env.WORKFLOW_REF || "").trim();
+            if (!rawBase) {
+              console.error("EMPTY_BASE_URL");
+              process.exit(2);
+            }
+            let parsedBase;
+            let parsedProd;
+            try {
+              parsedBase = new URL(rawBase);
+              parsedProd = new URL(rawProd);
+            } catch {
+              console.error("INVALID_BASE_URL");
+              process.exit(3);
+            }
+            if (parsedBase.protocol !== "https:" || !parsedBase.hostname || parsedBase.username || parsedBase.password || parsedBase.search || parsedBase.hash) {
+              console.error("INVALID_BASE_URL_SCHEME_OR_HOST");
+              process.exit(4);
+            }
+            const normBaseHost = parsedBase.hostname.toLowerCase().replace(/\.+$/, "");
+            const normProdHost = parsedProd.hostname.toLowerCase().replace(/\.+$/, "");
+            const cleanPath = (parsedBase.pathname || "").replace(/\/+$/, "");
+            const normalizedUrl = `${parsedBase.protocol}//${normBaseHost}${parsedBase.port ? ":" + parsedBase.port : ""}${cleanPath}`;
+            if (ref !== "refs/heads/main" && normBaseHost === normProdHost) {
+              console.error("STAGING_TARGETS_PRODUCTION");
+              process.exit(5);
+            }
+            process.stdout.write(normalizedUrl);
+          ') || {
+            echo "::error::STAGING_WORKFLOW_BLOCKED: Ref '$WORKFLOW_REF' received an invalid, non-HTTPS, missing, or production-targeting BASE_URL. Non-main runs must configure a valid non-production HTTPS vars.STAGING_BASE_URL."
+            exit 1
+          }
+          BASE_URL="$NORMALIZED_BASE_URL"
+
+          # 0B. Fail-Closed Manual Dispatch Safety Guard:
+          # Manual workflow_dispatch runs MUST strictly remain dry-run only; scheduled cron behavior is untouched.
+          DRY_RUN_MODE="false"
+          SOURCE_QUERY=""
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            NORMALIZED_DRY_RUN=$(printf '%s' "$INPUT_DRY_RUN" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+            if [ -z "$NORMALIZED_DRY_RUN" ]; then
+              NORMALIZED_DRY_RUN="true"
+            fi
+            if [ "$NORMALIZED_DRY_RUN" != "true" ]; then
+              echo "::error::MANUAL_DISPATCH_LIVE_BLOCKED: Live ingestion without dryRun=true is prohibited on manual workflow_dispatch (received dryRun='$INPUT_DRY_RUN')."
+              exit 1
+            fi
+            DRY_RUN_MODE="true"
+
+            TRIMMED_SOURCE_KEY=$(printf '%s' "$INPUT_SOURCE_KEY" | tr -d '[:space:]')
+            if [ -n "$TRIMMED_SOURCE_KEY" ]; then
+              if ! printf '%s' "$TRIMMED_SOURCE_KEY" | grep -Eq '^[a-z0-9_]+$'; then
+                echo "::error::INVALID_SOURCE_KEY: Optional sourceKey must match ^[a-z0-9_]+$ (received '$TRIMMED_SOURCE_KEY')."
+                exit 1
+              fi
+              SOURCE_QUERY="&sourceKey=$TRIMMED_SOURCE_KEY"
+            fi
+          fi
+
+          # 1. Fail-closed environment-isolated secret resolution (NEVER log secret values; NEVER fall back across environments)
+          if [ "$WORKFLOW_REF" = "refs/heads/main" ]; then
+            TARGET_ENV="production"
+            EXPECTED_SECRET_LABEL="INGESTION_SECRET_KEY (or INGESTION_SECRET)"
+            ACTIVE_INGESTION_SECRET="$PROD_INGESTION_SECRET"
+            if [ -n "$STAGING_INGESTION_SECRET" ]; then
+              echo "::error::SECRET_ISOLATION_VIOLATION: Staging secret unexpectedly present for production ref '$WORKFLOW_REF'. Request aborted."
+              exit 1
+            fi
+          else
+            TARGET_ENV="staging"
+            EXPECTED_SECRET_LABEL="STAGING_INGESTION_SECRET_KEY"
+            ACTIVE_INGESTION_SECRET="$STAGING_INGESTION_SECRET"
+            if [ -n "$PROD_INGESTION_SECRET" ]; then
+              echo "::error::SECRET_ISOLATION_VIOLATION: Production secret unexpectedly present for non-main ref '$WORKFLOW_REF'. Request aborted."
+              exit 1
+            fi
+          fi
+
+          unset PROD_INGESTION_SECRET STAGING_INGESTION_SECRET
+
+          if [ -z "$ACTIVE_INGESTION_SECRET" ]; then
+            if [ "$TARGET_ENV" = "staging" ]; then
+              echo "::error::STAGING_SECRET_MISSING: STAGING_INGESTION_SECRET_KEY is missing or empty in GitHub Secrets for non-main ref '$WORKFLOW_REF'. Production secrets cannot be used as staging fallback. Request aborted."
+            else
+              echo "::error::PRODUCTION_SECRET_MISSING: INGESTION_SECRET_KEY (or INGESTION_SECRET) is missing or empty in GitHub Secrets for 'refs/heads/main'. Request aborted."
+            fi
             exit 1
           fi
 
-          # Curl with connection timeout (15s), maximum execution time (180s), and controlled retries for cold-boot/network blips
-          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST \
-            "https://akesevai.onrender.com/api/notifications/ingest-job" \
-            --connect-timeout 15 \
-            --max-time 180 \
+          # 2. STEP 1: Enqueue Job Idempotently (or Validate Dry-Run Simulation when workflow_dispatch)
+          if [ "$DRY_RUN_MODE" = "true" ]; then
+            ENQUEUE_URL="$BASE_URL/api/notifications/ingest-job?enqueueOnly=true&dryRun=true${SOURCE_QUERY}"
+            echo "🧪 [Stage 1/2]: Validating strictly read-only dry-run enqueue on backend..."
+          else
+            ENQUEUE_URL="$BASE_URL/api/notifications/ingest-job?enqueueOnly=true"
+            echo "📥 [Stage 1/2]: Enqueueing durable ingestion job on backend..."
+          fi
+          ENQUEUE_HTTP_STATUS=$(curl -s -o enqueue_response.json -w "%{http_code}" -X POST \
+            "$ENQUEUE_URL" \
+            --connect-timeout 20 \
+            --max-time 60 \
             --retry 3 \
             --retry-delay 10 \
             --retry-connrefused \
             -H "Content-Type: application/json" \
-            -H "x-ingestion-secret: $INGESTION_SECRET")
+            -H "x-ingestion-secret: $ACTIVE_INGESTION_SECRET")
 
-          echo "Server responded with HTTP status: $HTTP_STATUS"
-          # Display response body safely (sanitized JSON without printing request headers)
-          cat response.json || true
+          echo "Enqueue HTTP Status: $ENQUEUE_HTTP_STATUS"
+          cat enqueue_response.json || true
           echo ""
 
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "::error::Ingestion failed with HTTP status $HTTP_STATUS"
+          # Handle Stage 1 response codes
+          if [ "$ENQUEUE_HTTP_STATUS" -eq 200 ] || [ "$ENQUEUE_HTTP_STATUS" -eq 202 ]; then
+            if [ "$DRY_RUN_MODE" = "true" ]; then
+              ENQUEUE_DRY_VERIFIED=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('enqueue_response.json', 'utf8')); console.log(d.dryRun === true && d.persisted === false ? 'ok' : 'bad'); } catch(e) { console.log('bad'); }")
+              if [ "$ENQUEUE_DRY_VERIFIED" != "ok" ]; then
+                echo "::error::DRY_RUN_PROTOCOL_VIOLATION: Backend did not confirm dryRun=true and persisted=false during Stage 1."
+                exit 1
+              fi
+              echo "✅ Dry-run enqueue verified read-only (0 database records created)."
+            else
+              echo "✅ Ingestion job enqueued or coalesced into existing active job."
+            fi
+          elif [ "$ENQUEUE_HTTP_STATUS" -eq 409 ]; then
+            ENQUEUE_CODE=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('enqueue_response.json', 'utf8')); console.log(d.code || d.error || ''); } catch(e) { console.log(''); }")
+            if [ "$ENQUEUE_CODE" = "INGESTION_IN_PROGRESS" ]; then
+              echo "ℹ️ Ingestion job already actively running with lock held. Proceeding to consumer loop..."
+            else
+              echo "::error::Job enqueue encountered non-resumable conflict: $ENQUEUE_CODE"
+              exit 1
+            fi
+          elif [ "$ENQUEUE_HTTP_STATUS" -eq 401 ] || [ "$ENQUEUE_HTTP_STATUS" -eq 403 ]; then
+            echo "::error::Authentication failed during enqueue (HTTP $ENQUEUE_HTTP_STATUS). Please verify $EXPECTED_SECRET_LABEL secret."
+            exit 1
+          elif [ "$ENQUEUE_HTTP_STATUS" -eq 404 ]; then
+            echo "::error::Ingestion endpoint not found (HTTP 404). Check BASE_URL and routing."
+            exit 1
+          else
+            echo "::error::Job enqueue failed with HTTP status $ENQUEUE_HTTP_STATUS"
             exit 1
           fi
-          echo "✅ All-India Exam Notifications Ingestion Succeeded!"
+
+          # 3. STEP 2: Worker Batch Consumer Loop (Bounded batches of 3 sources each)
+          # Compliant with Render Free-tier 100s proxy timeout & Cloudflare limits
+          echo "⚙️ [Stage 2/2]: Starting consumer worker batch execution loop..."
+          MAX_BATCH_ITERATIONS=10
+          JOB_FINISHED=false
+          CONSECUTIVE_LOCK_WAIT_COUNT=0
+          DRY_RUN_OFFSET=0
+          DRY_RUN_ANY_SUCCEEDED=false
+
+          for i in $(seq 1 $MAX_BATCH_ITERATIONS); do
+            echo "--- Worker Batch $i of $MAX_BATCH_ITERATIONS (max 3 sources per tick, dryRun=$DRY_RUN_MODE) ---"
+
+            if [ "$DRY_RUN_MODE" = "true" ]; then
+              WORKER_URL="$BASE_URL/api/notifications/worker-tick?maxSources=3&dryRun=true&offset=${DRY_RUN_OFFSET}${SOURCE_QUERY}"
+            else
+              WORKER_URL="$BASE_URL/api/notifications/worker-tick?maxSources=3"
+            fi
+
+            WORKER_HTTP_STATUS=$(curl -s -o worker_response.json -w "%{http_code}" -X POST \
+              "$WORKER_URL" \
+              --connect-timeout 20 \
+              --max-time 90 \
+              -H "Content-Type: application/json" \
+              -H "x-ingestion-secret: $ACTIVE_INGESTION_SECRET")
+
+            echo "Worker HTTP Status: $WORKER_HTTP_STATUS"
+            cat worker_response.json || true
+            echo ""
+
+            # Check if HTTP 409 Conflict
+            if [ "$WORKER_HTTP_STATUS" -eq 409 ]; then
+              WORKER_CODE=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('worker_response.json', 'utf8')); console.log(d.code || d.error || ''); } catch(e) { console.log(''); }")
+              if [ "$WORKER_CODE" = "INGESTION_IN_PROGRESS" ]; then
+                CONSECUTIVE_LOCK_WAIT_COUNT=$((CONSECUTIVE_LOCK_WAIT_COUNT + 1))
+                echo "⚠️ Distributed lock is currently held by active worker (code: INGESTION_IN_PROGRESS). Sleeping 10s before retry..."
+                sleep 10
+                continue
+              else
+                echo "::error::Worker batch $i encountered non-resumable conflict: $WORKER_CODE"
+                exit 1
+              fi
+            fi
+
+            # Check authentication / client / server errors
+            if [ "$WORKER_HTTP_STATUS" -eq 401 ] || [ "$WORKER_HTTP_STATUS" -eq 403 ]; then
+              echo "::error::Worker authentication failed with HTTP $WORKER_HTTP_STATUS. Please verify $EXPECTED_SECRET_LABEL secret."
+              exit 1
+            elif [ "$WORKER_HTTP_STATUS" -eq 404 ]; then
+              echo "::error::Worker endpoint not found (HTTP 404). Check BASE_URL and routing."
+              exit 1
+            elif [ "$WORKER_HTTP_STATUS" -ne 200 ]; then
+              echo "::error::Worker batch $i failed with HTTP status $WORKER_HTTP_STATUS"
+              exit 1
+            fi
+
+            # Reset consecutive lock wait count on successful 200 response
+            CONSECUTIVE_LOCK_WAIT_COUNT=0
+
+            if [ "$DRY_RUN_MODE" = "true" ]; then
+              WORKER_DRY_META=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('worker_response.json', 'utf8')); if (d.dryRun !== true || d.persisted !== false) { console.log('VIOLATION'); } else { console.log([d.status || '', d.nextOffset ?? 0, d.summary?.sourcesSucceeded ?? 0, d.isCompleted ? 'true' : 'false'].join('|')); } } catch(e) { console.log('VIOLATION'); }")
+              if [ "$WORKER_DRY_META" = "VIOLATION" ]; then
+                echo "::error::DRY_RUN_PROTOCOL_VIOLATION: Backend did not confirm dryRun=true and persisted=false on worker batch $i."
+                exit 1
+              fi
+              IFS='|' read -r STATUS NEXT_OFFSET BATCH_SUCCEEDED BATCH_COMPLETED <<< "$WORKER_DRY_META"
+              DRY_RUN_OFFSET="$NEXT_OFFSET"
+              if [ "${BATCH_SUCCEEDED:-0}" -gt 0 ]; then
+                DRY_RUN_ANY_SUCCEEDED=true
+              fi
+            else
+              # Check status from JSON response
+              STATUS=$(node -e "try { const d = JSON.parse(require('fs').readFileSync('worker_response.json', 'utf8')); console.log(d.status || ''); } catch(e) { console.log(''); }")
+            fi
+            echo "Current Job Status: $STATUS"
+
+            if [ "$STATUS" = "completed" ] || [ "$STATUS" = "completed_with_errors" ]; then
+              echo "🎉 Ingestion Job successfully completed all queued sources!"
+              JOB_FINISHED=true
+              break
+            elif [ "$STATUS" = "idle" ]; then
+              echo "✅ No pending jobs left in queue. Worker is idle."
+              JOB_FINISHED=true
+              break
+            elif [ "$STATUS" = "failed" ]; then
+              if [ "$DRY_RUN_MODE" = "true" ] && [ "$DRY_RUN_ANY_SUCCEEDED" = "true" ] && [ "${BATCH_COMPLETED:-false}" = "true" ]; then
+                echo "⚠️ Final dry-run tail batch failed while earlier batches succeeded; treating overall dry-run as completed_with_errors."
+                JOB_FINISHED=true
+                break
+              fi
+              echo "::error::Ingestion job terminated in FAILED status."
+              exit 1
+            else
+              echo "⏳ Ingestion job in-progress. Sleeping 4 seconds before next bounded batch..."
+              sleep 4
+            fi
+          done
+
+          if [ "$JOB_FINISHED" = "true" ]; then
+            echo "✅ Automated All-India Exam Notifications Ingestion Succeeded!"
+          elif [ "$CONSECUTIVE_LOCK_WAIT_COUNT" -eq "$MAX_BATCH_ITERATIONS" ]; then
+            echo "::error::Distributed lock remained held across all $MAX_BATCH_ITERATIONS worker ticks without job completion (CONSECUTIVE_LOCK_WAIT_COUNT=$CONSECUTIVE_LOCK_WAIT_COUNT)."
+            exit 1
+          else
+            echo "::error::Ingestion incomplete after $MAX_BATCH_ITERATIONS batches. Pending sources remain unfinished."
+            exit 1
+          fi
