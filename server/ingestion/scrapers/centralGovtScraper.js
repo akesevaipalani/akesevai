@@ -1,16 +1,58 @@
 // server/ingestion/scrapers/centralGovtScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
 import { toKolkataIsoDate } from '../../../src/utils/notificationDateHelper.js';
 
-function resolveUrlSafe(href, baseUrl) {
-  if (!href) return '';
-  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
+
+export function resolveUrlSafe(href, baseUrl) {
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
   try {
-    return new URL(href, baseUrl).toString();
+    parsed = new URL(trimmed, baseUrl);
   } catch {
     return '';
   }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
 }
 
 /**
@@ -19,7 +61,7 @@ function resolveUrlSafe(href, baseUrl) {
  */
 export async function scrapeUpscNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url || 'https://upsc.gov.in/active-examinations';
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'upsc_active'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -119,7 +161,7 @@ export async function scrapeUpscNotifications(sourceConfig, options = {}) {
  */
 export async function scrapeSscNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'ssc_notices'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -138,7 +180,7 @@ export async function scrapeSscNotifications(sourceConfig, options = {}) {
         const cleanPath = notice.attachments[0].path.replace(/\\/g, '/');
         detailsLink = `https://ssc.gov.in/api/attachment/${cleanPath}`;
       } else if (notice.redirectUrl) {
-        detailsLink = notice.redirectUrl;
+        detailsLink = resolveUrlSafe(notice.redirectUrl, 'https://ssc.gov.in/') || 'https://ssc.gov.in/notices';
       }
 
       // Project UTC/offset timestamp cleanly into Asia/Kolkata calendar date
@@ -156,7 +198,7 @@ export async function scrapeSscNotifications(sourceConfig, options = {}) {
         organization: 'Staff Selection Commission (SSC Central)',
         service: headline,
         postName: headline,
-        notificationNo: notice.id || '',
+        notificationNo: notice.id !== undefined && notice.id !== null ? String(notice.id).trim() : '',
         openingDate: startIso || publishedDate || '',
         closingDate: endIso || '',
         examDate: 'To Be Announced',
@@ -185,7 +227,7 @@ export async function scrapeSscNotifications(sourceConfig, options = {}) {
  */
 export async function scrapeRrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'rrb_chennai'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -220,15 +262,8 @@ export async function scrapeRrbNotifications(sourceConfig, options = {}) {
       const dateMatch = rawText.match(/\((\d{2}-\d{2}-\d{4})\)/);
       const notifDate = dateMatch ? dateMatch[1] : '';
 
-      let absLink;
-      try {
-        absLink = new URL(href.trim(), 'https://rrbchennai.gov.in/').toString();
-      } catch {
-        const trimmedHref = href.trim();
-        absLink = trimmedHref.startsWith('http')
-          ? trimmedHref.replace(/\s+/g, '%20')
-          : `https://rrbchennai.gov.in${trimmedHref.startsWith('/') ? '' : '/'}${trimmedHref}`.replace(/\s+/g, '%20');
-      }
+      const absLink = resolveUrlSafe(href, 'https://rrbchennai.gov.in/');
+      if (!absLink) return;
 
       items.push({
         sourceKey: 'rrb_chennai',
@@ -260,7 +295,7 @@ export async function scrapeRrbNotifications(sourceConfig, options = {}) {
  */
 export async function scrapeIndiaPostNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'india_post_gds'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -272,7 +307,8 @@ export async function scrapeIndiaPostNotifications(sourceConfig, options = {}) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href === '#' || href === 'javascript:void(0)' || seenHrefs.has(href)) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || seenHrefs.has(href)) return;
 
     const lower = text.toLowerCase();
     if (
@@ -282,7 +318,6 @@ export async function scrapeIndiaPostNotifications(sourceConfig, options = {}) {
       lower.includes('special drive')
     ) {
       seenHrefs.add(href);
-      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'india_post_gds',
         category: 'psu',

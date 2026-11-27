@@ -1,6 +1,28 @@
 // server/ingestion/scrapers/tnStateScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
+
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
 
 /**
  * Classifies TNPSC Recruitment Group / Service category
@@ -32,13 +54,33 @@ export function classifyTnpscGroup(serviceTitle = '') {
 }
 
 function resolveUrlSafe(href, baseUrl) {
-  if (!href || href === '#' || href.startsWith('javascript:')) return '';
-  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
   try {
-    return new URL(href, baseUrl).toString();
+    parsed = new URL(trimmed, baseUrl);
   } catch {
     return '';
   }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
 }
 
 function extractPdfLink($, row, baseUrl) {
@@ -76,7 +118,7 @@ function extractExamDateFromCols(cols, serviceText) {
  */
 export async function scrapeTnpscNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url || 'https://www.tnpsc.gov.in/English/Notification.aspx';
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'tnpsc'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -168,7 +210,7 @@ export async function scrapeTnpscNotifications(sourceConfig, options = {}) {
  */
 export async function scrapeTnusrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'tnusrb'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -179,18 +221,16 @@ export async function scrapeTnusrbNotifications(sourceConfig, options = {}) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href');
+    const absLink = resolveUrlSafe(href, url);
     if (
-      href &&
+      absLink &&
       text &&
-      href !== '#' &&
-      !href.startsWith('javascript:') &&
       (text.toLowerCase().includes('joint recruitment') ||
         text.toLowerCase().includes('common recruitment') ||
         text.toLowerCase().includes('sub-inspector') ||
         text.toLowerCase().includes('constable') ||
         text.toLowerCase().includes('police recruitment'))
     ) {
-      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'tnusrb',
         category: 'police_defence',
@@ -221,7 +261,7 @@ export async function scrapeTnusrbNotifications(sourceConfig, options = {}) {
  */
 export async function scrapeTrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'trb_tn'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -274,7 +314,7 @@ export async function scrapeTrbNotifications(sourceConfig, options = {}) {
  */
 export async function scrapeMrbNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'mrb_tn'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }

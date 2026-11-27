@@ -1,19 +1,61 @@
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
+
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
 
 function resolveUrlSafe(href, baseUrl) {
-  if (!href || href === '#' || href.startsWith('javascript:')) return '';
-  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
   try {
-    return new URL(href, baseUrl).toString();
+    parsed = new URL(trimmed, baseUrl);
   } catch {
     return '';
   }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
 }
 
 export async function scrapeIbpsNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'ibps'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -45,8 +87,9 @@ export async function scrapeIbpsNotifications(sourceConfig, options = {}) {
       lower.includes('candidature cancelled');
 
     if (isRecruitment && !isPastResult && !seenTitles.has(text)) {
+      const absLink = resolveUrlSafe(href, url);
+      if (!absLink) return;
       seenTitles.add(text);
-      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'ibps',
         category: 'banking',
@@ -74,7 +117,7 @@ export async function scrapeIbpsNotifications(sourceConfig, options = {}) {
 
 export async function scrapeSbiNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'sbi_careers'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -175,7 +218,7 @@ export async function scrapeSbiNotifications(sourceConfig, options = {}) {
 
 export async function scrapeRbiNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'rbi_vacancies'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }

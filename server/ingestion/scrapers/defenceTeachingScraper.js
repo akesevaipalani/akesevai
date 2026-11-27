@@ -1,15 +1,57 @@
 // server/ingestion/scrapers/defenceTeachingScraper.js
 import * as cheerio from 'cheerio';
 import { safeFetchHtml } from '../fetchHelper.js';
+import { EXPLICIT_SOURCE_DOMAIN_MAP } from '../officialDomainPolicy.js';
+
+function withSourceKey(sourceConfig, options = {}, fallbackKey = '') {
+  const canonicalFallback = String(fallbackKey || '').trim();
+  const configKey = String(sourceConfig?.key || '').trim();
+  const callerKey = String(options?.sourceKey || '').trim();
+  const isRegistered = (key) => Boolean(key && Object.prototype.hasOwnProperty.call(EXPLICIT_SOURCE_DOMAIN_MAP, key));
+
+  let resolvedKey = '';
+  if (isRegistered(canonicalFallback)) {
+    resolvedKey = canonicalFallback;
+  } else if (isRegistered(configKey)) {
+    resolvedKey = configKey;
+  } else {
+    resolvedKey = configKey || canonicalFallback || callerKey || '__INVALID_SOURCE_KEY__';
+  }
+
+  return {
+    ...options,
+    sourceKey: resolvedKey
+  };
+}
 
 function resolveUrlSafe(href, baseUrl) {
-  if (!href || href === '#' || href.startsWith('javascript:')) return '';
-  if (href.startsWith('http://') || href.startsWith('https://')) return href;
+  if (typeof href !== 'string') return '';
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === '#' || trimmed.startsWith('#')) {
+    return '';
+  }
+  if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
+    return '';
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('\\')) {
+    return '';
+  }
+  if (/^(javascript|vbscript|data|file|mailto|tel|blob):/i.test(trimmed)) {
+    return '';
+  }
+  let parsed;
   try {
-    return new URL(href, baseUrl).toString();
+    parsed = new URL(trimmed, baseUrl);
   } catch {
     return '';
   }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    return '';
+  }
+  if (!parsed.hostname) {
+    return '';
+  }
+  return parsed.toString();
 }
 
 /**
@@ -17,7 +59,7 @@ function resolveUrlSafe(href, baseUrl) {
  */
 export async function scrapeIndianArmyNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'indian_army'));
   if (!res.ok) {
     return {
       success: false,
@@ -59,7 +101,8 @@ export async function scrapeIndianArmyNotifications(sourceConfig, options = {}) 
       lower.includes('soldier') ||
       lower.includes('recruitment')
     ) {
-      const absLink = resolveUrlSafe(href, url) || url;
+      const absLink = resolveUrlSafe(href, url);
+      if (!absLink) return;
       items.push({
         sourceKey: 'indian_army',
         category: 'police_defence',
@@ -90,7 +133,7 @@ export async function scrapeIndianArmyNotifications(sourceConfig, options = {}) 
  */
 export async function scrapeIndianNavyNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'indian_navy'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -102,7 +145,8 @@ export async function scrapeIndianNavyNotifications(sourceConfig, options = {}) 
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href === '#' || href.startsWith('javascript') || text.length < 10) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || text.length < 10) return;
 
     const lower = text.toLowerCase();
     const isNavyRecruit =
@@ -116,7 +160,6 @@ export async function scrapeIndianNavyNotifications(sourceConfig, options = {}) 
 
     if (isNavyRecruit && !seenHeadings.has(text)) {
       seenHeadings.add(text);
-      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'indian_navy',
         category: 'police_defence',
@@ -147,7 +190,7 @@ export async function scrapeIndianNavyNotifications(sourceConfig, options = {}) 
  */
 export async function scrapeIndianAirforceNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'indian_airforce'));
   if (!res.ok) {
     return {
       success: false,
@@ -171,7 +214,8 @@ export async function scrapeIndianAirforceNotifications(sourceConfig, options = 
         text.toLowerCase().includes('recruitment') ||
         text.toLowerCase().includes('notification'))
     ) {
-      const absLink = resolveUrlSafe(href, url) || url;
+      const absLink = resolveUrlSafe(href, url);
+      if (!absLink) return;
       items.push({
         sourceKey: 'indian_airforce',
         category: 'police_defence',
@@ -202,7 +246,7 @@ export async function scrapeIndianAirforceNotifications(sourceConfig, options = 
  */
 export async function scrapeCtetNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'ctet_cbse'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }
@@ -214,7 +258,8 @@ export async function scrapeCtetNotifications(sourceConfig, options = {}) {
   $('a').each((_, a) => {
     const text = $(a).text().trim().replace(/\s+/g, ' ');
     const href = $(a).attr('href') || '';
-    if (!href || href.startsWith('#') || href.startsWith('javascript') || text.length < 6) return;
+    const absLink = resolveUrlSafe(href, url);
+    if (!absLink || text.length < 6) return;
 
     const lower = text.toLowerCase();
     if (
@@ -227,7 +272,6 @@ export async function scrapeCtetNotifications(sourceConfig, options = {}) {
       if (seenTitles.has(text)) return;
       seenTitles.add(text);
 
-      const absLink = resolveUrlSafe(href, url) || url;
       items.push({
         sourceKey: 'ctet_cbse',
         category: 'teaching',
@@ -258,7 +302,7 @@ export async function scrapeCtetNotifications(sourceConfig, options = {}) {
  */
 export async function scrapeKvsNotifications(sourceConfig, options = {}) {
   const url = sourceConfig.url;
-  const res = await safeFetchHtml(url, options);
+  const res = await safeFetchHtml(url, withSourceKey(sourceConfig, options, 'kvs_delhi'));
   if (!res.ok) {
     return { success: false, source: sourceConfig.key, error: res.error, items: [] };
   }

@@ -75,7 +75,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     homepage: 'https://opportunities.rbi.org.in/',
     enabled: true,
     parserType: 'html_table',
-    expectedFields: ['service', 'closingDate', 'detailsLink']
+    expectedFields: ['service', 'openingDate', 'detailsLink']
   },
 
   // --- 3. RAILWAY RECRUITMENT ---
@@ -86,7 +86,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     url: 'https://rrbchennai.gov.in/',
     homepage: 'https://rrbchennai.gov.in/',
     enabled: true,
-    parserType: 'html_table',
+    parserType: 'html_links',
     expectedFields: ['notificationNo', 'service', 'detailsLink']
   },
 
@@ -109,7 +109,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     homepage: 'https://ssc.gov.in/',
     enabled: true,
     parserType: 'rest_api_json',
-    expectedFields: ['service', 'detailsLink', 'publishedDate']
+    expectedFields: ['service', 'detailsLink', 'sourcePublishedAt']
   },
   {
     key: 'india_post_gds',
@@ -129,7 +129,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     name: 'Join Indian Army (Govt of India)',
     url: 'https://joinindianarmy.nic.in/',
     homepage: 'https://joinindianarmy.nic.in/',
-    enabled: true,
+    enabled: false,
     parserType: 'html_links',
     expectedFields: ['service', 'detailsLink'],
     requiresCaptcha: true
@@ -174,7 +174,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     homepage: 'https://kvs.gov.in/',
     enabled: true,
     parserType: 'html_table',
-    expectedFields: ['notificationNo', 'service', 'publishedDate', 'detailsLink']
+    expectedFields: ['service', 'openingDate', 'detailsLink']
   },
 
   // --- 7. INSURANCE CORPORATIONS ---
@@ -207,7 +207,7 @@ export const OFFICIAL_EXAM_SOURCES = [
     url: 'https://bel-india.in/job-notifications/',
     homepage: 'https://bel-india.in/',
     enabled: true,
-    parserType: 'html_links',
+    parserType: 'html_cards',
     expectedFields: ['service', 'detailsLink']
   },
   {

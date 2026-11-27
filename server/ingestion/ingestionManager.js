@@ -59,7 +59,6 @@ const SCRAPER_MAP = {
   upsc_active: scrapeUpscNotifications,
   ssc_notices: scrapeSscNotifications,
   rrb_chennai: scrapeRrbNotifications,
-  rrb_central: scrapeRrbNotifications,
   india_post_gds: scrapeIndiaPostNotifications,
   indian_army: scrapeIndianArmyNotifications,
   indian_navy: scrapeIndianNavyNotifications,
@@ -120,6 +119,34 @@ function emptySourceStats() {
     duplicatesSkipped: 0,
     rejectedSkipped: 0
   };
+}
+
+function isPlaceholderPostsValue(val) {
+  const norm = String(val ?? '').trim().toLowerCase();
+  return !norm || norm === 'not specified' || norm === 'multiple posts';
+}
+
+/**
+ * Normalizes scraped `vacancies` into the Mongoose `notificationSchema.posts` field
+ * without discarding or overwriting an existing valid `posts` value.
+ */
+export function normalizeNotificationPosts(item = {}) {
+  const existingPosts = String(item?.posts ?? '').trim();
+  const rawVacancies = String(item?.vacancies ?? '').trim();
+
+  if (!isPlaceholderPostsValue(existingPosts)) {
+    return existingPosts;
+  }
+  if (!isPlaceholderPostsValue(rawVacancies)) {
+    return rawVacancies;
+  }
+  if (existingPosts) {
+    return existingPosts;
+  }
+  if (rawVacancies) {
+    return rawVacancies;
+  }
+  return 'Not Specified';
 }
 
 /**
@@ -549,8 +576,49 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       };
     }
 
-    const allMatchingSources = options.sourceKey
-      ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === options.sourceKey)
+    const hasExplicitSourceKey = options.sourceKey !== undefined && options.sourceKey !== null && options.sourceKey !== '';
+    const requestedSourceKey = hasExplicitSourceKey ? String(options.sourceKey).trim() : '';
+    if (hasExplicitSourceKey) {
+      const matchedSource = requestedSourceKey
+        ? OFFICIAL_EXAM_SOURCES.find((s) => s.key === requestedSourceKey)
+        : null;
+      if (!matchedSource || matchedSource.enabled === false) {
+        const rejectReason = !requestedSourceKey
+          ? 'sourceKey cannot be empty or whitespace when explicitly provided'
+          : (!matchedSource
+            ? `Unknown sourceKey '${requestedSourceKey}'`
+            : `Source '${requestedSourceKey}' is disabled and cannot be executed`);
+        return {
+          runId,
+          fencingToken,
+          dryRun: isStrictReadOnlyDryRun,
+          readOnly: isStrictReadOnlyDryRun,
+          persisted: false,
+          status: 'rejected',
+          error: 'SOURCE_DISABLED_OR_UNKNOWN',
+          startedAt: runStartedIso,
+          completedAt: getNow().toISOString(),
+          durationMs: 0,
+          sourcesQueued: 0,
+          sourcesRemaining: 0,
+          sourcesAttempted: 0,
+          sourcesSucceeded: 0,
+          sourcesFailed: 0,
+          newRecordsInserted: 0,
+          autoPublishedCount: 0,
+          pendingReviewCount: 0,
+          quarantinedCount: 0,
+          corrigendaUpdatedCount: 0,
+          duplicatesSkipped: 0,
+          rejectedSkipped: 0,
+          errors: [rejectReason],
+          sourceResults: {}
+        };
+      }
+    }
+
+    const allMatchingSources = requestedSourceKey
+      ? OFFICIAL_EXAM_SOURCES.filter((s) => s.key === requestedSourceKey && s.enabled !== false)
       : OFFICIAL_EXAM_SOURCES.filter((s) => s.enabled);
     const totalSourcesMatching = allMatchingSources.length;
     const rawOffset = Number(options.sourceOffset);
@@ -778,7 +846,12 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
       }
 
       try {
-        const scrapeResult = await scraperFn(source, { dnsLookup: options.dnsLookup, allowHttpForLocalMock: options.allowHttpForLocalMock });
+        const scrapeResult = await scraperFn(source, {
+          sourceKey: source.key,
+          dnsLookup: options.dnsLookup,
+          allowHttpForLocalMock: options.allowHttpForLocalMock,
+          skipRateLimit: Boolean(options.skipRateLimit)
+        });
 
         if (!scrapeResult || !scrapeResult.success) {
           const failStatus = classifyFailureStatus(scrapeResult);
@@ -829,7 +902,11 @@ export async function runAllIngestionJobs(NotificationModel, options = {}) {
             throw err;
           }
 
-          const item = { ...rawItem, sourceKey: rawItem.sourceKey || source.key };
+          const item = {
+            ...rawItem,
+            sourceKey: rawItem.sourceKey || source.key,
+            posts: normalizeNotificationPosts(rawItem)
+          };
           const fingerprint = generateNotificationFingerprint(item);
           const identityFingerprint = buildIdentityFingerprint(item);
           const contentHash = computeContentHash(item);
