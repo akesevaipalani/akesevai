@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>TRB Tamil Nadu Notifications Fixture</title></head>
+<body>
+  <table id="trb-notifications">
+    <thead>
+      <tr>
+        <th>S.No</th>
+        <th>Notification No.</th>
+        <th>Name of the Post</th>
+        <th>Department</th>
+        <th>Vacancies</th>
+        <th>Notification Date</th>
+        <th>Registration From</th>
+        <th>Registration To</th>
+        <th>Date of Exam</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- 1. Complete valid notification with separate PDF & Apply Online URL -->
+      <tr>
+        <td>1</td>
+        <td>02/2026</td>
+        <td>Direct Recruitment of Post Graduate Assistants / Physical Education Directors Grade-I</td>
+        <td>School Education Department</td>
+        <td>2,207</td>
+        <td>12-11-2026</td>
+        <td>16-11-2026</td>
+        <td>24-12-2026</td>
+        <td>21-02-2027</td>
+        <td>
+          <a href="/uploads/notifications/trb_pg_02_2026.pdf">Notification PDF</a>
+          <a href="/apply_online.php?notif_id=02-2026">Apply Online</a>
+        </td>
+      </tr>
+
+      <!-- 2. Duplicate row -->
+      <tr>
+        <td>1B</td>
+        <td>02/2026</td>
+        <td>Direct Recruitment of Post Graduate Assistants / Physical Education Directors Grade-I</td>
+        <td>School Education Department</td>
+        <td>2,207</td>
+        <td>12-11-2026</td>
+        <td>16-11-2026</td>
+        <td>24-12-2026</td>
+        <td>21-02-2027</td>
+        <td>
+          <a href="/uploads/notifications/trb_pg_02_2026.pdf">Notification PDF</a>
+          <a href="/apply_online.php?notif_id=02-2026">Apply Online</a>
+        </td>
+      </tr>
+
+      <!-- 3. Missing Closing Date, Missing Vacancies (-), Generic Listing Apply URL (must be rejected), Published Date only -->
+      <tr>
+        <td>2</td>
+        <td>03/2026</td>
+        <td>Direct Recruitment of Assistant Professors in Government Arts and Science Colleges</td>
+        <td>Higher Education Department</td>
+        <td>-</td>
+        <td>18-11-2026</td>
+        <td>-</td>
+        <td>-</td>
+        <td>To Be Announced</td>
+        <td>
+          <a href="/uploads/notifications/trb_ap_03_2026.pdf">View Notification PDF</a>
+          <a href="https://trb.tn.gov.in/notification.php?language=LG-1&amp;status=Active">Apply Online</a>
+        </td>
+      </tr>
+
+      <!-- 4. Invalid non-leap year date (29-02-2026) & Zero Vacancies & Generic Root Apply URL -->
+      <tr>
+        <td>3</td>
+        <td>04/2026</td>
+        <td>Direct Recruitment of Secondary Grade Teachers (SGT) 2026</td>
+        <td>Elementary Education Department</td>
+        <td>0</td>
+        <td>20-11-2026</td>
+        <td>22-11-2026</td>
+        <td>29-02-2026</td>
+        <td>15-03-2027</td>
+        <td>
+          <a href="/uploads/notifications/trb_sgt_04_2026.pdf">Notification PDF</a>
+          <a href="https://trb.tn.gov.in/">Apply Online</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>

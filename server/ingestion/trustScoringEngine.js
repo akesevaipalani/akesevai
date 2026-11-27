@@ -121,11 +121,31 @@ export function validateNoticeDates(candidate = {}, noticeType = 'unknown', opti
   const closeDetailed = parseDateDetailed(candidate.closingDate || candidate.applicationEndDate || '');
   const examDetailed = parseDateDetailed(candidate.examDate || '');
 
-  // Check for strictly invalid calendar dates (e.g. 30-02-2026) on any field
+  // Check for strictly invalid calendar dates (e.g. 30-02-2026) on any field, including scraper-rejected invalid dates
   if (pubDetailed.kind === 'invalid_calendar') quarantineReasons.push('INVALID_PUBLICATION_CALENDAR_DATE');
   if (openDetailed.kind === 'invalid_calendar') quarantineReasons.push('INVALID_OPENING_CALENDAR_DATE');
   if (closeDetailed.kind === 'invalid_calendar') quarantineReasons.push('INVALID_CLOSING_CALENDAR_DATE');
   if (examDetailed.kind === 'invalid_calendar') quarantineReasons.push('INVALID_EXAM_CALENDAR_DATE');
+
+  const rejectedDateFields = Array.isArray(candidate.invalidDateFields) ? candidate.invalidDateFields : [];
+  if (rejectedDateFields.includes('sourcePublishedAt') || rejectedDateFields.includes('notificationDate')) {
+    quarantineReasons.push('INVALID_PUBLICATION_CALENDAR_DATE');
+  }
+  if (rejectedDateFields.includes('openingDate')) {
+    quarantineReasons.push('INVALID_OPENING_CALENDAR_DATE');
+  }
+  if (rejectedDateFields.includes('closingDate')) {
+    quarantineReasons.push('INVALID_CLOSING_CALENDAR_DATE');
+  }
+  if (rejectedDateFields.includes('examDate')) {
+    quarantineReasons.push('INVALID_EXAM_CALENDAR_DATE');
+  }
+  if (rejectedDateFields.includes('closingDate_before_openingDate')) {
+    quarantineReasons.push('DATE_CONFLICT_CLOSING_BEFORE_OPENING');
+  }
+  if (rejectedDateFields.includes('examDate_before_openingDate')) {
+    quarantineReasons.push('DATE_CONFLICT_EXAM_BEFORE_OPENING');
+  }
 
   // Strict Future Publication Guard (MUST reject future timestamps/dates)
   let explicitPubValid = false;
@@ -344,10 +364,17 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
     unmetGates.push('SOURCE_NOT_VERIFIED');
   }
 
+  const noticeType = context.noticeType || inferNoticeType(candidate, sourceConfig);
   const noticeUrlCheck = validateExplicitSourceUrl(candidate.detailsLink, sourceKey, 'notice', { allowHttpForLocalMock });
-  const applyUrlCheck = candidate.applyLink
+  const hasApplyLink = Boolean(candidate.applyLink && String(candidate.applyLink).trim());
+  const applyUrlCheck = hasApplyLink
     ? validateExplicitSourceUrl(candidate.applyLink, sourceKey, 'apply', { allowHttpForLocalMock })
     : { valid: true };
+  const isApplyGeneric = hasApplyLink && (
+    isGenericRootHomepage(candidate.applyLink) ||
+    isGenericListingOrDirectoryUrl(candidate.applyLink)
+  );
+  let applyLinkSpecific = true;
 
   if (!noticeUrlCheck.valid) {
     if (noticeUrlCheck.severity === 'quarantine') {
@@ -359,6 +386,7 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
   }
 
   if (!applyUrlCheck.valid) {
+    applyLinkSpecific = false;
     if (applyUrlCheck.reviewOnlyVendor) {
       reviewReasons.push(applyUrlCheck.reason);
       unmetGates.push('THIRD_PARTY_APPLY_HOST_REQUIRES_REVIEW');
@@ -369,6 +397,14 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
       reviewReasons.push(`APPLY_URL_${applyUrlCheck.reason}`);
       unmetGates.push('EXPLICIT_APPLY_HOST_FAILED');
     }
+  } else if (isApplyGeneric) {
+    applyLinkSpecific = false;
+    reviewReasons.push('GENERIC_APPLY_HOMEPAGE');
+    unmetGates.push('SPECIFIC_APPLY_LINK_REQUIRED');
+  } else if (!hasApplyLink && noticeType !== 'result_key') {
+    applyLinkSpecific = false;
+    reviewReasons.push('MISSING_GENUINE_APPLY_URL');
+    unmetGates.push('GENUINE_APPLY_LINK_REQUIRED');
   }
 
   if (noticeUrlCheck.valid && applyUrlCheck.valid) {
@@ -396,7 +432,6 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
   }
 
   // 3. Notice Type & Date Consistency (Feeds Metadata + Freshness)
-  const noticeType = context.noticeType || inferNoticeType(candidate, sourceConfig);
   const dateEval = validateNoticeDates(candidate, noticeType, {
     today: context.today,
     now: context.now
@@ -490,6 +525,7 @@ export function evaluateCandidateTrust(candidate = {}, context = {}) {
     sourceRegistered &&
     noticeUrlCheck.valid &&
     applyUrlCheck.valid &&
+    applyLinkSpecific &&
     docVerifiedForAutoPublish &&
     contentEval.clean &&
     dateEval.passed &&
